@@ -100,6 +100,28 @@ let S={
   polls:loadData("polls"),
 };
 
+function normalizeSections(secs){
+  const out=[];
+  (Array.isArray(secs)?secs:[]).forEach(sec=>{
+    if((sec==="social"||sec==="competicio")&&!out.includes(sec))out.push(sec);
+  });
+  // Norma del club: qualsevol soci de competició també és soci de social.
+  if(out.includes("competicio")&&!out.includes("social"))out.push("social");
+  return out.length?out:["social"];
+}
+
+function normalizeAllMemberSections(){
+  let changed=false;
+  S.membres.forEach(m=>{
+    const norm=normalizeSections(m.sections);
+    if(JSON.stringify(m.sections||[])!==JSON.stringify(norm)){m.sections=norm;changed=true;}
+  });
+  const me=S.memberId?S.membres.find(m=>m.id===S.memberId):null;
+  if(me){S.userSections=normalizeSections(me.sections);}
+  return changed;
+}
+normalizeAllMemberSections();
+
 function go(u){Object.assign(S,u);render();}
 function save(key){
   store.set("ldm:"+key,S[key]);
@@ -107,7 +129,8 @@ function save(key){
     .then(({error})=>{if(error)console.warn("⚠️ Supabase save error ["+key+"]:",error.message);});
 }
 
-function doLogout(){
+function doLogout(force=false){
+  if(!force&&S.role&&!confirm("Realmente quieres salir?"))return;
   store.set("ldm:session",null);
   go({role:null,loginStep:"choose",pinErr:false,pinErrMsg:"",memberId:null,userName:"",
       userGroupId:null,userSections:[],capGroupId:null,selectedMemberId:null,
@@ -280,6 +303,7 @@ function tryLoginSoci(){
 }
 
 function doLoginSoci(m){
+  m.sections=normalizeSections(m.sections);
   const role=m.isCap?"cap":"soci";
   store.set("ldm:session",{role,memberId:m.id,pin:m.pin});
   go({role,capGroupId:m.isCap?m.groupId:null,memberId:m.id,userName:m.name,
@@ -288,7 +312,8 @@ function doLoginSoci(m){
 }
 
 function togRegSec(sec){
-  go({regSections:S.regSections.includes(sec)?S.regSections.filter(x=>x!==sec):[...S.regSections,sec]});
+  const next=S.regSections.includes(sec)?S.regSections.filter(x=>x!==sec):[...S.regSections,sec];
+  go({regSections:normalizeSections(next)});
 }
 
 function submitRegister(){
@@ -300,13 +325,13 @@ function submitRegister(){
   if(!S.regSections.length)return go({regErr:"Selecciona almenys una secció"});
   if(pin.length<4)return go({regErr:"La clau ha de tenir mínim 4 caràcters"});
   if(pin!==pin2)return go({regErr:"Les claus no coincideixen"});
-  S.membres.push({id:Date.now(),name:nom,groupId:gid,sections:[...S.regSections],pin,isCap:false,pending:true});
+  S.membres.push({id:Date.now(),name:nom,groupId:gid,sections:normalizeSections(S.regSections),pin,isCap:false,pending:true});
   save("membres");
   go({loginStep:"register-ok"});
 }
 
 // ── Accions del panell de membres ──────────────────────────────────────────────
-function approvePending(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m){m.pending=false;save("membres");render();}}
+function approvePending(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m){m.sections=normalizeSections(m.sections);m.pending=false;save("membres");render();}}
 function rejectPending(id){if(S.role!=="patron")return;if(!confirm("Rebutjar la sol·licitud?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
 function resetMemberPin(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m&&confirm("Reset de clau de "+m.name+"?\nHaurà de crear una nova clau al proper accés.")){m.pin=null;save("membres");render();}}
 function toggleIsCap(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m){m.isCap=!m.isCap;save("membres");render();}}
@@ -568,8 +593,8 @@ function render(){
 }
 
 // ── Accions generals ────────────────────────────────────────────────────────────
-function togSec(sec){const s=S.membreSections.includes(sec)?S.membreSections.filter(x=>x!==sec):[...S.membreSections,sec];go({membreSections:s});}
-function addMembre(){if(S.role!=="patron")return;const n=document.getElementById("m-nom")?.value?.trim()||"";if(!n||!S.membreSections.length)return;const gid=parseInt(document.getElementById("m-grup")?.value)||S.groups[0]?.id;S.membres.push({id:Date.now(),name:n,groupId:gid,sections:[...S.membreSections],pin:null,isCap:false,pending:false});save("membres");go({showMembreForm:false,membreSections:["social"]});}
+function togSec(sec){const s=S.membreSections.includes(sec)?S.membreSections.filter(x=>x!==sec):[...S.membreSections,sec];go({membreSections:normalizeSections(s)});}
+function addMembre(){if(S.role!=="patron")return;const n=document.getElementById("m-nom")?.value?.trim()||"";if(!n||!S.membreSections.length)return;const gid=parseInt(document.getElementById("m-grup")?.value)||S.groups[0]?.id;S.membres.push({id:Date.now(),name:n,groupId:gid,sections:normalizeSections(S.membreSections),pin:null,isCap:false,pending:false});save("membres");go({showMembreForm:false,membreSections:["social"]});}
 function delMembre(id){if(S.role!=="patron")return;if(!confirm("Eliminar el soci?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
 function signup(oid){
   const o=S.outings.find(x=>x.id===oid);
@@ -775,6 +800,9 @@ async function initApp(){
     console.warn("⚠️ Supabase no disponible, mode offline:",e.message);
   }
 
+  // Manté les dades antigues coherents amb la norma: competició implica social.
+  if(normalizeAllMemberSections()){save("membres");}
+
   if(bar)bar.style.width="100%";
   await new Promise(r=>setTimeout(r,200));
 
@@ -787,6 +815,7 @@ async function initApp(){
   } else if(session?.memberId){
     const m=S.membres.find(x=>x.id===session.memberId&&!x.pending&&x.pin&&x.pin===session.pin);
     if(m){
+      m.sections=normalizeSections(m.sections);
       Object.assign(S,{
         role:m.isCap?"cap":"soci",
         capGroupId:m.isCap?m.groupId:null,

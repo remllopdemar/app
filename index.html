@@ -423,7 +423,7 @@ function renderInici(){
 function renderEntrena(){
   if(S.section==="competicio"){
     const sess=S.sessions,km=sess.reduce((a,s)=>a+(s.km||0),0),min=sess.reduce((a,s)=>a+(s.duration||0),0),h=Math.floor(min/60),m2=min%60;
-    const canAdd=S.role==="patron"||S.role==="cap";
+    const canAdd=S.role==="patron"||(S.role==="cap"&&S.userSections.includes("competicio"));
     const form=S.showForm&&canAdd?cc(`${lbl("Nova sessió")}<input id="f-type" placeholder="Tipus *" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px"><input id="f-date" type="date" value="${td()}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px"><div style="display:flex;gap:8px;margin-bottom:12px"><input id="f-dur" type="number" placeholder="Minuts" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"><input id="f-km" type="number" placeholder="km" step=".1" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"></div><div style="display:flex;gap:8px"><button onclick="addSess()" style="flex:1;padding:10px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:14px;cursor:pointer">Desar</button><button onclick="go({showForm:false})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
     const list=sess.map((s,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:${i<sess.length-1?`.5px solid #f0ede6`:"none"}"><div style="width:8px;height:8px;border-radius:50%;background:${DARK};flex-shrink:0"></div><div style="flex:1"><div style="font-size:13px;font-weight:500;color:#1a1a18">${s.type}</div><div style="font-size:11px;color:${MUTED}">${s.date}${s.duration?` · ${s.duration} min`:""}${s.note?` · ${s.note}`:""}</div></div>${s.km>0?`<div style="font-size:13px;font-weight:600;color:${DARK};margin-right:4px">${s.km} km</div>`:""}${S.role==="patron"?`<button onclick="delSess(${s.id})" style="background:none;border:none;color:${RED};font-size:20px;cursor:pointer;padding:0 4px;line-height:1">×</button>`:""}</div>`).join("");
     return strow([[Math.round(km)+" km","totals"],[sess.length,"sessions"],[`${h}h${m2>0?" "+m2+"m":""}`,"hores"]])+form+cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">${lbl("Historial")}${canAdd&&!S.showForm?`<button onclick="go({showForm:true})" style="background:${DARK};border:none;border-radius:8px;color:#fff;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600">+ Afegir</button>`:""}</div>${sess.length===0?`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Cap sessió</div>`:list}`)+`<div style="height:14px"></div>`;
@@ -543,13 +543,20 @@ function render(){
   const opc=S.polls.filter(p=>!p.closed).length;
   const pendingCount=S.role==="patron"?S.membres.filter(m=>m.pending).length:0;
   const avisUnread=unreadAvisosCount();
-  const hasBoth=S.role==="patron"||S.role==="cap"||(S.userSections.includes("competicio")&&S.userSections.includes("social"));
-  const hasC=S.role==="patron"||S.role==="cap"||S.userSections.includes("competicio");
-  const hasS=S.role==="patron"||S.role==="cap"||S.userSections.includes("social");
-  const nav=[["inici","🏠","Inici"],["entrena",S.section==="social"?"⛵":"🚣",S.section==="social"?"Sortides":"Entrena"],["resultats","🏆","Resultats"],["vots","📊","Vots"]];
+  // Permisos de secció: el patró veu tot; socis i caps només les seccions assignades.
+  const hasC=S.role==="patron"||S.userSections.includes("competicio");
+  const hasS=S.role==="patron"||S.userSections.includes("social");
+  const hasBoth=hasC&&hasS;
+  // Si una sessió antiga deixa un soci social a competició, el retornem a social.
+  if(!hasC&&S.section==="competicio")S.section=hasS?"social":"social";
+  if(!hasS&&S.section==="social")S.section=hasC?"competicio":"social";
+  if(S.screen==="resultats"&&!hasC)S.screen="inici";
+  const nav=[["inici","🏠","Inici"],["entrena",S.section==="social"?"⛵":"🚣",S.section==="social"?"Sortides":"Entrena"]];
+  if(hasC)nav.push(["resultats","🏆","Resultats"]);
+  nav.push(["vots","📊","Vots"]);
   if(S.role==="patron")nav.push(["membres","👥","Membres"]);
   nav.push(["avisos","📢","Avisos"]);
-  const screens={inici:renderInici,entrena:renderEntrena,resultats:renderResultats,vots:renderVots,membres:renderMembres,avisos:renderAvisos};
+  const screens={inici:renderInici,entrena:renderEntrena,resultats:hasC?renderResultats:renderInici,vots:renderVots,membres:renderMembres,avisos:renderAvisos};
   const titles={inici:"Inici",entrena:S.section==="social"?"Sortides":"Entrenaments",resultats:"Resultats",vots:"Votacions",membres:"Membres",avisos:"Avisos"};
   const userLabel=S.role==="patron"?"Patró":(S.userName||"");
   const userSub=S.role==="cap"?`${userLabel} · Cap ${gname(S.capGroupId).split(" · ")[0]}`:userLabel;
@@ -634,7 +641,7 @@ function addOut(){
   addOutingLog(o,"outing_created",`El patró crea ${outingLabel(o)}.`);
   save("outings");save("avisos");go({showForm:false});
 }
-function addSess(){const t=document.getElementById("f-type")?.value||"";if(!t)return;S.sessions.unshift({id:Date.now(),type:t,date:document.getElementById("f-date")?.value||"",duration:parseInt(document.getElementById("f-dur")?.value)||0,km:parseFloat(document.getElementById("f-km")?.value)||0,section:"competicio",note:""});save("sessions");go({showForm:false});}
+function addSess(){if(!(S.role==="patron"||(S.role==="cap"&&S.userSections.includes("competicio"))))return;const t=document.getElementById("f-type")?.value||"";if(!t)return;S.sessions.unshift({id:Date.now(),type:t,date:document.getElementById("f-date")?.value||"",duration:parseInt(document.getElementById("f-dur")?.value)||0,km:parseFloat(document.getElementById("f-km")?.value)||0,section:"competicio",note:""});save("sessions");go({showForm:false});}
 function delSess(id){S.sessions=S.sessions.filter(s=>s.id!==id);save("sessions");render();}
 function addRes(){const r=document.getElementById("r-race")?.value||"";if(!r)return;S.results.unshift({id:Date.now(),race:r,date:document.getElementById("r-date")?.value||"",place:document.getElementById("r-place")?.value||"",pos:S.newPos,points:PTS[S.newPos]||10});save("results");go({showForm:false,newPos:1});}
 function delRes(id){S.results=S.results.filter(r=>r.id!==id);save("results");render();}

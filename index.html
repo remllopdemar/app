@@ -579,9 +579,11 @@ function maybeAutoGenOutings(){
   const todayStr=isoDate(now);
   if(store.get("ldm:lastAutoGen")===todayStr)return;   // Ja fet avui
 
-  // Dilluns i dimecres de la setmana vinent
-  const mon=new Date(now); mon.setDate(now.getDate()+2);
-  const wed=new Date(now); wed.setDate(now.getDate()+4);
+  // Dilluns i dimecres de la setmana vinent (càlcul absolut des de qualsevol dia)
+  const dow=now.getDay(); // 0=dg,1=dl,...,6=ds
+  const daysToMon=dow===0?1:8-dow; // des de ds(6)→2, des de dg(0)→1, etc.
+  const mon=new Date(now); mon.setDate(now.getDate()+daysToMon);
+  const wed=new Date(now); wed.setDate(now.getDate()+daysToMon+2);
   const monStr=isoDate(mon), wedStr=isoDate(wed);
 
   const base=Date.now();

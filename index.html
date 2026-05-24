@@ -20,7 +20,7 @@ const PIN_PATRON="1234",PIN_CAP="CAP24";
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 const SUPA_URL="https://nibwwwtrwngiopqcqufi.supabase.co";
-const SUPA_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pYnd3d3Ryd25naW9wcWNxdWZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1OTM2NzAsImV4cCI6MjA5NTE2OTY3MH0.xTqIiMpU2MWnQ7c5PQur0TKKsay8Vl75dIKovs9QSg4"; // 👈 Enganxa aquí la teva anon key completa
+const SUPA_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."; // 👈 Enganxa aquí la teva anon key completa
 const supa=window.supabase.createClient(SUPA_URL,SUPA_KEY);
 const SUPA_KEYS=["membres","groups","avisos","outings","sessions","results","polls"];
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,16 +44,16 @@ const emblema=`<svg width="50" height="50" viewBox="0 0 50 50" xmlns="http://www
 
 const DEF={
   membres:[
-    {id:1,name:"Joan Roca",groupId:1,sections:["competicio","social"]},
-    {id:2,name:"Maria Puig",groupId:1,sections:["competicio"]},
-    {id:3,name:"Anna Mas",groupId:1,sections:["social"]},
-    {id:4,name:"Pere Gómez",groupId:2,sections:["competicio","social"]},
-    {id:5,name:"Laura Torres",groupId:2,sections:["social"]},
-    {id:6,name:"Marc Bosch",groupId:2,sections:["competicio"]},
-    {id:7,name:"Carles Nogué",groupId:3,sections:["competicio","social"]},
-    {id:8,name:"Marta Serra",groupId:4,sections:["social"]},
+    {id:1,name:"Joan Roca",groupId:1,sections:["social"]},
+    {id:2,name:"Maria Puig",groupId:2,sections:["social"]},
+    {id:3,name:"Anna Mas",groupId:3,sections:["social"]},
+    {id:4,name:"Pere Gómez",groupId:4,sections:["social"]},
+    {id:5,name:"Laura Torres",groupId:5,sections:["social"]},
+    {id:6,name:"Marc Bosch",groupId:6,sections:["social"]},
+    {id:7,name:"Carles Nogué",groupId:1,sections:["competicio","social"]},
+    {id:8,name:"Marta Serra",groupId:2,sections:["competicio","social"]},
   ],
-  groups:[{id:1,name:"Grup Matí"},{id:2,name:"Grup Tarda"},{id:3,name:"Grup Dimarts"},{id:4,name:"Grup Dijous"},{id:5,name:"Grup Cap de Setmana"}],
+  groups:[{id:1,name:"Grup A · 20.15h"},{id:2,name:"Grup B · 19.00h"},{id:3,name:"Grup C · 17.45h"},{id:4,name:"Grup D · 16.30h"},{id:5,name:"Grup E Matins · 9.15h"},{id:6,name:"Grup F · 8.00h"}],
   avisos:[
     {id:1,text:"Recordeu que el dijous 29 hi ha reunió de temporada a les 19h al local del club.",date:"2026-05-23",pin:true},
   ],

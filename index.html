@@ -126,6 +126,36 @@ const gname=id=>S.groups.find(g=>g.id===id)?.name||"—";
 const td=()=>new Date().toISOString().split("T")[0];
 const secBadge=secs=>{const c=[];if(secs.includes("competicio"))c.push(`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600">🏆</span>`);if(secs.includes("social"))c.push(`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600">⚓</span>`);return c.join(" ");};
 
+
+// ── Fase 3: avisos personals + historial de sortides ─────────────────────────
+const nowIso=()=>new Date().toISOString();
+const mkId=()=>Date.now()+Math.floor(Math.random()*1000);
+function safeArr(a){return Array.isArray(a)?a:[];}
+function memberFromEntry(e){return S.membres.find(m=>m.id===e.mid)||S.membres.find(m=>m.name===e.name&&m.groupId===e.gid)||null;}
+function outingLabel(o){return `${o.title} · ${new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"})} · ${o.time} h`;}
+function actorLabel(){return S.role==="patron"?"Patró":(S.userName||"Sistema");}
+function pushAviso(a){S.avisos.unshift({id:mkId(),date:td(),createdAt:nowIso(),pin:false,...a});}
+function addOutingLog(o,type,text,extra={}){
+  pushAviso({kind:"log",type,outingId:o.id,groupId:o.groupId,text,byName:actorLabel(),byRole:S.role||"system",...extra});
+}
+function addPersonalAviso(o,entry,type,title,message){
+  const m=memberFromEntry(entry)||{};
+  pushAviso({kind:"personal",type,outingId:o.id,groupId:o.groupId,toMemberId:m.id||entry.mid||null,toName:entry.name,toGid:entry.gid,title,text:message,message,read:false});
+}
+function canSeeAvis(a){
+  const kind=a.kind||"public";
+  if(kind==="public")return true;
+  if(S.role==="patron")return true;
+  if(kind==="log")return S.role==="cap"&&S.capGroupId===a.groupId;
+  if(kind==="personal")return (a.toMemberId&&a.toMemberId===S.memberId)||(!a.toMemberId&&a.toName===S.userName&&a.toGid===S.userGroupId);
+  return false;
+}
+function unreadAvisosCount(){
+  if(!S.memberId)return 0;
+  return S.avisos.filter(a=>a.kind==="personal"&&!a.read&&canSeeAvis(a)).length;
+}
+function markAvisRead(id){const a=S.avisos.find(x=>x.id===id);if(a&&a.kind==="personal"&&canSeeAvis(a)){a.read=true;save("avisos");render();}}
+
 // ── Login ─────────────────────────────────────────────────────────────────────
 function renderLogin(){
   const logo=`<div style="text-align:center;margin-bottom:1.5rem"><div style="display:inline-flex;align-items:center;justify-content:center;background:#fff;border-radius:50%;width:80px;height:80px;margin-bottom:12px;border:3px solid ${RED}">${emblema}</div><div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:.04em">LLOP DE MAR</div><div style="color:rgba(255,255,255,.5);font-size:11px;margin-top:3px;text-transform:uppercase;letter-spacing:.1em">Club de Rem · Sant Feliu de Guíxols</div></div>`;
@@ -276,10 +306,10 @@ function submitRegister(){
 }
 
 // ── Accions del panell de membres ──────────────────────────────────────────────
-function approvePending(id){const m=S.membres.find(x=>x.id===id);if(m){m.pending=false;save("membres");render();}}
-function rejectPending(id){if(!confirm("Rebutjar la sol·licitud?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
-function resetMemberPin(id){const m=S.membres.find(x=>x.id===id);if(m&&confirm("Reset de clau de "+m.name+"?\nHaurà de crear una nova clau al proper accés.")){m.pin=null;save("membres");render();}}
-function toggleIsCap(id){const m=S.membres.find(x=>x.id===id);if(m){m.isCap=!m.isCap;save("membres");render();}}
+function approvePending(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m){m.pending=false;save("membres");render();}}
+function rejectPending(id){if(S.role!=="patron")return;if(!confirm("Rebutjar la sol·licitud?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
+function resetMemberPin(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m&&confirm("Reset de clau de "+m.name+"?\nHaurà de crear una nova clau al proper accés.")){m.pin=null;save("membres");render();}}
+function toggleIsCap(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m){m.isCap=!m.isCap;save("membres");render();}}
 
 function fetchMeteo(){
   fetch("https://api.open-meteo.com/v1/forecast?latitude=41.7833&longitude=3.0167&current=temperature_2m,wind_speed_10m,wind_direction_10m,weathercode&daily=temperature_2m_max&timezone=Europe%2FMadrid&forecast_days=5")
@@ -302,7 +332,7 @@ function renderCalendar(){
   const hdr=["Dl","Dt","Dc","Dj","Dv","Ds","Dg"].map(d=>`<div style="font-size:10px;color:${MUTED};text-align:center;padding:3px 0">${d}</div>`).join("");
   let cells="";for(let i=0;i<sdow;i++)cells+=`<div></div>`;
   for(let d=1;d<=dim;d++){
-    const dt=new Date(y,mo,d),dow=dt.getDay(),isWC=dow===3||dow===5;
+    const dt=new Date(y,mo,d),dow=dt.getDay(),isWC=dow===1||dow===3;
     const ds=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
     const hasSess=sessDates.has(ds),isToday=ds===tod,isPast=ds<tod;
     let bg="transparent",col=isPast?"#c5c0b8":"#1a1a18",fw=400,brd="none";
@@ -311,7 +341,7 @@ function renderCalendar(){
     cells+=`<div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:8px;background:${bg};color:${col};font-size:12px;font-weight:${fw};border:${brd}">${d}</div>`;
   }
   const prev=mo===0?{m:11,y:y-1}:{m:mo-1,y:y},next=mo===11?{m:0,y:y+1}:{m:mo+1,y:y};
-  return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><button onclick="go({calMonth:${prev.m},calYear:${prev.y}})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">‹</button><div style="font-size:14px;font-weight:600;color:#1a1a18">${MONTHS[mo]} ${y}</div><button onclick="go({calMonth:${next.m},calYear:${next.y}})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">›</button></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">${hdr}${cells}</div><div style="display:flex;gap:12px;margin-top:10px;padding-top:10px;border-top:.5px solid #f0ede6"><div style="display:flex;align-items:center;gap:4px"><div style="width:10px;height:10px;border-radius:3px;background:#e8edf8"></div><span style="font-size:10px;color:${MUTED}">Entreno Dc/Dv</span></div><div style="display:flex;align-items:center;gap:4px"><div style="width:10px;height:10px;border-radius:3px;background:${DARK}"></div><span style="font-size:10px;color:${MUTED}">Registrat</span></div></div>`);
+  return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><button onclick="go({calMonth:${prev.m},calYear:${prev.y}})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">‹</button><div style="font-size:14px;font-weight:600;color:#1a1a18">${MONTHS[mo]} ${y}</div><button onclick="go({calMonth:${next.m},calYear:${next.y}})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">›</button></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">${hdr}${cells}</div><div style="display:flex;gap:12px;margin-top:10px;padding-top:10px;border-top:.5px solid #f0ede6"><div style="display:flex;align-items:center;gap:4px"><div style="width:10px;height:10px;border-radius:3px;background:#e8edf8"></div><span style="font-size:10px;color:${MUTED}">Entreno Dl/Dc</span></div><div style="display:flex;align-items:center;gap:4px"><div style="width:10px;height:10px;border-radius:3px;background:${DARK}"></div><span style="font-size:10px;color:${MUTED}">Registrat</span></div></div>`);
 }
 
 function renderOutingCard(o){
@@ -342,7 +372,7 @@ function renderOutingCard(o){
   if(cantAccess&&isFull)acts.push(`<div style="flex:1;padding:9px;background:#fff0f0;border-radius:8px;color:${RED};font-size:12px;text-align:center">Complet</div>`);
   // Els caps poden obrir si ≤8 apuntats (i el patró sempre)
   if((isMyCap||isPatron)&&!o.isOpen&&total<=8)acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir a tothom</button>`);
-  if(isPatron||isMyCap)acts.push(`<button onclick="delOut(${o.id})" style="padding:9px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button>`);
+  if(isPatron)acts.push(`<button onclick="delOut(${o.id})" style="padding:9px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button>`);
   // Secció de noms apuntats
   const signupsBlock=(prefList.length||openList.length)?`<div style="padding:10px 14px;border-bottom:.5px solid #f5f3ee">${prefList.length?`<div style="${openList.length?"margin-bottom:6px":""}"><div style="font-size:10px;color:${MUTED};margin-bottom:4px;font-weight:600">PREFERENTS · ${grp?.name||""}</div>${names(prefList,DARK)}</div>`:""}${openList.length?`<div><div style="font-size:10px;color:${MUTED};margin-bottom:4px;font-weight:600">OBERTES</div>${names(openList,GREEN)}</div>`:""}</div>`:"";
   // Llista d'espera (visible sempre que n'hi hagi)
@@ -377,7 +407,7 @@ function renderPollCard(p){
 
 // ── Pantalles principals ────────────────────────────────────────────────────────
 function renderInici(){
-  const pins=S.avisos.filter(a=>a.pin);
+  const pins=S.avisos.filter(a=>(!a.kind||a.kind==="public")&&a.pin);
   const pinB=pins.map(a=>`<div style="border-radius:12px;margin:8px 14px 0;overflow:hidden;border:1.5px solid ${RED}"><div style="background:${RED};padding:4px 12px;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase">📌 Avís important</div><div style="background:#fff;padding:10px 14px;font-size:13px;color:#1a1a18;line-height:1.5">${a.text}</div></div>`).join("");
   if(S.section==="competicio"){
     const s=S.sessions,r=S.results,km=s.reduce((a,x)=>a+(x.km||0),0),best=r.length?Math.min(...r.map(x=>x.pos)):null;
@@ -423,13 +453,18 @@ function renderVots(){
 }
 
 function renderAvisos(){
-  const sorted=[...S.avisos].sort((a,b)=>(b.pin?1:0)-(a.pin?1:0)||(b.date||"").localeCompare(a.date||""));
-  const form=S.showAvisForm?cc(`${lbl("Nou avís del patró")}<textarea id="avis-text" placeholder="Escriu el missatge..." style="width:100%;padding:10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;min-height:80px;resize:vertical;margin-bottom:10px"></textarea><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><input type="checkbox" id="avis-pin" style="width:16px;height:16px;accent-color:${RED}"><label for="avis-pin" style="font-size:13px;color:#1a1a18;cursor:pointer">Fixar a dalt (important)</label></div><div style="display:flex;gap:8px"><button onclick="createAvis()" style="flex:1;padding:10px;background:${RED};border:none;border-radius:8px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Publicar</button><button onclick="go({showAvisForm:false})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
-  const cards=sorted.map(a=>`<div style="border-radius:12px;margin:8px 14px 0;overflow:hidden;border:.5px solid ${a.pin?RED:BORDER}">${a.pin?`<div style="background:${RED};padding:4px 12px;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase">📌 Avís important</div>`:`<div style="background:#f5f5f5;padding:4px 12px;font-size:10px;font-weight:600;color:${MUTED};text-transform:uppercase">📢 Avís del patró</div>`}<div style="background:#fff;padding:12px 14px"><div style="font-size:14px;color:#1a1a18;line-height:1.55;margin-bottom:8px">${a.text}</div><div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:11px;color:${MUTED}">⚓ Patró · ${a.date}</span>${S.role==="patron"?`<div style="display:flex;gap:6px"><button onclick="togglePin(${a.id})" style="background:none;border:.5px solid ${BORDER};border-radius:6px;color:${MUTED};font-size:11px;padding:3px 8px;cursor:pointer">${a.pin?"Desfiixar":"📌 Fixar"}</button><button onclick="delAvis(${a.id})" style="background:none;border:.5px solid ${BORDER};border-radius:6px;color:${RED};font-size:11px;padding:3px 8px;cursor:pointer">Eliminar</button></div>`:""}</div></div></div>`).join("");
-  return(S.role==="patron"&&!S.showAvisForm?`<div style="margin:10px 14px 0"><button onclick="go({showAvisForm:true})" style="width:100%;padding:11px;background:${RED};border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">📢 Nou avís per a tothom</button></div>`:"")+form+(sorted.length?cards:cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Cap avís publicat</div>`))+`<div style="height:14px"></div>`;
+  const all=[...S.avisos].filter(canSeeAvis).sort((a,b)=>(b.pin?1:0)-(a.pin?1:0)||((b.createdAt||b.date||"").localeCompare(a.createdAt||a.date||"")));
+  const personal=all.filter(a=>a.kind==="personal");
+  const publics=all.filter(a=>(!a.kind||a.kind==="public"));
+  const logs=all.filter(a=>a.kind==="log");
+  const form=S.role==="patron"&&S.showAvisForm?cc(`${lbl("Nou avís del patró")}<textarea id="avis-text" placeholder="Escriu el missatge..." style="width:100%;padding:10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;min-height:80px;resize:vertical;margin-bottom:10px"></textarea><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><input type="checkbox" id="avis-pin" style="width:16px;height:16px;accent-color:${RED}"><label for="avis-pin" style="font-size:13px;color:#1a1a18;cursor:pointer">Fixar a dalt (important)</label></div><div style="display:flex;gap:8px"><button onclick="createAvis()" style="flex:1;padding:10px;background:${RED};border:none;border-radius:8px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Publicar</button><button onclick="go({showAvisForm:false})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
+  const publicCards=publics.map(a=>`<div style="border-radius:12px;margin:8px 14px 0;overflow:hidden;border:.5px solid ${a.pin?RED:BORDER}">${a.pin?`<div style="background:${RED};padding:4px 12px;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase">📌 Avís important</div>`:`<div style="background:#f5f5f5;padding:4px 12px;font-size:10px;font-weight:600;color:${MUTED};text-transform:uppercase">📢 Avís del patró</div>`}<div style="background:#fff;padding:12px 14px"><div style="font-size:14px;color:#1a1a18;line-height:1.55;margin-bottom:8px">${a.text}</div><div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:11px;color:${MUTED}">⚓ Patró · ${a.date||""}</span>${S.role==="patron"?`<div style="display:flex;gap:6px"><button onclick="togglePin(${a.id})" style="background:none;border:.5px solid ${BORDER};border-radius:6px;color:${MUTED};font-size:11px;padding:3px 8px;cursor:pointer">${a.pin?"Desfiixar":"📌 Fixar"}</button><button onclick="delAvis(${a.id})" style="background:none;border:.5px solid ${BORDER};border-radius:6px;color:${RED};font-size:11px;padding:3px 8px;cursor:pointer">Eliminar</button></div>`:""}</div></div></div>`).join("");
+  const personalCards=personal.map(a=>`<div style="border-radius:12px;margin:8px 14px 0;overflow:hidden;border:1.5px solid ${a.read?BORDER:GREEN}"><div style="background:${a.read?"#f5f5f5":"#e6f4ee"};padding:4px 12px;font-size:10px;font-weight:700;color:${a.read?MUTED:GREEN};text-transform:uppercase">${a.read?"✓ Avís llegit":"🔔 Avís personal"}</div><div style="background:#fff;padding:12px 14px"><div style="font-size:14px;font-weight:700;color:#1a1a18;margin-bottom:5px">${a.title||"Avís"}</div><div style="font-size:13px;color:#1a1a18;line-height:1.55;margin-bottom:8px">${a.message||a.text||""}</div><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font-size:11px;color:${MUTED}">${a.toName?`Per a ${a.toName} · `:""}${a.date||""}</span>${!a.read&&S.role!=="patron"?`<button onclick="markAvisRead(${a.id})" style="background:${GREEN};border:none;border-radius:6px;color:#fff;font-size:11px;padding:4px 8px;cursor:pointer;font-weight:600">Marcar llegit</button>`:""}</div></div></div>`).join("");
+  const logCards=logs.slice(0,80).map(a=>`<div style="background:#fff;border-radius:10px;margin:6px 14px 0;padding:10px 12px;border:.5px solid ${BORDER}"><div style="font-size:13px;color:#1a1a18;line-height:1.4">${a.text}</div><div style="font-size:10px;color:${MUTED};margin-top:5px">${gname(a.groupId)} · ${a.byName||"Sistema"} · ${a.date||""}</div></div>`).join("");
+  return(S.role==="patron"&&!S.showAvisForm?`<div style="margin:10px 14px 0"><button onclick="go({showAvisForm:true})" style="width:100%;padding:11px;background:${RED};border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">📢 Nou avís per a tothom</button></div>`:"")+form+(personal.length?`<div style="margin:12px 14px 4px">${lbl("Avisos personals")}</div>`+personalCards:"")+(publics.length?`<div style="margin:12px 14px 4px">${lbl("Avisos del club")}</div>`+publicCards:"")+(logs.length?`<div style="margin:12px 14px 4px">${lbl("Historial de sortides")}</div>`+logCards:"")+(all.length===0?cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Cap avís publicat</div>`):"")+`<div style="height:14px"></div>`;
 }
-
 function renderMembres(){
+  if(S.role!=="patron")return cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Accés restringit al patró</div>`);
   const pending=S.membres.filter(m=>m.pending);
   const active=S.membres.filter(m=>!m.pending);
   const byG=S.groups.map(g=>({g,ms:active.filter(m=>m.groupId===g.id)})).filter(x=>x.ms.length>0);
@@ -507,58 +542,101 @@ function render(){
   const myGid=S.userGroupId||S.capGroupId;
   const opc=S.polls.filter(p=>!p.closed).length;
   const pendingCount=S.role==="patron"?S.membres.filter(m=>m.pending).length:0;
+  const avisUnread=unreadAvisosCount();
   const hasBoth=S.role==="patron"||S.role==="cap"||(S.userSections.includes("competicio")&&S.userSections.includes("social"));
   const hasC=S.role==="patron"||S.role==="cap"||S.userSections.includes("competicio");
   const hasS=S.role==="patron"||S.role==="cap"||S.userSections.includes("social");
-  const nav=[["inici","🏠","Inici"],["entrena",S.section==="social"?"⛵":"🚣",S.section==="social"?"Sortides":"Entrena"],["resultats","🏆","Resultats"],["vots","📊","Vots"],S.role==="patron"?["membres","👥","Membres"]:["avisos","📢","Avisos"]];
+  const nav=[["inici","🏠","Inici"],["entrena",S.section==="social"?"⛵":"🚣",S.section==="social"?"Sortides":"Entrena"],["resultats","🏆","Resultats"],["vots","📊","Vots"]];
+  if(S.role==="patron")nav.push(["membres","👥","Membres"]);
+  nav.push(["avisos","📢","Avisos"]);
   const screens={inici:renderInici,entrena:renderEntrena,resultats:renderResultats,vots:renderVots,membres:renderMembres,avisos:renderAvisos};
   const titles={inici:"Inici",entrena:S.section==="social"?"Sortides":"Entrenaments",resultats:"Resultats",vots:"Votacions",membres:"Membres",avisos:"Avisos"};
   const rb=S.role==="patron"?`<span style="background:${RED};color:#fff;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700">PATRÓ</span>`:S.role==="cap"?`<span style="background:rgba(255,255,255,.15);color:#fff;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">Cap · ${gname(S.capGroupId).split(" · ")[0]}</span>`:myGid?`<span style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.8);font-size:10px;padding:2px 8px;border-radius:20px">${S.userName}</span>`:"";
   const btnC=hasC?`<button onclick="go({section:'competicio',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="competicio"?DARK:"transparent"};color:${S.section==="competicio"?"#fff":MUTED}">🏆 Competició</button>`:"";
   const btnS=hasS?`<button onclick="go({section:'social',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="social"?DARK:"transparent"};color:${S.section==="social"?"#fff":MUTED}">⚓ Social</button>`:"";
   const st=hasBoth&&S.screen!=="vots"&&S.screen!=="membres"&&S.screen!=="avisos"?`<div style="display:flex;margin:12px 14px 0;background:#e2dfd6;border-radius:10px;padding:3px">${btnC}${btnS}</div>`:"";
-  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED}">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700">${titles[S.screen]||"Inici"}</div></div></div><div style="display:flex;align-items:center;gap:8px">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb])=>`<button onclick="go({screen:'${k}',showForm:false,showAvisForm:false,showMembreForm:false})" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${S.screen===k?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${S.screen===k?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}</button>`).join("")}</div>`;
+  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED}">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700">${titles[S.screen]||"Inici"}</div></div></div><div style="display:flex;align-items:center;gap:8px">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb])=>`<button onclick="go({screen:'${k}',showForm:false,showAvisForm:false,showMembreForm:false})" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${S.screen===k?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${S.screen===k?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`).join("")}</div>`;
 }
 
 // ── Accions generals ────────────────────────────────────────────────────────────
 function togSec(sec){const s=S.membreSections.includes(sec)?S.membreSections.filter(x=>x!==sec):[...S.membreSections,sec];go({membreSections:s});}
-function addMembre(){const n=document.getElementById("m-nom")?.value?.trim()||"";if(!n||!S.membreSections.length)return;const gid=parseInt(document.getElementById("m-grup")?.value)||S.groups[0]?.id;S.membres.push({id:Date.now(),name:n,groupId:gid,sections:[...S.membreSections],pin:null,isCap:false,pending:false});save("membres");go({showMembreForm:false,membreSections:["social"]});}
-function delMembre(id){if(!confirm("Eliminar el soci?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
+function addMembre(){if(S.role!=="patron")return;const n=document.getElementById("m-nom")?.value?.trim()||"";if(!n||!S.membreSections.length)return;const gid=parseInt(document.getElementById("m-grup")?.value)||S.groups[0]?.id;S.membres.push({id:Date.now(),name:n,groupId:gid,sections:[...S.membreSections],pin:null,isCap:false,pending:false});save("membres");go({showMembreForm:false,membreSections:["social"]});}
+function delMembre(id){if(S.role!=="patron")return;if(!confirm("Eliminar el soci?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
 function signup(oid){
   const o=S.outings.find(x=>x.id===oid);
-  if(!o)return;
+  if(!o||S.role!=="soci")return;
   if(!o.waitlist)o.waitlist=[];
   const isMyGroup=S.userGroupId===o.groupId;
   if(!isMyGroup&&!o.isOpen)return;
   const alreadyIn=o.signups.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
   const alreadyWait=o.waitlist.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
   if(alreadyIn||alreadyWait)return;
-  const entry={name:S.userName,gid:S.userGroupId};
-  if(o.signups.length>=o.capacity){o.waitlist.push(entry);}
-  else{o.signups.push(entry);}
-  save("outings");render();
+  const entry={name:S.userName,gid:S.userGroupId,mid:S.memberId};
+  if(o.signups.length>=o.capacity){
+    o.waitlist.push(entry);
+    addOutingLog(o,"waitlist_join",`${S.userName} entra a la llista d'espera de ${outingLabel(o)}.`);
+  } else {
+    o.signups.push(entry);
+    addOutingLog(o,"signup",`${S.userName} s'apunta a ${outingLabel(o)}.`);
+  }
+  save("outings");save("avisos");render();
 }
 function unsignup(oid){
   const o=S.outings.find(x=>x.id===oid);
-  if(!o)return;
+  if(!o||S.role!=="soci")return;
   if(!o.waitlist)o.waitlist=[];
   const wasIn=o.signups.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
+  const wasWait=o.waitlist.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
   o.signups=o.signups.filter(s=>!(s.name===S.userName&&s.gid===S.userGroupId));
   o.waitlist=o.waitlist.filter(s=>!(s.name===S.userName&&s.gid===S.userGroupId));
+  if(wasIn)addOutingLog(o,"unsignup",`${S.userName} es desapunta de ${outingLabel(o)}.`);
+  if(wasWait)addOutingLog(o,"waitlist_leave",`${S.userName} surt de la llista d'espera de ${outingLabel(o)}.`);
   // Si estava a signups i hi ha gent esperant, el primer entra automàticament
   if(wasIn&&o.waitlist.length>0&&o.signups.length<o.capacity){
-    o.signups.push(o.waitlist.shift());
+    const promoted=o.waitlist.shift();
+    o.signups.push(promoted);
+    addPersonalAviso(o,promoted,"waitlist_promoted","Has entrat a la sortida",`S'ha alliberat una plaça i has entrat automàticament a ${outingLabel(o)}.`);
+    addOutingLog(o,"waitlist_promoted",`${promoted.name} entra automàticament des de la llista d'espera a ${outingLabel(o)}.`);
   }
-  save("outings");render();
+  save("outings");save("avisos");render();
 }
-function openOut(oid){const o=S.outings.find(x=>x.id===oid);if(o){o.isOpen=true;save("outings");render();}}
-function delOut(oid){if(!confirm("Cancel·lar la sortida?"))return;S.outings=S.outings.filter(o=>o.id!==oid);save("outings");render();}
-function addOut(){const t=document.getElementById("o-title")?.value?.trim();if(!t)return;const d=document.getElementById("o-date")?.value||td();const tm=document.getElementById("o-time")?.value||"09:00";const gid=parseInt(document.getElementById("o-group")?.value||S.groups[0]?.id);const cap=parseInt(document.getElementById("o-cap")?.value)||8;S.outings.push({id:Date.now(),groupId:gid,title:t,date:d,time:tm,capacity:cap,isOpen:false,signups:[],waitlist:[]});save("outings");go({showForm:false});}
+function openOut(oid){
+  const o=S.outings.find(x=>x.id===oid);
+  if(!o)return;
+  const isPatron=S.role==="patron";
+  const isOwnCap=S.role==="cap"&&S.capGroupId===o.groupId;
+  if(!isPatron&&!(isOwnCap&&o.signups.length<=8))return;
+  if(!o.isOpen){
+    o.isOpen=true;
+    addOutingLog(o,"outing_opened",`${actorLabel()} obre a tothom la inscripció de ${outingLabel(o)}.`);
+    save("outings");save("avisos");render();
+  }
+}
+function delOut(oid){
+  if(S.role!=="patron")return;
+  if(!confirm("Cancel·lar la sortida?"))return;
+  const o=S.outings.find(x=>x.id===oid);
+  if(o)addOutingLog(o,"outing_deleted",`El patró cancel·la ${outingLabel(o)}.`);
+  S.outings=S.outings.filter(o=>o.id!==oid);
+  save("outings");save("avisos");render();
+}
+function addOut(){
+  if(S.role!=="patron")return;
+  const t=document.getElementById("o-title")?.value?.trim();if(!t)return;
+  const d=document.getElementById("o-date")?.value||td();
+  const tm=document.getElementById("o-time")?.value||"09:00";
+  const gid=parseInt(document.getElementById("o-group")?.value||S.groups[0]?.id);
+  const cap=parseInt(document.getElementById("o-cap")?.value)||8;
+  const o={id:Date.now(),groupId:gid,title:t,date:d,time:tm,capacity:cap,isOpen:false,signups:[],waitlist:[]};
+  S.outings.push(o);
+  addOutingLog(o,"outing_created",`El patró crea ${outingLabel(o)}.`);
+  save("outings");save("avisos");go({showForm:false});
+}
 function addSess(){const t=document.getElementById("f-type")?.value||"";if(!t)return;S.sessions.unshift({id:Date.now(),type:t,date:document.getElementById("f-date")?.value||"",duration:parseInt(document.getElementById("f-dur")?.value)||0,km:parseFloat(document.getElementById("f-km")?.value)||0,section:"competicio",note:""});save("sessions");go({showForm:false});}
 function delSess(id){S.sessions=S.sessions.filter(s=>s.id!==id);save("sessions");render();}
 function addRes(){const r=document.getElementById("r-race")?.value||"";if(!r)return;S.results.unshift({id:Date.now(),race:r,date:document.getElementById("r-date")?.value||"",place:document.getElementById("r-place")?.value||"",pos:S.newPos,points:PTS[S.newPos]||10});save("results");go({showForm:false,newPos:1});}
 function delRes(id){S.results=S.results.filter(r=>r.id!==id);save("results");render();}
-function createAvis(){const t=document.getElementById("avis-text")?.value?.trim()||"";if(!t)return;const pin=document.getElementById("avis-pin")?.checked||false;S.avisos.unshift({id:Date.now(),text:t,date:td(),pin});save("avisos");go({showAvisForm:false});}
+function createAvis(){const t=document.getElementById("avis-text")?.value?.trim()||"";if(!t)return;const pin=document.getElementById("avis-pin")?.checked||false;pushAviso({kind:"public",text:t,pin});save("avisos");go({showAvisForm:false});}
 function delAvis(id){S.avisos=S.avisos.filter(a=>a.id!==id);save("avisos");render();}
 function togglePin(id){const a=S.avisos.find(x=>x.id===id);if(a){a.pin=!a.pin;save("avisos");render();}}
 function addOpt(){go({pollOpts:[...S.pollOpts,""]});}
@@ -571,27 +649,66 @@ function delPoll(pid){S.polls=S.polls.filter(p=>p.id!==pid);save("polls");render
 // ── Sortides automàtiques (dissabte → genera Dl+Dc setmana vinent) ────────────
 const GROUP_TIMES={1:"20:15",2:"19:00",3:"17:45",4:"16:30",5:"09:15",6:"08:00"};
 
-function isoDate(d){return d.toISOString().split("T")[0];}
+// Data local YYYY-MM-DD. Evita el desplaçament d'un dia que pot provocar toISOString()
+// quan el navegador està en zona Europe/Madrid a primera hora del dia.
+function isoDate(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function dateAtLocalNoon(d){return new Date(d.getFullYear(),d.getMonth(),d.getDate(),12,0,0,0);}
+function daysBetweenDates(a,b){
+  const da=dateAtLocalNoon(a), db=dateAtLocalNoon(b);
+  return Math.round((da-db)/86400000);
+}
+function parseLocalDate(ds){
+  const [y,m,d]=(ds||"").split("-").map(Number);
+  return y&&m&&d?new Date(y,m-1,d,12,0,0,0):null;
+}
+function nextWeekMonWed(now){
+  const ref=dateAtLocalNoon(now);
+  const dow=ref.getDay(); // 0=dg,1=dl,...,6=ds
+  let daysToMon=(8-dow)%7;
+  if(daysToMon===0)daysToMon=7;
+  const mon=new Date(ref); mon.setDate(ref.getDate()+daysToMon);
+  const wed=new Date(mon); wed.setDate(mon.getDate()+2);
+  return {mon,wed,monStr:isoDate(mon),wedStr:isoDate(wed)};
+}
 
 function maybeAutoGenOutings(){
   const now=new Date();
   if(now.getDay()!==6)return;                          // Només dissabte
-  const todayStr=isoDate(now);
-  if(store.get("ldm:lastAutoGen")===todayStr)return;   // Ja fet avui
 
-  // Dilluns i dimecres de la setmana vinent (càlcul absolut des de qualsevol dia)
-  const dow=now.getDay(); // 0=dg,1=dl,...,6=ds
-  const daysToMon=dow===0?1:8-dow; // des de ds(6)→2, des de dg(0)→1, etc.
-  const mon=new Date(now); mon.setDate(now.getDate()+daysToMon);
-  const wed=new Date(now); wed.setDate(now.getDate()+daysToMon+2);
-  const monStr=isoDate(mon), wedStr=isoDate(wed);
+  const todayStr=isoDate(now);
+  const {mon,wed,monStr,wedStr}=nextWeekMonWed(now);
+  const wanted=[{ds:monStr,day:"Dl",date:mon},{ds:wedStr,day:"Dc",date:wed}];
 
   const base=Date.now();
-  let generated=false;
+  let changed=false;
+
   S.groups.forEach((g,gi)=>{
     const t=GROUP_TIMES[g.id]||"09:00";
-    [[monStr,"Dl"],[wedStr,"Dc"]].forEach(([ds,day],di)=>{
-      if(!S.outings.some(o=>o.date===ds&&o.groupId===g.id)){
+    wanted.forEach(({ds,day,date},di)=>{
+      // Si ja hi ha una sortida per aquest grup i dia correcte, no dupliquem.
+      let existing=S.outings.find(o=>o.date===ds&&o.groupId===g.id);
+
+      // Si en una versió anterior s'havia creat amb data desplaçada per zona horària
+      // però el títol indicava Dl/Dc, la corregim en lloc de crear un duplicat.
+      if(!existing){
+        const wrong=S.outings.find(o=>
+          o.groupId===g.id&&o.isAuto&&(o.title||"").includes(`· ${day}`)&&
+          parseLocalDate(o.date)&&Math.abs(daysBetweenDates(parseLocalDate(o.date),date))<=2
+        );
+        if(wrong){
+          wrong.date=ds;
+          wrong.time=wrong.time||t;
+          wrong.capacity=wrong.capacity||8;
+          wrong.signups=safeArr(wrong.signups);
+          wrong.waitlist=safeArr(wrong.waitlist);
+          existing=wrong;
+          changed=true;
+        }
+      }
+
+      if(!existing){
         S.outings.push({
           id:base+gi*10+di,
           groupId:g.id,
@@ -599,15 +716,19 @@ function maybeAutoGenOutings(){
           date:ds, time:t, capacity:8,
           isOpen:false, signups:[], waitlist:[], isAuto:true
         });
-        generated=true;
+        changed=true;
+      } else {
+        if(!Array.isArray(existing.signups)){existing.signups=[];changed=true;}
+        if(!Array.isArray(existing.waitlist)){existing.waitlist=[];changed=true;}
       }
     });
   });
 
-  if(generated){
+  // Marquem la generació només després d'haver comprovat que dilluns i dimecres existeixen.
+  store.set("ldm:lastAutoGen",todayStr);
+  if(changed){
     save("outings");
-    store.set("ldm:lastAutoGen",todayStr);
-    console.log("✅ Sortides automàtiques generades ("+monStr+" + "+wedStr+")");
+    console.log("✅ Sortides automàtiques revisades/generades ("+monStr+" + "+wedStr+")");
   }
 }
 

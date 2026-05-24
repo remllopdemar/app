@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Llop de Mar · Club de Rem SFG</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #e8e5df; min-height: 100vh; display: flex; justify-content: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+input, button, textarea, select { font-family: inherit; }
+#app { width: 100%; max-width: 480px; min-height: 100vh; background: #f4f1eb; position: relative; }
+@media (min-width: 500px) { #app { box-shadow: 0 0 40px rgba(0,0,0,.15); } }
+</style>
+</head>
+<body>
+<div id="app"><div id="root"></div></div>
+<script>
+const PIN_PATRON="1234",PIN_CAP="CAP24";
+
+// ── Supabase ──────────────────────────────────────────────────────────────────
+const SUPA_URL="https://nibwwwtrwngiopqcqufi.supabase.co";
+const SUPA_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."; // 👈 Enganxa aquí la teva anon key completa
+const supa=window.supabase.createClient(SUPA_URL,SUPA_KEY);
+const SUPA_KEYS=["membres","groups","avisos","outings","sessions","results","polls"];
+// ─────────────────────────────────────────────────────────────────────────────
+const DARK="#1b3a7a",RED="#c8102e",GREEN="#1b6b3a",BG="#f4f1eb",MUTED="#7a7872",BORDER="#ddd9d0";
+const DAYS=["Dg","Dl","Dt","Dc","Dj","Dv","Ds"];
+const MONTHS=["Gener","Febrer","Març","Abril","Maig","Juny","Juliol","Agost","Setembre","Octubre","Novembre","Desembre"];
+const PTS={1:35,2:28,3:22,4:18,5:15};
+const POS={1:"1r",2:"2n",3:"3r",4:"4t",5:"è"};
+const PCOL={1:"#c8a44a",2:"#888780",3:"#8b6c3c"};
+function wDir(d){return["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSO","SO","OSO","O","ONO","NO","NNO"][Math.round(d/22.5)%16];}
+function wDesc(c){if(c===0)return"Cel clar";if(c<=3)return"Parcialment ennuvolat";if(c<=65)return"Pluja";if(c<=82)return"Ruixats";return"Tempesta";}
+function wIcon(c){if(c===0)return"☀️";if(c<=3)return"⛅";if(c<=65)return"🌧️";if(c<=82)return"🌦️";return"⛈️";}
+
+// Cache local (ràpid) + Supabase (compartit entre usuaris)
+const store={
+  get(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch{return null;}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+};
+
+const emblema=`<svg width="50" height="50" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg"><circle cx="25" cy="25" r="24" fill="white" stroke="#c8102e" stroke-width="3"/><circle cx="25" cy="25" r="18" fill="none" stroke="#1b3a7a" stroke-width="2"/><rect x="7" y="21" width="8" height="8" rx="1" fill="#c8102e"/><rect x="35" y="21" width="8" height="8" rx="1" fill="#c8102e"/><rect x="19" y="7" width="12" height="8" rx="1" fill="#c8102e"/><rect x="19" y="35" width="12" height="6" rx="1" fill="#c8102e"/><text x="25" y="29" text-anchor="middle" font-size="10" font-weight="bold" fill="#1b3a7a" font-family="serif">LM</text></svg>`;
+
+const DEF={
+  membres:[
+    {id:1,name:"Joan Roca",groupId:1,sections:["competicio","social"]},
+    {id:2,name:"Maria Puig",groupId:1,sections:["competicio"]},
+    {id:3,name:"Anna Mas",groupId:1,sections:["social"]},
+    {id:4,name:"Pere Gómez",groupId:2,sections:["competicio","social"]},
+    {id:5,name:"Laura Torres",groupId:2,sections:["social"]},
+    {id:6,name:"Marc Bosch",groupId:2,sections:["competicio"]},
+    {id:7,name:"Carles Nogué",groupId:3,sections:["competicio","social"]},
+    {id:8,name:"Marta Serra",groupId:4,sections:["social"]},
+  ],
+  groups:[{id:1,name:"Grup Matí"},{id:2,name:"Grup Tarda"},{id:3,name:"Grup Dimarts"},{id:4,name:"Grup Dijous"},{id:5,name:"Grup Cap de Setmana"}],
+  avisos:[
+    {id:1,text:"Recordeu que el dijous 29 hi ha reunió de temporada a les 19h al local del club.",date:"2026-05-23",pin:true},
+  ],
+  outings:[
+    {id:1,groupId:1,title:"Sortida matinal",date:"2026-05-28",time:"09:00",capacity:8,isOpen:false,signups:[{name:"Joan Roca",gid:1},{name:"Maria Puig",gid:1}]},
+    {id:2,groupId:2,title:"Sortida de tarda",date:"2026-05-30",time:"17:30",capacity:8,isOpen:true,signups:[{name:"Pere Gómez",gid:2},{name:"Laura Torres",gid:2},{name:"Marc Bosch",gid:2}]},
+  ],
+  sessions:[
+    {id:1,date:"2026-05-22",type:"Sèrie de boies",duration:130,km:16,section:"competicio",note:""},
+    {id:2,date:"2026-05-20",type:"Fons llarg cap a Tossa",duration:180,km:28,section:"competicio",note:""},
+    {id:3,date:"2026-05-19",type:"Salida i arrancada",duration:90,km:10,section:"competicio",note:""},
+    {id:4,date:"2026-05-15",type:"Tàctica vent fort",duration:110,km:14,section:"competicio",note:"Tramuntana"},
+  ],
+  results:[
+    {id:1,race:"Regata Cap de Creus",date:"2026-05-10",place:"Cadaqués",pos:1,points:35},
+    {id:2,race:"Trofeu Festa Major Blanes",date:"2026-05-02",place:"Blanes",pos:2,points:28},
+    {id:3,race:"Regata de la Marinada",date:"2026-04-19",place:"Lloret de Mar",pos:1,points:35},
+    {id:4,race:"Copa Costa Brava",date:"2026-04-05",place:"Roses",pos:3,points:22},
+  ],
+  polls:[
+    {id:1,question:"Quan fem la pròxima sortida social?",options:["Dissabte 7 juny","Diumenge 8 juny","Dissabte 14 juny"],votes:{"Dissabte 7 juny":["Joan Roca","Maria Puig"],"Diumenge 8 juny":["Pere Gómez"],"Dissabte 14 juny":["Marc Bosch","Carles Nogué","Laura Torres"]},closed:false,date:"2026-05-23"},
+  ]
+};
+
+function loadData(key){return store.get("ldm:"+key)||DEF[key]||[];}
+
+let S={
+  role:null,loginStep:"choose",pinErr:false,
+  memberId:null,userName:"",userGroupId:null,userSections:[],capGroupId:null,
+  screen:"inici",section:"competicio",
+  showForm:false,showAvisForm:false,showMembreForm:false,
+  membreSections:["social"],
+  newPos:1,calMonth:new Date().getMonth(),calYear:new Date().getFullYear(),
+  pollQ:"",pollOpts:["",""],
+  meteo:null,meteoLoading:true,
+  groups:loadData("groups"),
+  membres:loadData("membres"),
+  avisos:loadData("avisos"),
+  outings:loadData("outings"),
+  sessions:loadData("sessions"),
+  results:loadData("results"),
+  polls:loadData("polls"),
+};
+
+function go(u){Object.assign(S,u);render();}
+function save(key){
+  store.set("ldm:"+key,S[key]); // cache local immediata
+  supa.from("app_data").upsert({key:"ldm:"+key,value:S[key]},{onConflict:"key"})
+    .then(({error})=>{if(error)console.warn("⚠️ Supabase save error ["+key+"]:",error.message);});
+}
+
+function fetchMeteo(){
+  fetch("https://api.open-meteo.com/v1/forecast?latitude=41.7833&longitude=3.0167&current=temperature_2m,wind_speed_10m,wind_direction_10m,weathercode&daily=temperature_2m_max&timezone=Europe%2FMadrid&forecast_days=5")
+    .then(r=>r.json()).then(d=>{S.meteo=d;S.meteoLoading=false;render();}).catch(()=>{S.meteoLoading=false;render();});
+}
+
+const cc=(h,x="")=>`<div style="background:#fff;border-radius:14px;margin:10px 14px 0;padding:14px;border:.5px solid ${BORDER};${x}">${h}</div>`;
+const lbl=t=>`<div style="font-size:11px;font-weight:600;color:${MUTED};text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">${t}</div>`;
+const strow=items=>`<div style="display:flex;gap:8px;margin:10px 14px 0">${items.map(([v,l])=>`<div style="flex:1;background:#fff;border-radius:12px;padding:10px;border:.5px solid ${BORDER};text-align:center"><div style="font-size:20px;font-weight:700;color:${DARK}">${v}</div><div style="font-size:10px;color:${MUTED};margin-top:1px">${l}</div></div>`).join("")}</div>`;
+const gname=id=>S.groups.find(g=>g.id===id)?.name||"—";
+const td=()=>new Date().toISOString().split("T")[0];
+const secBadge=secs=>{const c=[];if(secs.includes("competicio"))c.push(`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600">🏆</span>`);if(secs.includes("social"))c.push(`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600">⚓</span>`);return c.join(" ");};
+
+function renderLogin(){
+  const logo=`<div style="text-align:center;margin-bottom:1.5rem"><div style="display:inline-flex;align-items:center;justify-content:center;background:#fff;border-radius:50%;width:80px;height:80px;margin-bottom:12px;border:3px solid ${RED}">${emblema}</div><div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:.04em">LLOP DE MAR</div><div style="color:rgba(255,255,255,.5);font-size:11px;margin-top:3px;text-transform:uppercase;letter-spacing:.1em">Club de Rem · Sant Feliu de Guíxols</div></div>`;
+  const wrap=h=>`<div style="min-height:100vh;background:linear-gradient(160deg,${DARK} 60%,#122860);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem">${logo}${h}</div>`;
+  if(S.loginStep==="choose")return wrap(`<div style="width:100%;max-width:300px;display:flex;flex-direction:column;gap:10px">
+    <button onclick="go({loginStep:'patron-pin'})" style="padding:15px;background:${RED};border:none;border-radius:14px;color:#fff;font-weight:700;font-size:16px;cursor:pointer">⚓ PATRÓ</button>
+    <button onclick="go({loginStep:'cap-pin'})" style="padding:15px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:14px;color:#fff;font-weight:500;font-size:15px;cursor:pointer">🧭 Cap de grup</button>
+    <button onclick="go({loginStep:'soci-list'})" style="padding:15px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:14px;color:rgba(255,255,255,.75);font-weight:500;font-size:15px;cursor:pointer">🚣 Soci</button>
+    <div style="text-align:center;margin-top:8px;color:rgba(255,255,255,.3);font-size:11px">Demo: Patró=1234 · Cap=CAP24</div>
+  </div>`);
+  if(S.loginStep==="patron-pin"||S.loginStep==="cap-pin"){
+    const isP=S.loginStep==="patron-pin";
+    return wrap(`<div style="width:100%;max-width:300px"><div style="color:rgba(255,255,255,.65);font-size:14px;text-align:center;margin-bottom:12px">Codi ${isP?"del patró":"de cap de grup"}</div>
+    <input id="pin-in" type="password" placeholder="····" autocomplete="off" style="width:100%;padding:14px;border-radius:12px;border:1px solid ${S.pinErr?"#ff6b6b":"rgba(255,255,255,.2)"};background:rgba(255,255,255,.08);color:#fff;font-size:24px;text-align:center;letter-spacing:.4em;outline:none;box-sizing:border-box;margin-bottom:10px">
+    ${S.pinErr?`<div style="color:#ff6b6b;font-size:12px;text-align:center;margin-bottom:8px">Codi incorrecte</div>`:""}
+    <button onclick="tryPin()" style="width:100%;padding:13px;background:${RED};border:none;border-radius:12px;color:#fff;font-weight:700;font-size:16px;cursor:pointer;margin-bottom:10px">ENTRAR</button>
+    <button onclick="go({loginStep:'choose',pinErr:false})" style="width:100%;padding:10px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:12px;color:rgba(255,255,255,.4);font-size:14px;cursor:pointer">Enrere</button></div>`);
+  }
+  if(S.loginStep==="cap-group"){
+    return wrap(`<div style="width:100%;max-width:300px"><div style="color:rgba(255,255,255,.65);font-size:14px;text-align:center;margin-bottom:14px">Quin és el teu grup?</div>
+    ${S.groups.map(g=>`<button onclick="go({role:'cap',capGroupId:${g.id},loginStep:'choose'})" style="width:100%;padding:13px 16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:12px;color:#fff;font-size:15px;cursor:pointer;text-align:left;margin-bottom:8px">${g.name}</button>`).join("")}
+    <button onclick="go({loginStep:'choose'})" style="width:100%;padding:10px;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:12px;color:rgba(255,255,255,.35);font-size:14px;cursor:pointer;margin-top:4px">Enrere</button></div>`);
+  }
+  if(S.loginStep==="soci-list"){
+    const sorted=[...S.membres].sort((a,b)=>a.name.localeCompare(b.name,"ca"));
+    return wrap(`<div style="width:100%;max-width:320px"><div style="color:rgba(255,255,255,.7);font-size:15px;font-weight:500;text-align:center;margin-bottom:16px">Selecciona el teu nom</div>
+    <div style="max-height:340px;overflow-y:auto;padding-right:2px">
+    ${sorted.map(m=>`<button onclick="loginSoci(${m.id})" style="width:100%;padding:12px 16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:12px;color:#fff;font-size:14px;cursor:pointer;text-align:left;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between">
+      <span style="font-weight:500">${m.name}</span>
+      <span style="font-size:11px;opacity:.5;margin-left:8px">${gname(m.groupId)}</span>
+    </button>`).join("")}
+    </div>
+    <button onclick="go({loginStep:'choose'})" style="width:100%;padding:10px;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:12px;color:rgba(255,255,255,.35);font-size:14px;cursor:pointer;margin-top:12px">Enrere</button></div>`);
+  }
+  return wrap("");
+}
+
+function tryPin(){const v=document.getElementById("pin-in")?.value||"";if(S.loginStep==="patron-pin"&&v===PIN_PATRON)go({role:"patron",loginStep:"choose",pinErr:false});else if(S.loginStep==="cap-pin"&&v===PIN_CAP)go({loginStep:"cap-group",pinErr:false});else go({pinErr:true});}
+function loginSoci(id){const m=S.membres.find(x=>x.id===id);if(!m)return;go({role:"soci",memberId:m.id,userName:m.name,userGroupId:m.groupId,userSections:m.sections,loginStep:"choose",section:m.sections.includes("competicio")?"competicio":"social"});}
+
+function renderMeteo(){
+  if(S.meteoLoading)return`<div style="background:${DARK};border-radius:14px;margin:10px 14px 0;padding:16px;color:rgba(255,255,255,.5);font-size:13px">Carregant meteo del port...</div>`;
+  if(!S.meteo)return`<div style="background:${DARK};border-radius:14px;margin:10px 14px 0;padding:16px;color:rgba(255,255,255,.5);font-size:13px">Meteo no disponible</div>`;
+  const m=S.meteo,kn=Math.round(m.current.wind_speed_10m*.539957),strong=kn>=15;
+  const days=m.daily.time.slice(0,5).map((d,i)=>{const dy=new Date(d);return`<div style="flex:1;text-align:center;font-size:10px;color:${i===0?"#fff":"rgba(255,255,255,.5)"}"><div style="${i===0?`background:${RED};border-radius:5px;padding:1px 0;font-weight:700`:""}">${DAYS[dy.getDay()]}</div><div style="font-size:13px;font-weight:${i===0?600:400};margin-top:3px">${Math.round(m.daily.temperature_2m_max[i])}°</div></div>`;}).join("");
+  return`<div style="background:linear-gradient(135deg,${DARK},#122860);border-radius:14px;margin:10px 14px 0;padding:16px;color:#fff"><div style="font-size:11px;opacity:.5;margin-bottom:10px">📍 Port de Sant Feliu de Guíxols</div><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:40px;font-weight:700;line-height:1">${Math.round(m.current.temperature_2m)}°</div><div style="font-size:12px;opacity:.65;margin-top:5px">${wIcon(m.current.weathercode)} ${wDesc(m.current.weathercode)}</div></div><div style="text-align:right"><div style="font-size:10px;opacity:.5;margin-bottom:2px">Vent</div><div style="font-size:28px;font-weight:700;color:${strong?"#ff6b6b":"#7ec8e3"}">${kn} kn</div><div style="font-size:11px;opacity:.5">${wDir(m.current.wind_direction_10m)}</div></div></div><div style="display:flex;gap:4px;margin-top:14px;padding-top:12px;border-top:.5px solid rgba(255,255,255,.15)">${days}</div></div>${strong?`<div style="background:#fff0f0;border:.5px solid ${RED};border-radius:10px;margin:8px 14px 0;padding:10px 12px;display:flex;gap:8px;align-items:center">⚠️<span style="font-size:12px;color:${RED}">Vent fort (${kn} kn). Consulteu amb el patró.</span></div>`:""}`;
+}
+
+function renderCalendar(){
+  const y=S.calYear,mo=S.calMonth,dim=new Date(y,mo+1,0).getDate();
+  let sdow=new Date(y,mo,1).getDay();sdow=sdow===0?6:sdow-1;
+  const sessDates=new Set(S.sessions.map(s=>s.date)),tod=td();
+  const hdr=["Dl","Dt","Dc","Dj","Dv","Ds","Dg"].map(d=>`<div style="font-size:10px;color:${MUTED};text-align:center;padding:3px 0">${d}</div>`).join("");
+  let cells="";for(let i=0;i<sdow;i++)cells+=`<div></div>`;
+  for(let d=1;d<=dim;d++){
+    const dt=new Date(y,mo,d),dow=dt.getDay(),isWC=dow===3||dow===5;
+    const ds=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const hasSess=sessDates.has(ds),isToday=ds===tod,isPast=ds<tod;
+    let bg="transparent",col=isPast?"#c5c0b8":"#1a1a18",fw=400,brd="none";
+    if(isWC){bg=hasSess?DARK:(isPast?"#dde5f5":"#e8edf8");col=hasSess?"#fff":(isPast?MUTED:DARK);fw=600;}
+    if(isToday)brd=`2px solid ${RED}`;
+    cells+=`<div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:8px;background:${bg};color:${col};font-size:12px;font-weight:${fw};border:${brd}">${d}</div>`;
+  }
+  const prev=mo===0?{m:11,y:y-1}:{m:mo-1,y:y},next=mo===11?{m:0,y:y+1}:{m:mo+1,y:y};
+  return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><button onclick="go({calMonth:${prev.m},calYear:${prev.y}})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">‹</button><div style="font-size:14px;font-weight:600;color:#1a1a18">${MONTHS[mo]} ${y}</div><button onclick="go({calMonth:${next.m},calYear:${next.y}})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">›</button></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">${hdr}${cells}</div><div style="display:flex;gap:12px;margin-top:10px;padding-top:10px;border-top:.5px solid #f0ede6"><div style="display:flex;align-items:center;gap:4px"><div style="width:10px;height:10px;border-radius:3px;background:#e8edf8"></div><span style="font-size:10px;color:${MUTED}">Entreno Dc/Dv</span></div><div style="display:flex;align-items:center;gap:4px"><div style="width:10px;height:10px;border-radius:3px;background:${DARK}"></div><span style="font-size:10px;color:${MUTED}">Registrat</span></div></div>`);
+}
+
+function renderOutingCard(o){
+  const grp=S.groups.find(g=>g.id===o.groupId),total=o.signups.length,pct=Math.round((total/o.capacity)*100),isFull=total>=o.capacity;
+  const prefList=o.signups.filter(s=>s.gid===o.groupId),openList=o.signups.filter(s=>s.gid!==o.groupId);
+  const isMyGroup=S.userGroupId===o.groupId||S.capGroupId===o.groupId;
+  const isMyCap=S.role==="cap"&&S.capGroupId===o.groupId,isPatron=S.role==="patron";
+  const amIn=S.role==="soci"&&o.signups.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
+  const canJoin=S.role==="soci"&&!amIn&&!isFull&&(isMyGroup||o.isOpen);
+  const cantJoin=S.role==="soci"&&!amIn&&!isMyGroup&&!o.isOpen;
+  const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
+  const names=(arr,col)=>arr.length?arr.map(s=>`<span style="display:inline-block;background:${col};border-radius:20px;font-size:11px;padding:3px 9px;margin:2px;color:#fff;font-weight:500">${s.name}</span>`).join(""):"";
+  const badge=o.isOpen?`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔓 Oberta</span>`:`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 ${grp?.name||""}</span>`;
+  const acts=[];
+  if(canJoin)acts.push(`<button onclick="signup(${o.id})" style="flex:1;padding:9px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:13px;cursor:pointer">✋ Apuntar-me</button>`);
+  if(amIn)acts.push(`<button onclick="unsignup(${o.id})" style="flex:1;padding:9px;background:transparent;border:.5px solid ${RED};border-radius:8px;color:${RED};font-weight:500;font-size:13px;cursor:pointer">Desapuntar-me</button>`);
+  if(cantJoin&&!isFull)acts.push(`<div style="flex:1;padding:9px;background:#f8f8f8;border-radius:8px;color:${MUTED};font-size:12px;text-align:center">El cap ha d'obrir la inscripció</div>`);
+  if(isFull&&!amIn)acts.push(`<div style="flex:1;padding:9px;background:#fff0f0;border-radius:8px;color:${RED};font-size:12px;text-align:center">Complet</div>`);
+  if((isMyCap||isPatron)&&!o.isOpen)acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir</button>`);
+  if(isPatron||isMyCap)acts.push(`<button onclick="delOut(${o.id})" style="padding:9px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button>`);
+  return`<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
+    <div style="padding:12px 14px;border-bottom:.5px solid #f5f3ee"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:14px;font-weight:600;color:#1a1a18">${o.title}</div>${badge}</div>
+    <div style="font-size:12px;color:${MUTED}">📅 ${dateStr} · ${o.time} h</div>
+    <div style="margin-top:10px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:11px;color:${MUTED}">Places</span><span style="font-size:11px;font-weight:600;color:${isFull?RED:DARK}">${total}/${o.capacity}</span></div>
+    <div style="background:#f0ede8;border-radius:4px;height:5px"><div style="background:${isFull?RED:DARK};height:5px;border-radius:4px;width:${pct}%"></div></div></div></div>
+    ${prefList.length||openList.length?`<div style="padding:10px 14px;border-bottom:.5px solid #f5f3ee">${prefList.length?`<div style="${openList.length?"margin-bottom:6px":""}"><div style="font-size:10px;color:${MUTED};margin-bottom:4px;font-weight:600">PREFERENTS · ${grp?.name||""}</div>${names(prefList,DARK)}</div>`:""}${openList.length?`<div><div style="font-size:10px;color:${MUTED};margin-bottom:4px;font-weight:600">OBERTES</div>${names(openList,GREEN)}</div>`:""}</div>`:""}
+    ${acts.length?`<div style="padding:10px 14px;display:flex;gap:8px">${acts.join("")}</div>`:""}
+  </div>`;
+}
+
+function getUserVote(p){if(!S.userName)return null;for(const o of p.options){if(p.votes[o]?.includes(S.userName))return o;}return null;}
+
+function renderPollCard(p){
+  const mv=getUserVote(p),tot=Object.values(p.votes).reduce((a,v)=>a+v.length,0);
+  const win=p.closed?p.options.reduce((a,b)=>p.votes[b].length>p.votes[a].length?b:a,p.options[0]):null;
+  const canV=!p.closed&&!mv&&S.userName,showR=p.closed||!!mv;
+  const rows=p.options.map(opt=>{
+    const cnt=p.votes[opt]?.length||0,pct=tot>0?Math.round((cnt/tot)*100):0;
+    const isW=win===opt,isMy=mv===opt;
+    if(canV)return`<button onclick="castVote(${p.id},'${opt.replace(/'/g,"\\'")}','${S.userName.replace(/'/g,"\\'")}' )" style="width:100%;padding:10px 12px;background:${isMy?"#eef0fa":"#f8f9ff"};border:1.5px solid ${isMy?DARK:BORDER};border-radius:10px;cursor:pointer;text-align:left;font-size:13px;color:#1a1a18;margin-bottom:6px;font-weight:${isMy?600:400}">${opt}</button>`;
+    if(showR)return`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:13px;font-weight:${isMy||isW?600:400};color:${isW?RED:(isMy?DARK:"#1a1a18")}">${isW&&p.closed?"🏆 ":""}${opt}${isMy?" ✓":""}</span><span style="font-size:12px;font-weight:600;color:${isW?RED:MUTED}">${cnt} · ${pct}%</span></div><div style="background:#f0ede8;border-radius:20px;height:8px"><div style="background:${isW?RED:(isMy?DARK:"#c8d4f0")};height:8px;border-radius:20px;width:${pct}%"></div></div></div>`;
+    return`<div style="padding:10px 12px;background:#f8f9ff;border:1px solid ${BORDER};border-radius:10px;font-size:13px;color:#1a1a18;margin-bottom:6px">${opt}</div>`;
+  }).join("");
+  const sb=p.closed?`<span style="background:#fff0f0;color:${RED};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">Tancada</span>`:`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">Oberta</span>`;
+  const pa=S.role==="patron"?`<div style="display:flex;gap:8px;padding:10px 14px;border-top:.5px solid #f5f3ee">${!p.closed?`<button onclick="closePoll(${p.id})" style="flex:1;padding:8px;background:transparent;border:.5px solid ${RED};border-radius:8px;color:${RED};font-size:12px;cursor:pointer;font-weight:600">Tancar votació</button>`:""}<button onclick="delPoll(${p.id})" style="padding:8px 12px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button></div>`:"";
+  return`<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden"><div style="padding:12px 14px 0"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;gap:8px"><div style="font-size:14px;font-weight:600;color:#1a1a18;flex:1">${p.question}</div>${sb}</div><div style="font-size:11px;color:${MUTED};margin-bottom:12px">${tot} vots · ${p.date}</div>${rows}${mv&&!p.closed?`<div style="font-size:11px;color:${MUTED};margin-top:4px;margin-bottom:12px">Has votat: <strong>${mv}</strong></div>`:`<div style="height:12px"></div>`}</div>${pa}</div>`;
+}
+
+function renderInici(){
+  const pins=S.avisos.filter(a=>a.pin);
+  const pinB=pins.map(a=>`<div style="border-radius:12px;margin:8px 14px 0;overflow:hidden;border:1.5px solid ${RED}"><div style="background:${RED};padding:4px 12px;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase">📌 Avís important</div><div style="background:#fff;padding:10px 14px;font-size:13px;color:#1a1a18;line-height:1.5">${a.text}</div></div>`).join("");
+  if(S.section==="competicio"){
+    const s=S.sessions,r=S.results,km=s.reduce((a,x)=>a+(x.km||0),0),best=r.length?Math.min(...r.map(x=>x.pos)):null;
+    return pinB+renderMeteo()+strow([[s.length,"sessions"],[Math.round(km)+" km","remats"],[best?(POS[best]||best+"è"):"—","millor pos."]])+`<div style="background:linear-gradient(135deg,${RED},#a00020);border-radius:14px;margin:10px 14px 0;padding:14px;display:flex;align-items:center;justify-content:space-between;color:#fff"><div><div style="font-size:10px;font-weight:700;margin-bottom:3px;text-transform:uppercase;opacity:.8">🏁 Propera regata</div><div style="font-size:15px;font-weight:600">Trofeu Costa Brava</div><div style="font-size:11px;opacity:.65;margin-top:2px">31 maig · Palamós</div></div><div style="text-align:right"><div style="font-size:36px;font-weight:700">8</div><div style="font-size:10px;opacity:.6">dies</div></div></div>`+renderCalendar()+`<div style="height:14px"></div>`;
+  }
+  const myGid=S.userGroupId||S.capGroupId||null;
+  const list=S.outings.filter(o=>S.role==="patron"||o.groupId===myGid||o.isOpen).sort((a,b)=>a.date.localeCompare(b.date));
+  const op=S.polls.filter(p=>!p.closed);
+  const pn=op.length?`<div style="background:#eef0fa;border:.5px solid ${DARK};border-radius:10px;margin:10px 14px 0;padding:10px 14px;display:flex;align-items:center;justify-content:space-between"><span style="font-size:13px;color:${DARK}">📊 ${op.length} votació${op.length>1?"ns":""} oberta${op.length>1?"s":""}</span><button onclick="go({screen:'vots'})" style="background:${DARK};border:none;border-radius:8px;color:#fff;font-size:12px;padding:5px 10px;cursor:pointer;font-weight:600">Votar →</button></div>`:"";
+  return pinB+renderMeteo()+pn+(list.length?list.map(o=>renderOutingCard(o)).join(""):cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Cap sortida programada</div>`))+`<div style="height:14px"></div>`;
+}
+
+function renderEntrena(){
+  if(S.section==="competicio"){
+    const sess=S.sessions,km=sess.reduce((a,s)=>a+(s.km||0),0),min=sess.reduce((a,s)=>a+(s.duration||0),0),h=Math.floor(min/60),m2=min%60;
+    const canAdd=S.role==="patron"||S.role==="cap";
+    const form=S.showForm&&canAdd?cc(`${lbl("Nova sessió")}<input id="f-type" placeholder="Tipus *" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px"><input id="f-date" type="date" value="${td()}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px"><div style="display:flex;gap:8px;margin-bottom:12px"><input id="f-dur" type="number" placeholder="Minuts" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"><input id="f-km" type="number" placeholder="km" step=".1" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"></div><div style="display:flex;gap:8px"><button onclick="addSess()" style="flex:1;padding:10px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:14px;cursor:pointer">Desar</button><button onclick="go({showForm:false})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
+    const list=sess.map((s,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:${i<sess.length-1?`.5px solid #f0ede6`:"none"}"><div style="width:8px;height:8px;border-radius:50%;background:${DARK};flex-shrink:0"></div><div style="flex:1"><div style="font-size:13px;font-weight:500;color:#1a1a18">${s.type}</div><div style="font-size:11px;color:${MUTED}">${s.date}${s.duration?` · ${s.duration} min`:""}${s.note?` · ${s.note}`:""}</div></div>${s.km>0?`<div style="font-size:13px;font-weight:600;color:${DARK};margin-right:4px">${s.km} km</div>`:""}${S.role==="patron"?`<button onclick="delSess(${s.id})" style="background:none;border:none;color:${RED};font-size:20px;cursor:pointer;padding:0 4px;line-height:1">×</button>`:""}</div>`).join("");
+    return strow([[Math.round(km)+" km","totals"],[sess.length,"sessions"],[`${h}h${m2>0?" "+m2+"m":""}`,"hores"]])+form+cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">${lbl("Historial")}${canAdd&&!S.showForm?`<button onclick="go({showForm:true})" style="background:${DARK};border:none;border-radius:8px;color:#fff;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600">+ Afegir</button>`:""}</div>${sess.length===0?`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Cap sessió</div>`:list}`)+`<div style="height:14px"></div>`;
+  }
+  const cc2=S.role==="cap"||S.role==="patron";
+  const list=S.outings.filter(o=>S.role==="patron"||o.groupId===S.capGroupId||o.groupId===S.userGroupId||o.isOpen).sort((a,b)=>a.date.localeCompare(b.date));
+  const form=S.showForm&&cc2?cc(`${lbl("Nova sortida")}<input id="o-title" placeholder="Títol *" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px"><div style="display:flex;gap:8px;margin-bottom:8px"><input id="o-date" type="date" value="${td()}" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"><input id="o-time" type="time" value="09:00" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"></div>${S.role==="patron"?`<select id="o-group" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;margin-bottom:8px">${S.groups.map(g=>`<option value="${g.id}">${g.name}</option>`).join("")}</select>`:""}<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:13px;color:${MUTED}">Places:</span><input id="o-cap" type="number" value="8" min="1" max="12" style="width:70px;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"></div><div style="display:flex;gap:8px"><button onclick="addOut()" style="flex:1;padding:10px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:14px;cursor:pointer">Crear</button><button onclick="go({showForm:false})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
+  return(cc2&&!S.showForm?`<div style="margin:12px 14px 0"><button onclick="go({showForm:true})" style="width:100%;padding:11px;background:${DARK};border:none;border-radius:10px;color:#fff;font-weight:600;font-size:14px;cursor:pointer">+ Nova sortida</button></div>`:"")+form+(list.length?list.map(o=>renderOutingCard(o)).join(""):cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Cap sortida programada</div>`))+`<div style="height:14px"></div>`;
+}
+
+function renderResultats(){
+  const res=[...S.results].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  const pts=res.reduce((a,r)=>a+(r.points||0),0),wins=res.filter(r=>r.pos===1).length;
+  const pb=[1,2,3,4,5].map(p=>`<button onclick="go({newPos:${p}})" style="flex:1;padding:7px 4px;border:1px solid ${S.newPos===p?RED:BORDER};border-radius:8px;background:${S.newPos===p?RED:"transparent"};color:${S.newPos===p?"#fff":MUTED};font-weight:600;cursor:pointer;font-size:13px">${POS[p]}${p>3?p:""}${p>3?"è":""}</button>`).join("");
+  const form=S.role==="patron"&&S.showForm?cc(`${lbl("Nova regata")}<input id="r-race" placeholder="Nom *" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px"><div style="display:flex;gap:8px;margin-bottom:8px"><input id="r-date" type="date" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"><input id="r-place" placeholder="Port/Lloc" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"></div><div style="margin-bottom:12px"><div style="font-size:12px;color:${MUTED};margin-bottom:6px">Posició</div><div style="display:flex;gap:6px">${pb}</div></div><div style="display:flex;gap:8px"><button onclick="addRes()" style="flex:1;padding:10px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:14px;cursor:pointer">Desar</button><button onclick="go({showForm:false})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
+  const list=res.map((r,i)=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:${i<res.length-1?".5px solid #f0ede6":"none"}"><div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1a1a18">${r.race}</div><div style="font-size:11px;color:${MUTED}">${r.date}${r.place?` · ${r.place}`:""}${r.points?` · ${r.points} pts`:""}</div></div><div style="display:flex;align-items:center;gap:8px"><span style="font-size:20px;font-weight:700;color:${PCOL[r.pos]||MUTED}">${POS[r.pos]||r.pos+"è"}</span>${S.role==="patron"?`<button onclick="delRes(${r.id})" style="background:none;border:none;color:${RED};font-size:20px;cursor:pointer;padding:0 4px;line-height:1">×</button>`:""}</div></div>`).join("");
+  return strow([[res.length,"regates"],[wins,"victòries"],[pts,"punts"]])+`<div style="background:linear-gradient(135deg,${DARK},#122860);border-radius:14px;margin:10px 14px 0;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;color:#fff"><div><div style="font-size:10px;font-weight:700;text-transform:uppercase;opacity:.7;margin-bottom:2px">Classificació general</div><div style="font-size:14px;font-weight:600">Llop de Mar · SFG</div><div style="font-size:11px;opacity:.5;margin-top:1px">${pts} punts · ${res.length} regates</div></div><div style="font-size:30px;font-weight:700;color:#c8a44a">2n</div></div>`+form+cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">${lbl("Temporada 2026")}${S.role==="patron"&&!S.showForm?`<button onclick="go({showForm:true,newPos:1})" style="background:${RED};border:none;border-radius:8px;color:#fff;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600">+ Afegir</button>`:""}</div>${res.length===0?`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Cap resultat</div>`:list}`)+`<div style="height:14px"></div>`;
+}
+
+function renderVots(){
+  const open=S.polls.filter(p=>!p.closed),cl=S.polls.filter(p=>p.closed);
+  const nO=S.pollOpts.length;
+  const oi=S.pollOpts.map((o,i)=>`<div style="display:flex;gap:8px;margin-bottom:8px"><input id="opt-${i}" placeholder="Opció ${i+1}${i<2?" *":""}" value="${o}" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none">${i>=2?`<button onclick="rmOpt(${i})" style="padding:8px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:16px;cursor:pointer;flex-shrink:0">×</button>`:""}</div>`).join("");
+  const form=S.role==="patron"&&S.showForm?cc(`${lbl("Nova enquesta")}<input id="poll-q" placeholder="Pregunta *" value="${S.pollQ}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:12px">${lbl("Opcions")}${oi}${nO<6?`<button onclick="addOpt()" style="width:100%;padding:8px;background:transparent;border:.5px dashed ${BORDER};border-radius:8px;color:${MUTED};font-size:13px;cursor:pointer;margin-bottom:12px">+ Afegir opció</button>`:"<div style='height:12px'></div>"}<div style="display:flex;gap:8px"><button onclick="createPoll()" style="flex:1;padding:10px;background:${RED};border:none;border-radius:8px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Publicar enquesta</button><button onclick="go({showForm:false,pollQ:'',pollOpts:['','']})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
+  return(S.role==="patron"&&!S.showForm?`<div style="margin:12px 14px 0"><button onclick="go({showForm:true})" style="width:100%;padding:11px;background:${RED};border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">📊 Nova enquesta</button></div>`:"")+form+(open.length?`<div style="margin:12px 14px 4px">${lbl("Votacions obertes")}</div>`+open.map(p=>renderPollCard(p)).join(""):"")+( cl.length?`<div style="margin:12px 14px 4px">${lbl("Tancades")}</div>`+cl.map(p=>renderPollCard(p)).join(""):"")+( S.polls.length===0?cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Cap enquesta</div>`):"")+`<div style="height:14px"></div>`;
+}
+
+function renderAvisos(){
+  const sorted=[...S.avisos].sort((a,b)=>(b.pin?1:0)-(a.pin?1:0)||(b.date||"").localeCompare(a.date||""));
+  const form=S.showAvisForm?cc(`${lbl("Nou avís del patró")}<textarea id="avis-text" placeholder="Escriu el missatge..." style="width:100%;padding:10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;min-height:80px;resize:vertical;margin-bottom:10px"></textarea><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><input type="checkbox" id="avis-pin" style="width:16px;height:16px;accent-color:${RED}"><label for="avis-pin" style="font-size:13px;color:#1a1a18;cursor:pointer">Fixar a dalt (important)</label></div><div style="display:flex;gap:8px"><button onclick="createAvis()" style="flex:1;padding:10px;background:${RED};border:none;border-radius:8px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Publicar</button><button onclick="go({showAvisForm:false})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
+  const cards=sorted.map(a=>`<div style="border-radius:12px;margin:8px 14px 0;overflow:hidden;border:.5px solid ${a.pin?RED:BORDER}">${a.pin?`<div style="background:${RED};padding:4px 12px;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase">📌 Avís important</div>`:`<div style="background:#f5f5f5;padding:4px 12px;font-size:10px;font-weight:600;color:${MUTED};text-transform:uppercase">📢 Avís del patró</div>`}<div style="background:#fff;padding:12px 14px"><div style="font-size:14px;color:#1a1a18;line-height:1.55;margin-bottom:8px">${a.text}</div><div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:11px;color:${MUTED}">⚓ Patró · ${a.date}</span>${S.role==="patron"?`<div style="display:flex;gap:6px"><button onclick="togglePin(${a.id})" style="background:none;border:.5px solid ${BORDER};border-radius:6px;color:${MUTED};font-size:11px;padding:3px 8px;cursor:pointer">${a.pin?"Desfiixar":"📌 Fixar"}</button><button onclick="delAvis(${a.id})" style="background:none;border:.5px solid ${BORDER};border-radius:6px;color:${RED};font-size:11px;padding:3px 8px;cursor:pointer">Eliminar</button></div>`:""}</div></div></div>`).join("");
+  return(S.role==="patron"&&!S.showAvisForm?`<div style="margin:10px 14px 0"><button onclick="go({showAvisForm:true})" style="width:100%;padding:11px;background:${RED};border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">📢 Nou avís per a tothom</button></div>`:"")+form+(sorted.length?cards:cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Cap avís publicat</div>`))+`<div style="height:14px"></div>`;
+}
+
+function renderMembres(){
+  const byG=S.groups.map(g=>({g,ms:S.membres.filter(m=>m.groupId===g.id)})).filter(x=>x.ms.length>0);
+  const form=S.showMembreForm?cc(`${lbl("Nou soci")}<input id="m-nom" placeholder="Nom i cognom *" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px"><select id="m-grup" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;margin-bottom:10px">${S.groups.map(g=>`<option value="${g.id}">${g.name}</option>`).join("")}</select><div style="margin-bottom:12px"><div style="font-size:12px;color:${MUTED};margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Seccions</div><div style="display:flex;gap:8px"><button onclick="togSec('competicio')" style="flex:1;padding:10px;border-radius:8px;border:1.5px solid ${S.membreSections.includes('competicio')?DARK:BORDER};background:${S.membreSections.includes('competicio')?"#eef0fa":"transparent"};color:${S.membreSections.includes('competicio')?DARK:MUTED};font-size:13px;font-weight:600;cursor:pointer">🏆 Competició</button><button onclick="togSec('social')" style="flex:1;padding:10px;border-radius:8px;border:1.5px solid ${S.membreSections.includes('social')?GREEN:BORDER};background:${S.membreSections.includes('social')?"#e6f4ee":"transparent"};color:${S.membreSections.includes('social')?GREEN:MUTED};font-size:13px;font-weight:600;cursor:pointer">⚓ Social</button></div></div><div style="display:flex;gap:8px"><button onclick="addMembre()" style="flex:1;padding:10px;background:${RED};border:none;border-radius:8px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Afegir soci</button><button onclick="go({showMembreForm:false,membreSections:['social']})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
+  const sum=`<div style="display:flex;gap:8px;margin:10px 14px 0"><div style="flex:1;background:#fff;border-radius:12px;padding:10px;border:.5px solid ${BORDER};text-align:center"><div style="font-size:22px;font-weight:700;color:${DARK}">${S.membres.length}</div><div style="font-size:10px;color:${MUTED};margin-top:1px">Socis totals</div></div><div style="flex:1;background:#fff;border-radius:12px;padding:10px;border:.5px solid ${BORDER};text-align:center"><div style="font-size:22px;font-weight:700;color:${DARK}">${S.membres.filter(m=>m.sections.includes("competicio")).length}</div><div style="font-size:10px;color:${MUTED};margin-top:1px">🏆 Competi</div></div><div style="flex:1;background:#fff;border-radius:12px;padding:10px;border:.5px solid ${BORDER};text-align:center"><div style="font-size:22px;font-weight:700;color:${DARK}">${S.membres.filter(m=>m.sections.includes("social")).length}</div><div style="font-size:10px;color:${MUTED};margin-top:1px">⚓ Social</div></div></div>`;
+  const llista=byG.map(({g,ms})=>`<div style="margin-bottom:4px"><div style="font-size:11px;font-weight:600;color:${MUTED};text-transform:uppercase;letter-spacing:.05em;margin:14px 14px 6px">${g.name} · ${ms.length} soci${ms.length!==1?"s":""}</div>${ms.map(m=>`<div style="background:#fff;border-radius:12px;margin:0 14px 6px;padding:12px 14px;border:.5px solid ${BORDER};display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:14px;font-weight:600;color:#1a1a18;margin-bottom:5px">${m.name}</div><div style="display:flex;gap:4px">${secBadge(m.sections)}</div></div><button onclick="delMembre(${m.id})" style="background:none;border:none;color:${RED};font-size:20px;cursor:pointer;padding:0 4px;line-height:1">×</button></div>`).join("")}</div>`).join("");
+  return(!S.showMembreForm?`<div style="margin:10px 14px 0"><button onclick="go({showMembreForm:true})" style="width:100%;padding:11px;background:${RED};border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">+ Afegir soci nou</button></div>`:"")+sum+form+llista+`<div style="height:14px"></div>`;
+}
+
+function render(){
+  const root=document.getElementById("root");
+  if(!S.role||S.loginStep!=="choose"){
+    root.innerHTML=renderLogin();
+    const p=document.getElementById("pin-in");
+    if(p){p.focus();p.onkeydown=e=>{if(e.key==="Enter")tryPin();};}
+    return;
+  }
+  const myGid=S.userGroupId||S.capGroupId;
+  const opc=S.polls.filter(p=>!p.closed).length;
+  const hasBoth=S.role==="patron"||S.role==="cap"||(S.userSections.includes("competicio")&&S.userSections.includes("social"));
+  const hasC=S.role==="patron"||S.role==="cap"||S.userSections.includes("competicio");
+  const hasS=S.role==="patron"||S.role==="cap"||S.userSections.includes("social");
+  const nav=[["inici","🏠","Inici"],["entrena",S.section==="social"?"⛵":"🚣",S.section==="social"?"Sortides":"Entrena"],["resultats","🏆","Resultats"],["vots","📊","Vots"],S.role==="patron"?["membres","👥","Membres"]:["avisos","📢","Avisos"]];
+  const screens={inici:renderInici,entrena:renderEntrena,resultats:renderResultats,vots:renderVots,membres:renderMembres,avisos:renderAvisos};
+  const titles={inici:"Inici",entrena:S.section==="social"?"Sortides":"Entrenaments",resultats:"Resultats",vots:"Votacions",membres:"Membres",avisos:"Avisos"};
+  const rb=S.role==="patron"?`<span style="background:${RED};color:#fff;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700">PATRÓ</span>`:S.role==="cap"?`<span style="background:rgba(255,255,255,.15);color:#fff;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">${gname(S.capGroupId)}</span>`:myGid?`<span style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.8);font-size:10px;padding:2px 8px;border-radius:20px">${S.userName}</span>`:"";
+  const st=hasBoth&&S.screen!=="vots"&&S.screen!=="membres"&&S.screen!=="avisos"?`<div style="display:flex;margin:12px 14px 0;background:#e2dfd6;border-radius:10px;padding:3px">${hasC?`<button onclick="go({section:'competicio',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="competicio"?DARK:"transparent"};color:${S.section==="competicio"?"#fff":MUTED}">🏆 Competició</button>":""}${hasS?`<button onclick="go({section:'social',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="social"?DARK:"transparent"};color:${S.section==="social"?"#fff":MUTED}">⚓ Social</button>`:""}</div>`:"";
+  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED}">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700">${titles[S.screen]||"Inici"}</div></div></div><div style="display:flex;align-items:center;gap:8px">${rb}<button onclick="go({role:null,loginStep:'choose',showForm:false,showAvisForm:false,showMembreForm:false,userName:'',userGroupId:null,userSections:[],memberId:null,pollQ:'',pollOpts:['','']})" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb])=>`<button onclick="go({screen:'${k}',showForm:false,showAvisForm:false,showMembreForm:false})" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${S.screen===k?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${S.screen===k?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}</button>`).join("")}</div>`;
+}
+
+// Actions
+function togSec(sec){const s=S.membreSections.includes(sec)?S.membreSections.filter(x=>x!==sec):[...S.membreSections,sec];go({membreSections:s});}
+function addMembre(){const n=document.getElementById("m-nom")?.value?.trim()||"";if(!n||!S.membreSections.length)return;const gid=parseInt(document.getElementById("m-grup")?.value)||S.groups[0]?.id;S.membres.push({id:Date.now(),name:n,groupId:gid,sections:[...S.membreSections]});save("membres");go({showMembreForm:false,membreSections:["social"]});}
+function delMembre(id){S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
+function signup(oid){const o=S.outings.find(x=>x.id===oid);if(!o||o.signups.length>=o.capacity||o.signups.some(s=>s.name===S.userName&&s.gid===S.userGroupId))return;o.signups.push({name:S.userName,gid:S.userGroupId});save("outings");render();}
+function unsignup(oid){const o=S.outings.find(x=>x.id===oid);if(!o)return;o.signups=o.signups.filter(s=>!(s.name===S.userName&&s.gid===S.userGroupId));save("outings");render();}
+function openOut(oid){const o=S.outings.find(x=>x.id===oid);if(o){o.isOpen=true;save("outings");render();}}
+function delOut(oid){S.outings=S.outings.filter(o=>o.id!==oid);save("outings");render();}
+function addOut(){const t=document.getElementById("o-title")?.value?.trim();if(!t)return;const d=document.getElementById("o-date")?.value||td();const tm=document.getElementById("o-time")?.value||"09:00";const gid=S.role==="patron"?parseInt(document.getElementById("o-group")?.value||S.groups[0]?.id):S.capGroupId;const cap=parseInt(document.getElementById("o-cap")?.value)||8;S.outings.push({id:Date.now(),groupId:gid,title:t,date:d,time:tm,capacity:cap,isOpen:false,signups:[]});save("outings");go({showForm:false});}
+function addSess(){const t=document.getElementById("f-type")?.value||"";if(!t)return;S.sessions.unshift({id:Date.now(),type:t,date:document.getElementById("f-date")?.value||"",duration:parseInt(document.getElementById("f-dur")?.value)||0,km:parseFloat(document.getElementById("f-km")?.value)||0,section:"competicio",note:""});save("sessions");go({showForm:false});}
+function delSess(id){S.sessions=S.sessions.filter(s=>s.id!==id);save("sessions");render();}
+function addRes(){const r=document.getElementById("r-race")?.value||"";if(!r)return;S.results.unshift({id:Date.now(),race:r,date:document.getElementById("r-date")?.value||"",place:document.getElementById("r-place")?.value||"",pos:S.newPos,points:PTS[S.newPos]||10});save("results");go({showForm:false,newPos:1});}
+function delRes(id){S.results=S.results.filter(r=>r.id!==id);save("results");render();}
+function createAvis(){const t=document.getElementById("avis-text")?.value?.trim()||"";if(!t)return;const pin=document.getElementById("avis-pin")?.checked||false;S.avisos.unshift({id:Date.now(),text:t,date:td(),pin});save("avisos");go({showAvisForm:false});}
+function delAvis(id){S.avisos=S.avisos.filter(a=>a.id!==id);save("avisos");render();}
+function togglePin(id){const a=S.avisos.find(x=>x.id===id);if(a){a.pin=!a.pin;save("avisos");render();}}
+function addOpt(){go({pollOpts:[...S.pollOpts,""]});}
+function rmOpt(i){go({pollOpts:S.pollOpts.filter((_,j)=>j!==i)});}
+function createPoll(){const q=document.getElementById("poll-q")?.value?.trim()||"";if(!q)return;const opts=S.pollOpts.map((_,i)=>document.getElementById(`opt-${i}`)?.value?.trim()||"").filter(Boolean);if(opts.length<2)return;const votes={};opts.forEach(o=>votes[o]=[]);S.polls.unshift({id:Date.now(),question:q,options:opts,votes,closed:false,date:td()});save("polls");go({showForm:false,pollQ:"",pollOpts:["",""]});}
+function castVote(pid,opt,name){const p=S.polls.find(x=>x.id===pid);if(!p||p.closed||!name)return;p.options.forEach(o=>{p.votes[o]=p.votes[o].filter(n=>n!==name);});if(!p.votes[opt])p.votes[opt]=[];p.votes[opt].push(name);save("polls");render();}
+function closePoll(pid){const p=S.polls.find(x=>x.id===pid);if(p){p.closed=true;save("polls");render();}}
+function delPoll(pid){S.polls=S.polls.filter(p=>p.id!==pid);save("polls");render();}
+
+// ── Inicialització amb Supabase ───────────────────────────────────────────────
+async function initApp(){
+  // Pantalla de càrrega
+  document.getElementById("root").innerHTML=`<div style="min-height:100vh;background:linear-gradient(160deg,${DARK} 60%,#122860);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px"><div style="display:inline-flex;align-items:center;justify-content:center;background:#fff;border-radius:50%;width:80px;height:80px;border:3px solid ${RED}">${emblema}</div><div style="color:rgba(255,255,255,.6);font-size:14px;letter-spacing:.05em">Carregant dades del club...</div><div style="width:40px;height:3px;background:rgba(255,255,255,.15);border-radius:2px;overflow:hidden"><div id="ldg-bar" style="height:100%;width:0%;background:${RED};border-radius:2px;transition:width .4s ease"></div></div></div>`;
+  const bar=document.getElementById("ldg-bar");
+  if(bar)bar.style.width="30%";
+
+  try{
+    const {data,error}=await supa
+      .from("app_data")
+      .select("key,value")
+      .in("key",SUPA_KEYS.map(k=>"ldm:"+k));
+
+    if(bar)bar.style.width="80%";
+
+    if(!error&&data&&data.length){
+      const map={};
+      data.forEach(r=>{map[r.key]=r.value;});
+      // Sobreescriu les dades locals amb les de Supabase (font de veritat compartida)
+      if(map["ldm:groups"])  {S.groups=map["ldm:groups"];   store.set("ldm:groups",  S.groups);}
+      if(map["ldm:membres"]) {S.membres=map["ldm:membres"]; store.set("ldm:membres", S.membres);}
+      if(map["ldm:avisos"])  {S.avisos=map["ldm:avisos"];   store.set("ldm:avisos",  S.avisos);}
+      if(map["ldm:outings"]) {S.outings=map["ldm:outings"]; store.set("ldm:outings", S.outings);}
+      if(map["ldm:sessions"]){S.sessions=map["ldm:sessions"];store.set("ldm:sessions",S.sessions);}
+      if(map["ldm:results"]) {S.results=map["ldm:results"]; store.set("ldm:results", S.results);}
+      if(map["ldm:polls"])   {S.polls=map["ldm:polls"];     store.set("ldm:polls",   S.polls);}
+      console.log("✅ Dades carregades de Supabase ("+data.length+" claus)");
+    } else if(error){
+      console.warn("⚠️ Error Supabase, usant dades locals:",error.message);
+    } else {
+      console.log("ℹ️ Supabase buit, usant dades per defecte (primera vegada)");
+    }
+  }catch(e){
+    console.warn("⚠️ Supabase no disponible, mode offline:",e.message);
+  }
+
+  if(bar)bar.style.width="100%";
+  await new Promise(r=>setTimeout(r,200)); // petit delay per veure la barra completa
+  fetchMeteo();
+  render();
+}
+
+initApp();
+</script>
+</body>
+</html>

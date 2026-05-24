@@ -123,7 +123,7 @@ let S={
   selectedMemberId:null,   // id del membre seleccionat al pas soci-list
   regErr:"",regSections:["social"],  // estat del formulari de registre
   screen:"inici",section:"competicio",
-  showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,showOutingHistory:false,avisFilter:"all",
+  showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,showOutingHistory:false,avisFilter:"all",pollVotersOpen:{},
   membreSections:["social"],
   newPos:1,calMonth:new Date().getMonth(),calYear:new Date().getFullYear(),
   pollQ:"",pollOpts:["",""],
@@ -171,7 +171,7 @@ function doLogout(force=false){
   store.set("ldm:session",null);
   go({role:null,loginStep:"choose",pinErr:false,pinErrMsg:"",memberId:null,userName:"",
       userGroupId:null,userSections:[],capGroupId:null,selectedMemberId:null,
-      showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,showOutingHistory:false,avisFilter:"all",pollQ:"",pollOpts:["",""]});
+      showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,showOutingHistory:false,avisFilter:"all",pollVotersOpen:{},pollQ:"",pollOpts:["",""]});
 }
 
 function fetchMeteo(){
@@ -185,6 +185,9 @@ const strow=items=>`<div style="display:flex;gap:8px;margin:10px 14px 0">${items
 const gname=id=>S.groups.find(g=>g.id===id)?.name||"—";
 const td=()=>isoDate(new Date());
 const secBadge=secs=>{const c=[];if(secs.includes("competicio"))c.push(`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600">🏆</span>`);if(secs.includes("social"))c.push(`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600">⚓</span>`);return c.join(" ");};
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+const jsArg=v=>JSON.stringify(String(v??"")).replace(/</g,"\\u003c").replace(/>/g,"\\u003e");
+const pollKey=(pid,opt)=>pid+":"+encodeURIComponent(opt);
 
 
 // ── Fase 3: avisos personals + historial de sortides ─────────────────────────
@@ -484,22 +487,49 @@ function renderOutingCard(o){
   </div>`;
 }
 
-function getUserVote(p){if(!S.userName)return null;for(const o of p.options){if(p.votes[o]?.includes(S.userName))return o;}return null;}
+function getUserVote(p){
+  if(!S.userName)return null;
+  for(const o of p.options){if((p.votes[o]||[]).includes(S.userName))return o;}
+  return null;
+}
 
 function renderPollCard(p){
-  const mv=getUserVote(p),tot=Object.values(p.votes).reduce((a,v)=>a+v.length,0);
-  const win=p.closed?p.options.reduce((a,b)=>p.votes[b].length>p.votes[a].length?b:a,p.options[0]):null;
-  const canV=!p.closed&&!mv&&S.userName,showR=p.closed||!!mv;
+  p.votes=p.votes||{};
+  p.options=(p.options||[]).filter(Boolean);
+  p.options.forEach(o=>{if(!Array.isArray(p.votes[o]))p.votes[o]=[];});
+  const mv=getUserVote(p);
+  const tot=p.options.reduce((a,o)=>a+(p.votes[o]?.length||0),0);
+  const win=p.closed&&p.options.length?p.options.reduce((a,b)=>(p.votes[b]?.length||0)>(p.votes[a]?.length||0)?b:a,p.options[0]):null;
+  const canVote=!p.closed&&!!S.userName;
   const rows=p.options.map(opt=>{
-    const cnt=p.votes[opt]?.length||0,pct=tot>0?Math.round((cnt/tot)*100):0;
+    const voters=p.votes[opt]||[];
+    const cnt=voters.length;
+    const pct=tot>0?Math.round((cnt/tot)*100):0;
     const isW=win===opt,isMy=mv===opt;
-    if(canV)return`<button onclick="castVote(${p.id},'${opt.replace(/'/g,"\'")}','${S.userName.replace(/'/g,"\'")}' )" style="width:100%;padding:10px 12px;background:${isMy?"#eef0fa":"#f8f9ff"};border:1.5px solid ${isMy?DARK:BORDER};border-radius:10px;cursor:pointer;text-align:left;font-size:13px;color:#1a1a18;margin-bottom:6px;font-weight:${isMy?600:400}">${opt}</button>`;
-    if(showR)return`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:13px;font-weight:${isMy||isW?600:400};color:${isW?RED:(isMy?DARK:"#1a1a18")}">${isW&&p.closed?"🏆 ":""}${opt}${isMy?" ✓":""}</span><span style="font-size:12px;font-weight:600;color:${isW?RED:MUTED}">${cnt} · ${pct}%</span></div><div style="background:#f0ede8;border-radius:20px;height:8px"><div style="background:${isW?RED:(isMy?DARK:"#c8d4f0")};height:8px;border-radius:20px;width:${pct}%"></div></div></div>`;
-    return`<div style="padding:10px 12px;background:#f8f9ff;border:1px solid ${BORDER};border-radius:10px;font-size:13px;color:#1a1a18;margin-bottom:6px">${opt}</div>`;
+    const key=pollKey(p.id,opt);
+    const open=!!(S.pollVotersOpen&&S.pollVotersOpen[key]);
+    const barCol=isW?RED:(isMy?DARK:"#c8d4f0");
+    const voteAction=canVote?`onclick="castVote(${p.id},${jsArg(opt)},${jsArg(S.userName)})"`:"";
+    const voterList=open?`<div style="margin-top:8px;padding:8px 10px;background:#faf8f3;border-radius:10px;border:.5px solid #f0ede6"><div style="font-size:10px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Votants</div>${voters.length?voters.map(n=>`<span style="display:inline-block;background:#fff;border:.5px solid ${BORDER};border-radius:20px;font-size:11px;padding:3px 8px;margin:2px;color:#1a1a18">${esc(n)}</span>`).join(""):`<div style="font-size:12px;color:${MUTED};font-style:italic">Encara no hi ha cap vot</div>`}</div>`:"";
+    return`<div style="margin-bottom:9px;padding:10px 10px 9px;background:${isMy?"#eef0fa":"#f8f9ff"};border:1.5px solid ${isMy?DARK:BORDER};border-radius:12px;${canVote?"cursor:pointer":""}" ${voteAction}>
+      <div style="display:flex;align-items:flex-start;gap:9px">
+        <div style="width:18px;height:18px;border-radius:50%;border:1.5px solid ${isMy?DARK:BORDER};background:${isMy?DARK:"#fff"};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;margin-top:1px">${isMy?"✓":""}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:6px">
+            <div style="font-size:13px;font-weight:${isMy||isW?700:500};color:${isW?RED:(isMy?DARK:"#1a1a18")};line-height:1.35;word-break:break-word">${isW&&p.closed?"🏆 ":""}${esc(opt)}</div>
+            <div style="font-size:12px;font-weight:700;color:${isW?RED:DARK};white-space:nowrap">${cnt} · ${pct}%</div>
+          </div>
+          <div style="background:#f0ede8;border-radius:20px;height:8px;overflow:hidden"><div style="background:${barCol};height:8px;border-radius:20px;width:${pct}%"></div></div>
+          <button onclick="event.stopPropagation();togglePollVoters(${p.id},${jsArg(opt)})" style="margin-top:7px;background:transparent;border:none;color:${DARK};font-size:11px;font-weight:700;cursor:pointer;padding:0">${open?"Amagar votants":"Veure votants"} · ${cnt}</button>
+          ${voterList}
+        </div>
+      </div>
+    </div>`;
   }).join("");
   const sb=p.closed?`<span style="background:#fff0f0;color:${RED};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">Tancada</span>`:`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">Oberta</span>`;
   const pa=S.role==="patron"?`<div style="display:flex;gap:8px;padding:10px 14px;border-top:.5px solid #f5f3ee">${!p.closed?`<button onclick="closePoll(${p.id})" style="flex:1;padding:8px;background:transparent;border:.5px solid ${RED};border-radius:8px;color:${RED};font-size:12px;cursor:pointer;font-weight:600">Tancar votació</button>`:""}<button onclick="delPoll(${p.id})" style="padding:8px 12px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button></div>`:"";
-  return`<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden"><div style="padding:12px 14px 0"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;gap:8px"><div style="font-size:14px;font-weight:600;color:#1a1a18;flex:1">${p.question}</div>${sb}</div><div style="font-size:11px;color:${MUTED};margin-bottom:12px">${tot} vots · ${p.date}</div>${rows}${mv&&!p.closed?`<div style="font-size:11px;color:${MUTED};margin-top:4px;margin-bottom:12px">Has votat: <strong>${mv}</strong></div>`:`<div style="height:12px"></div>`}</div>${pa}</div>`;
+  const hint=!p.closed&&S.userName?`<div style="font-size:11px;color:${MUTED};margin-bottom:10px">Pots tocar una opció per votar o canviar el vot. Els vots són visibles per a tothom.</div>`:"";
+  return`<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden"><div style="padding:12px 14px 0"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;gap:8px"><div style="font-size:14px;font-weight:700;color:#1a1a18;flex:1;line-height:1.35">${esc(p.question)}</div>${sb}</div><div style="font-size:11px;color:${MUTED};margin-bottom:8px">${tot} vot${tot!==1?"s":""} · ${esc(p.date||"")}</div>${hint}${rows}${mv&&!p.closed?`<div style="font-size:11px;color:${MUTED};margin-top:2px;margin-bottom:12px">Has votat: <strong>${esc(mv)}</strong></div>`:`<div style="height:12px"></div>`}</div>${pa}</div>`;
 }
 
 // ── Pantalles principals ────────────────────────────────────────────────────────
@@ -550,8 +580,8 @@ function renderResultats(){
 function renderVots(){
   const open=S.polls.filter(p=>!p.closed),cl=S.polls.filter(p=>p.closed);
   const nO=S.pollOpts.length;
-  const oi=S.pollOpts.map((o,i)=>`<div style="display:flex;gap:8px;margin-bottom:8px"><input id="opt-${i}" placeholder="Opció ${i+1}${i<2?" *":""}" value="${o}" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none">${i>=2?`<button onclick="rmOpt(${i})" style="padding:8px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:16px;cursor:pointer;flex-shrink:0">×</button>`:""}</div>`).join("");
-  const form=S.role==="patron"&&S.showForm?cc(`${lbl("Nova enquesta")}<input id="poll-q" placeholder="Pregunta *" value="${S.pollQ}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:12px">${lbl("Opcions")}${oi}${nO<6?`<button onclick="addOpt()" style="width:100%;padding:8px;background:transparent;border:.5px dashed ${BORDER};border-radius:8px;color:${MUTED};font-size:13px;cursor:pointer;margin-bottom:12px">+ Afegir opció</button>`:"<div style='height:12px'></div>"}<div style="display:flex;gap:8px"><button onclick="createPoll()" style="flex:1;padding:10px;background:${RED};border:none;border-radius:8px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Publicar enquesta</button><button onclick="go({showForm:false,pollQ:'',pollOpts:['','']})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
+  const oi=S.pollOpts.map((o,i)=>`<div style="display:flex;gap:8px;margin-bottom:8px"><input id="opt-${i}" placeholder="Opció ${i+1}${i<2?" *":""}" value="${esc(o)}" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none">${i>=2?`<button onclick="rmOpt(${i})" style="padding:8px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:16px;cursor:pointer;flex-shrink:0">×</button>`:""}</div>`).join("");
+  const form=S.role==="patron"&&S.showForm?cc(`${lbl("Nova enquesta")}<input id="poll-q" placeholder="Pregunta *" value="${esc(S.pollQ)}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:12px">${lbl("Opcions")}${oi}${nO<6?`<button onclick="addOpt()" style="width:100%;padding:8px;background:transparent;border:.5px dashed ${BORDER};border-radius:8px;color:${MUTED};font-size:13px;cursor:pointer;margin-bottom:12px">+ Afegir opció</button>`:"<div style='height:12px'></div>"}<div style="display:flex;gap:8px"><button onclick="createPoll()" style="flex:1;padding:10px;background:${RED};border:none;border-radius:8px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Publicar enquesta</button><button onclick="go({showForm:false,pollQ:'',pollOpts:['','']})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
   return(S.role==="patron"&&!S.showForm?`<div style="margin:12px 14px 0"><button onclick="go({showForm:true})" style="width:100%;padding:11px;background:${RED};border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">📊 Nova enquesta</button></div>`:"")+form+(open.length?`<div style="margin:12px 14px 4px">${lbl("Votacions obertes")}</div>`+open.map(p=>renderPollCard(p)).join(""):"")+( cl.length?`<div style="margin:12px 14px 4px">${lbl("Tancades")}</div>`+cl.map(p=>renderPollCard(p)).join(""):"")+( S.polls.length===0?cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Cap enquesta</div>`):"")+`<div style="height:14px"></div>`;
 }
 
@@ -820,8 +850,9 @@ function delAvis(id){S.avisos=S.avisos.filter(a=>a.id!==id);save("avisos");rende
 function togglePin(id){const a=S.avisos.find(x=>x.id===id);if(a){a.pin=!a.pin;save("avisos");render();}}
 function addOpt(){go({pollOpts:[...S.pollOpts,""]});}
 function rmOpt(i){go({pollOpts:S.pollOpts.filter((_,j)=>j!==i)});}
+function togglePollVoters(pid,opt){const key=pollKey(pid,opt);const open=Object.assign({},S.pollVotersOpen||{});open[key]=!open[key];go({pollVotersOpen:open});}
 function createPoll(){const q=document.getElementById("poll-q")?.value?.trim()||"";if(!q)return;const opts=S.pollOpts.map((_,i)=>document.getElementById(`opt-${i}`)?.value?.trim()||"").filter(Boolean);if(opts.length<2)return;const votes={};opts.forEach(o=>votes[o]=[]);S.polls.unshift({id:Date.now(),question:q,options:opts,votes,closed:false,date:td()});save("polls");go({showForm:false,pollQ:"",pollOpts:["",""]});}
-function castVote(pid,opt,name){const p=S.polls.find(x=>x.id===pid);if(!p||p.closed||!name)return;p.options.forEach(o=>{p.votes[o]=p.votes[o].filter(n=>n!==name);});if(!p.votes[opt])p.votes[opt]=[];p.votes[opt].push(name);save("polls");render();}
+function castVote(pid,opt,name){const p=S.polls.find(x=>x.id===pid);name=name||S.userName;if(!p||p.closed||!name)return;p.votes=p.votes||{};p.options.forEach(o=>{if(!Array.isArray(p.votes[o]))p.votes[o]=[];p.votes[o]=p.votes[o].filter(n=>n!==name);});if(!p.votes[opt])p.votes[opt]=[];p.votes[opt].push(name);save("polls");render();}
 function closePoll(pid){const p=S.polls.find(x=>x.id===pid);if(p){p.closed=true;save("polls");render();}}
 function delPoll(pid){S.polls=S.polls.filter(p=>p.id!==pid);save("polls");render();}
 

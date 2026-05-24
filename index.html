@@ -123,7 +123,7 @@ let S={
   selectedMemberId:null,   // id del membre seleccionat al pas soci-list
   regErr:"",regSections:["social"],  // estat del formulari de registre
   screen:"inici",section:"competicio",
-  showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,showOutingHistory:false,outingHistoryPage:0,avisFilter:"all",avisLogPage:0,pollVotersOpen:{},
+  showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,showMemberAdded:false,memberAdded:null,showOutingHistory:false,outingHistoryPage:0,avisFilter:"all",avisLogPage:0,pollVotersOpen:{},
   membreSections:["social"],
   newPos:1,calMonth:new Date().getMonth(),calYear:new Date().getFullYear(),
   pollQ:"",pollOpts:["",""],
@@ -171,7 +171,7 @@ function doLogout(force=false){
   store.set("ldm:session",null);
   go({role:null,loginStep:"choose",pinErr:false,pinErrMsg:"",memberId:null,userName:"",
       userGroupId:null,userSections:[],capGroupId:null,selectedMemberId:null,
-      showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,showOutingHistory:false,outingHistoryPage:0,avisFilter:"all",avisLogPage:0,pollVotersOpen:{},pollQ:"",pollOpts:["",""]});
+      showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,showMemberAdded:false,memberAdded:null,showOutingHistory:false,outingHistoryPage:0,avisFilter:"all",avisLogPage:0,pollVotersOpen:{},pollQ:"",pollOpts:["",""]});
 }
 
 function fetchMeteo(){
@@ -819,6 +819,28 @@ function renderLogoutModal(){
   </div>`;
 }
 
+function renderMemberAddedModal(){
+  const m=S.memberAdded||{};
+  const name=esc(m.name||"Nou soci");
+  const group=esc(m.groupName||"");
+  const sections=normalizeSections(m.sections||["social"]);
+  return `<div onclick="go({showMemberAdded:false,memberAdded:null})" style="position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px">
+    <div onclick="event.stopPropagation()" style="width:100%;max-width:340px;background:#fff;border-radius:18px;border:.5px solid ${BORDER};box-shadow:0 18px 50px rgba(0,0,0,.25);overflow:hidden">
+      <div style="padding:22px 18px 16px;text-align:center">
+        <div style="width:58px;height:58px;border-radius:50%;background:#e6f4ee;color:${GREEN};display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 12px">✓</div>
+        <div style="font-size:19px;font-weight:800;color:#1a1a18;margin-bottom:6px">Soci afegit</div>
+        <div style="font-size:15px;font-weight:700;color:${DARK};margin-bottom:5px">${name}</div>
+        <div style="font-size:12px;color:${MUTED};line-height:1.5">${group?group+"<br>":""}${secBadge(sections)}</div>
+        <div style="background:#f8f6f1;border-radius:12px;padding:10px 12px;margin-top:14px;font-size:12px;color:${MUTED};line-height:1.45">Quan entri per primera vegada, podrà crear la seva clau d’accés.</div>
+      </div>
+      <div style="padding:0 14px 14px">
+        <button onclick="go({showMemberAdded:false,memberAdded:null})" style="width:100%;padding:11px;background:${DARK};border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer">D’acord</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+
 // ── Render principal ────────────────────────────────────────────────────────────
 function render(){
   const root=document.getElementById("root");
@@ -863,12 +885,12 @@ function render(){
   const btnC=hasC?`<button onclick="go({section:'competicio',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="competicio"?DARK:"transparent"};color:${S.section==="competicio"?"#fff":MUTED}">🏆 Competició</button>`:"";
   const btnS=hasS?`<button onclick="go({section:'social',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="social"?DARK:"transparent"};color:${S.section==="social"?"#fff":MUTED}">⚓ Social</button>`:"";
   const st=hasBoth&&S.screen!=="vots"&&S.screen!=="estadistiques"&&S.screen!=="membres"&&S.screen!=="avisos"?`<div style="display:flex;margin:12px 14px 0;background:#e2dfd6;border-radius:10px;padding:3px">${btnC}${btnS}</div>`:"";
-  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:11px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${userSub}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,showMembreForm:false,showOutingHistory:false})`:`go({screen:'${k}',showForm:false,showAvisForm:false,showMembreForm:false,showOutingHistory:false})`;return`<button onclick="${clk}" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${S.showLogoutConfirm?renderLogoutModal():""}`;
+  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:11px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${userSub}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,showMembreForm:false,showOutingHistory:false})`:`go({screen:'${k}',showForm:false,showAvisForm:false,showMembreForm:false,showOutingHistory:false})`;return`<button onclick="${clk}" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${S.showLogoutConfirm?renderLogoutModal():""}${S.showMemberAdded?renderMemberAddedModal():""}`;
 }
 
 // ── Accions generals ────────────────────────────────────────────────────────────
 function togSec(sec){const s=S.membreSections.includes(sec)?S.membreSections.filter(x=>x!==sec):[...S.membreSections,sec];go({membreSections:normalizeSections(s)});}
-function addMembre(){if(S.role!=="patron")return;const n=document.getElementById("m-nom")?.value?.trim()||"";if(!n||!S.membreSections.length)return;const gid=parseInt(document.getElementById("m-grup")?.value)||S.groups[0]?.id;S.membres.push({id:Date.now(),name:n,groupId:gid,sections:normalizeSections(S.membreSections),pin:null,isCap:false,pending:false});save("membres");go({showMembreForm:false,membreSections:["social"]});}
+function addMembre(){if(S.role!=="patron")return;const n=document.getElementById("m-nom")?.value?.trim()||"";if(!n||!S.membreSections.length)return;const gid=parseInt(document.getElementById("m-grup")?.value)||S.groups[0]?.id;const sections=normalizeSections(S.membreSections);const nou={id:Date.now(),name:n,groupId:gid,sections,pin:null,isCap:false,pending:false};S.membres.push(nou);save("membres");go({showMembreForm:false,membreSections:["social"],showMemberAdded:true,memberAdded:{name:n,groupName:gname(gid),sections}});}
 function delMembre(id){if(S.role!=="patron")return;if(!confirm("Eliminar el soci?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
 function signup(oid){
   const o=S.outings.find(x=>x.id===oid);

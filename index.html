@@ -16,6 +16,7 @@ input, button, textarea, select { font-family: inherit; }
 <body>
 <div id="app"><div id="root"></div></div>
 <script>
+
 // ── Seguretat bàsica ─────────────────────────────────────────────────────────
 // Nota: en una app 100% client-side això no substitueix una autenticació real de servidor,
 // però evita guardar claus en text pla a localStorage/Supabase.
@@ -122,7 +123,7 @@ let S={
   selectedMemberId:null,   // id del membre seleccionat al pas soci-list
   regErr:"",regSections:["social"],  // estat del formulari de registre
   screen:"inici",section:"competicio",
-  showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,
+  showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,showOutingHistory:false,avisFilter:"all",
   membreSections:["social"],
   newPos:1,calMonth:new Date().getMonth(),calYear:new Date().getFullYear(),
   pollQ:"",pollOpts:["",""],
@@ -170,7 +171,7 @@ function doLogout(force=false){
   store.set("ldm:session",null);
   go({role:null,loginStep:"choose",pinErr:false,pinErrMsg:"",memberId:null,userName:"",
       userGroupId:null,userSections:[],capGroupId:null,selectedMemberId:null,
-      showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,pollQ:"",pollOpts:["",""]});
+      showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,showOutingHistory:false,avisFilter:"all",pollQ:"",pollOpts:["",""]});
 }
 
 function fetchMeteo(){
@@ -182,7 +183,7 @@ const cc=(h,x="")=>`<div style="background:#fff;border-radius:14px;margin:10px 1
 const lbl=t=>`<div style="font-size:11px;font-weight:600;color:${MUTED};text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">${t}</div>`;
 const strow=items=>`<div style="display:flex;gap:8px;margin:10px 14px 0">${items.map(([v,l])=>`<div style="flex:1;background:#fff;border-radius:12px;padding:10px;border:.5px solid ${BORDER};text-align:center"><div style="font-size:20px;font-weight:700;color:${DARK}">${v}</div><div style="font-size:10px;color:${MUTED};margin-top:1px">${l}</div></div>`).join("")}</div>`;
 const gname=id=>S.groups.find(g=>g.id===id)?.name||"—";
-const td=()=>new Date().toISOString().split("T")[0];
+const td=()=>isoDate(new Date());
 const secBadge=secs=>{const c=[];if(secs.includes("competicio"))c.push(`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600">🏆</span>`);if(secs.includes("social"))c.push(`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600">⚓</span>`);return c.join(" ");};
 
 
@@ -214,6 +215,27 @@ function unreadAvisosCount(){
   return S.avisos.filter(a=>a.kind==="personal"&&!a.read&&canSeeAvis(a)).length;
 }
 function markAvisRead(id){const a=S.avisos.find(x=>x.id===id);if(a&&a.kind==="personal"&&canSeeAvis(a)){a.read=true;save("avisos");render();}}
+function markAllAvisRead(){
+  let changed=false;
+  S.avisos.forEach(a=>{if(a.kind==="personal"&&!a.read&&canSeeAvis(a)){a.read=true;changed=true;}});
+  if(changed)save("avisos");
+  render();
+}
+function todayStr(){return isoDate(new Date());}
+function isPastOuting(o){return (o.date||"")<todayStr();}
+function sortOutings(a,b){return (a.date||"").localeCompare(b.date||"")||(a.time||"").localeCompare(b.time||"");}
+function memberIsInOuting(o,name=S.userName,gid=S.userGroupId){
+  return safeArr(o.signups).some(s=>s.name===name&&s.gid===gid)||safeArr(o.waitlist).some(s=>s.name===name&&s.gid===gid);
+}
+function canSeeOuting(o){
+  if(S.role==="patron")return true;
+  if(S.role==="cap")return o.groupId===S.capGroupId||o.isOpen;
+  if(S.role==="soci")return o.groupId===S.userGroupId||o.isOpen||memberIsInOuting(o);
+  return false;
+}
+function visibleOutings(){return S.outings.filter(canSeeOuting);}
+function occupancyPct(o){return o.capacity?Math.round((safeArr(o.signups).length/o.capacity)*100):0;}
+
 
 // ── Login ─────────────────────────────────────────────────────────────────────
 function renderLogin(){
@@ -383,7 +405,8 @@ async function submitRegister(){
 // ── Accions del panell de membres ──────────────────────────────────────────────
 function approvePending(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m){m.sections=normalizeSections(m.sections);m.pending=false;save("membres");render();}}
 function rejectPending(id){if(S.role!=="patron")return;if(!confirm("Rebutjar la sol·licitud?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
-function resetMemberPin(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m&&confirm("Reset de clau de "+m.name+"?\nHaurà de crear una nova clau al proper accés.")){m.pin=null;save("membres");render();}}
+function resetMemberPin(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m&&confirm("Reset de clau de "+m.name+"?
+Haurà de crear una nova clau al proper accés.")){m.pin=null;save("membres");render();}}
 function toggleIsCap(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m){m.isCap=!m.isCap;save("membres");render();}}
 
 function fetchMeteo(){
@@ -422,16 +445,16 @@ function renderCalendar(){
 function renderOutingCard(o){
   const grp=S.groups.find(g=>g.id===o.groupId);
   if(!o.waitlist)o.waitlist=[];
-  const total=o.signups.length,pct=Math.round((total/o.capacity)*100),isFull=total>=o.capacity;
+  const total=o.signups.length,pct=Math.min(100,Math.round((total/o.capacity)*100)),isFull=total>=o.capacity,isPast=isPastOuting(o);
   const prefList=o.signups.filter(s=>s.gid===o.groupId),openList=o.signups.filter(s=>s.gid!==o.groupId);
   const isMyGroup=S.userGroupId===o.groupId||S.capGroupId===o.groupId;
   const isMyCap=S.role==="cap"&&S.capGroupId===o.groupId,isPatron=S.role==="patron";
   const amIn=S.role==="soci"&&o.signups.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
   const amInWait=S.role==="soci"&&o.waitlist.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
   const canAccess=isMyGroup||o.isOpen;
-  const canJoin=S.role==="soci"&&!amIn&&!amInWait&&!isFull&&canAccess;
-  const canWait=S.role==="soci"&&!amIn&&!amInWait&&isFull&&canAccess;
-  const cantAccess=S.role==="soci"&&!amIn&&!amInWait&&!isMyGroup&&!o.isOpen;
+  const canJoin=S.role==="soci"&&!isPast&&!amIn&&!amInWait&&!isFull&&canAccess;
+  const canWait=S.role==="soci"&&!isPast&&!amIn&&!amInWait&&isFull&&canAccess;
+  const cantAccess=S.role==="soci"&&!isPast&&!amIn&&!amInWait&&!isMyGroup&&!o.isOpen;
   const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
   const names=(arr,col)=>arr.length?arr.map(s=>`<span style="display:inline-block;background:${col};border-radius:20px;font-size:11px;padding:3px 9px;margin:2px;color:#fff;font-weight:500">${s.name}</span>`).join(""):"";
   // 🔒/🔓 badge — autogenerades comencen tancades, cap/patró les obre
@@ -441,12 +464,12 @@ function renderOutingCard(o){
   const acts=[];
   if(canJoin)acts.push(`<button onclick="signup(${o.id})" style="flex:1;padding:9px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:13px;cursor:pointer">✋ Apuntar-me</button>`);
   if(canWait)acts.push(`<button onclick="signup(${o.id})" style="flex:1;padding:9px;background:#e8a020;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:13px;cursor:pointer">⏳ Llista d'espera</button>`);
-  if(amInWait)acts.push(`<div style="flex:1;padding:9px;background:#fff8ee;border:.5px solid #e8a020;border-radius:8px;color:#b07a10;font-size:12px;text-align:center;font-weight:500">⏳ Estàs a la llista d'espera · pos. ${o.waitlist.findIndex(s=>s.name===S.userName&&s.gid===S.userGroupId)+1}<br><button onclick="unsignup(${o.id})" style="background:none;border:none;color:#b07a10;font-size:11px;cursor:pointer;text-decoration:underline;margin-top:2px;padding:0">Sortir de la llista</button></div>`);
-  if(amIn)acts.push(`<button onclick="unsignup(${o.id})" style="flex:1;padding:9px;background:transparent;border:.5px solid ${RED};border-radius:8px;color:${RED};font-weight:500;font-size:13px;cursor:pointer">Desapuntar-me</button>`);
+  if(amInWait&&!isPast)acts.push(`<div style="flex:1;padding:9px;background:#fff8ee;border:.5px solid #e8a020;border-radius:8px;color:#b07a10;font-size:12px;text-align:center;font-weight:500">⏳ Estàs a la llista d'espera · pos. ${o.waitlist.findIndex(s=>s.name===S.userName&&s.gid===S.userGroupId)+1}<br><button onclick="unsignup(${o.id})" style="background:none;border:none;color:#b07a10;font-size:11px;cursor:pointer;text-decoration:underline;margin-top:2px;padding:0">Sortir de la llista</button></div>`);
+  if(amIn&&!isPast)acts.push(`<button onclick="unsignup(${o.id})" style="flex:1;padding:9px;background:transparent;border:.5px solid ${RED};border-radius:8px;color:${RED};font-weight:500;font-size:13px;cursor:pointer">Desapuntar-me</button>`);
   if(cantAccess&&!isFull)acts.push(`<div style="flex:1;padding:9px;background:#f8f8f8;border-radius:8px;color:${MUTED};font-size:12px;text-align:center">El cap ha d'obrir la inscripció</div>`);
   if(cantAccess&&isFull)acts.push(`<div style="flex:1;padding:9px;background:#fff0f0;border-radius:8px;color:${RED};font-size:12px;text-align:center">Complet</div>`);
   // Els caps poden obrir si ≤8 apuntats (i el patró sempre)
-  if((isMyCap||isPatron)&&!o.isOpen&&total<=8)acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir a tothom</button>`);
+  if((isMyCap||isPatron)&&!isPast&&!o.isOpen&&total<=8)acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir a tothom</button>`);
   if(isPatron)acts.push(`<button onclick="delOut(${o.id})" style="padding:9px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button>`);
   // Secció de noms apuntats
   const signupsBlock=(prefList.length||openList.length)?`<div style="padding:10px 14px;border-bottom:.5px solid #f5f3ee">${prefList.length?`<div style="${openList.length?"margin-bottom:6px":""}"><div style="font-size:10px;color:${MUTED};margin-bottom:4px;font-weight:600">PREFERENTS · ${grp?.name||""}</div>${names(prefList,DARK)}</div>`:""}${openList.length?`<div><div style="font-size:10px;color:${MUTED};margin-bottom:4px;font-weight:600">OBERTES</div>${names(openList,GREEN)}</div>`:""}</div>`:"";
@@ -454,7 +477,7 @@ function renderOutingCard(o){
   const waitBlock=o.waitlist.length?`<div style="padding:8px 14px;border-bottom:.5px solid #f5f3ee;background:#fffdf7"><div style="font-size:10px;color:#b07a10;margin-bottom:4px;font-weight:600">⏳ LLISTA D'ESPERA (${o.waitlist.length})</div>${names(o.waitlist,"#e8a020")}</div>`:"";
   return`<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
     <div style="padding:12px 14px;border-bottom:.5px solid #f5f3ee"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:14px;font-weight:600;color:#1a1a18">${o.title}</div>${badge}</div>
-    <div style="font-size:12px;color:${MUTED}">📅 ${dateStr} · ${o.time} h</div>
+    <div style="font-size:12px;color:${MUTED}">📅 ${dateStr} · ${o.time} h${isPast?` · <span style="background:#f5f3ee;color:${MUTED};font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">Històric</span>`:""}</div>
     <div style="margin-top:10px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:11px;color:${MUTED}">Places</span><span style="font-size:11px;font-weight:600;color:${isFull?RED:DARK}">${total}/${o.capacity}${o.waitlist.length?` · ${o.waitlist.length} esperant`:""}</span></div>
     <div style="background:#f0ede8;border-radius:4px;height:5px"><div style="background:${isFull?RED:DARK};height:5px;border-radius:4px;width:${pct}%"></div></div></div></div>
     ${signupsBlock}${waitBlock}
@@ -471,7 +494,7 @@ function renderPollCard(p){
   const rows=p.options.map(opt=>{
     const cnt=p.votes[opt]?.length||0,pct=tot>0?Math.round((cnt/tot)*100):0;
     const isW=win===opt,isMy=mv===opt;
-    if(canV)return`<button onclick="castVote(${p.id},'${opt.replace(/'/g,"\\'")}','${S.userName.replace(/'/g,"\\'")}' )" style="width:100%;padding:10px 12px;background:${isMy?"#eef0fa":"#f8f9ff"};border:1.5px solid ${isMy?DARK:BORDER};border-radius:10px;cursor:pointer;text-align:left;font-size:13px;color:#1a1a18;margin-bottom:6px;font-weight:${isMy?600:400}">${opt}</button>`;
+    if(canV)return`<button onclick="castVote(${p.id},'${opt.replace(/'/g,"\'")}','${S.userName.replace(/'/g,"\'")}' )" style="width:100%;padding:10px 12px;background:${isMy?"#eef0fa":"#f8f9ff"};border:1.5px solid ${isMy?DARK:BORDER};border-radius:10px;cursor:pointer;text-align:left;font-size:13px;color:#1a1a18;margin-bottom:6px;font-weight:${isMy?600:400}">${opt}</button>`;
     if(showR)return`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:13px;font-weight:${isMy||isW?600:400};color:${isW?RED:(isMy?DARK:"#1a1a18")}">${isW&&p.closed?"🏆 ":""}${opt}${isMy?" ✓":""}</span><span style="font-size:12px;font-weight:600;color:${isW?RED:MUTED}">${cnt} · ${pct}%</span></div><div style="background:#f0ede8;border-radius:20px;height:8px"><div style="background:${isW?RED:(isMy?DARK:"#c8d4f0")};height:8px;border-radius:20px;width:${pct}%"></div></div></div>`;
     return`<div style="padding:10px 12px;background:#f8f9ff;border:1px solid ${BORDER};border-radius:10px;font-size:13px;color:#1a1a18;margin-bottom:6px">${opt}</div>`;
   }).join("");
@@ -489,7 +512,7 @@ function renderInici(){
     return pinB+renderMeteo()+strow([[s.length,"sessions"],[Math.round(km)+" km","remats"],[best?(POS[best]||best+"è"):"—","millor pos."]])+`<div style="background:linear-gradient(135deg,${RED},#a00020);border-radius:14px;margin:10px 14px 0;padding:14px;display:flex;align-items:center;justify-content:space-between;color:#fff"><div><div style="font-size:10px;font-weight:700;margin-bottom:3px;text-transform:uppercase;opacity:.8">🏁 Propera regata</div><div style="font-size:15px;font-weight:600">Trofeu Costa Brava</div><div style="font-size:11px;opacity:.65;margin-top:2px">31 maig · Palamós</div></div><div style="text-align:right"><div style="font-size:36px;font-weight:700">8</div><div style="font-size:10px;opacity:.6">dies</div></div></div>`+renderCalendar()+`<div style="height:14px"></div>`;
   }
   const myGid=S.userGroupId||S.capGroupId||null;
-  const list=S.outings.filter(o=>S.role==="patron"||o.groupId===myGid||o.isOpen).sort((a,b)=>a.date.localeCompare(b.date));
+  const list=visibleOutings().filter(o=>!isPastOuting(o)).sort(sortOutings);
   const op=S.polls.filter(p=>!p.closed);
   const pn=op.length?`<div style="background:#eef0fa;border:.5px solid ${DARK};border-radius:10px;margin:10px 14px 0;padding:10px 14px;display:flex;align-items:center;justify-content:space-between"><span style="font-size:13px;color:${DARK}">📊 ${op.length} votació${op.length>1?"ns":""} oberta${op.length>1?"s":""}</span><button onclick="go({screen:'vots'})" style="background:${DARK};border:none;border-radius:8px;color:#fff;font-size:12px;padding:5px 10px;cursor:pointer;font-weight:600">Votar →</button></div>`:"";
   return pinB+renderMeteo()+pn+(list.length?list.map(o=>renderOutingCard(o)).join(""):cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Cap sortida programada</div>`))+`<div style="height:14px"></div>`;
@@ -503,11 +526,17 @@ function renderEntrena(){
     const list=sess.map((s,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:${i<sess.length-1?`.5px solid #f0ede6`:"none"}"><div style="width:8px;height:8px;border-radius:50%;background:${DARK};flex-shrink:0"></div><div style="flex:1"><div style="font-size:13px;font-weight:500;color:#1a1a18">${s.type}</div><div style="font-size:11px;color:${MUTED}">${s.date}${s.duration?` · ${s.duration} min`:""}${s.note?` · ${s.note}`:""}</div></div>${s.km>0?`<div style="font-size:13px;font-weight:600;color:${DARK};margin-right:4px">${s.km} km</div>`:""}${S.role==="patron"?`<button onclick="delSess(${s.id})" style="background:none;border:none;color:${RED};font-size:20px;cursor:pointer;padding:0 4px;line-height:1">×</button>`:""}</div>`).join("");
     return strow([[Math.round(km)+" km","totals"],[sess.length,"sessions"],[`${h}h${m2>0?" "+m2+"m":""}`,"hores"]])+form+cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">${lbl("Historial")}${canAdd&&!S.showForm?`<button onclick="go({showForm:true})" style="background:${DARK};border:none;border-radius:8px;color:#fff;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600">+ Afegir</button>`:""}</div>${sess.length===0?`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Cap sessió</div>`:list}`)+`<div style="height:14px"></div>`;
   }
-  // Social — els caps NO poden crear sortides (regla de la fase 2, preparada)
+  // Social — els caps NO poden crear sortides; les passades van a Històric
   const canCreate=S.role==="patron";
-  const list=S.outings.filter(o=>S.role==="patron"||o.groupId===S.capGroupId||o.groupId===S.userGroupId||o.isOpen).sort((a,b)=>a.date.localeCompare(b.date));
+  const all=visibleOutings().sort(sortOutings);
+  const properes=all.filter(o=>!isPastOuting(o));
+  const passades=all.filter(o=>isPastOuting(o)).sort((a,b)=>sortOutings(b,a));
   const form=S.showForm&&canCreate?cc(`${lbl("Nova sortida")}<input id="o-title" placeholder="Títol *" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px"><div style="display:flex;gap:8px;margin-bottom:8px"><input id="o-date" type="date" value="${td()}" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"><input id="o-time" type="time" value="09:00" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"></div><select id="o-group" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;margin-bottom:8px">${S.groups.map(g=>`<option value="${g.id}">${g.name}</option>`).join("")}</select><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:13px;color:${MUTED}">Places:</span><input id="o-cap" type="number" value="8" min="1" max="12" style="width:70px;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"></div><div style="display:flex;gap:8px"><button onclick="addOut()" style="flex:1;padding:10px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:14px;cursor:pointer">Crear</button><button onclick="go({showForm:false})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
-  return(canCreate&&!S.showForm?`<div style="margin:12px 14px 0"><button onclick="go({showForm:true})" style="width:100%;padding:11px;background:${DARK};border:none;border-radius:10px;color:#fff;font-weight:600;font-size:14px;cursor:pointer">+ Nova sortida</button></div>`:"")+form+(list.length?list.map(o=>renderOutingCard(o)).join(""):cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Cap sortida programada</div>`))+`<div style="height:14px"></div>`;
+  const createBtn=canCreate&&!S.showForm?`<div style="margin:12px 14px 0"><button onclick="go({showForm:true})" style="width:100%;padding:11px;background:${DARK};border:none;border-radius:10px;color:#fff;font-weight:600;font-size:14px;cursor:pointer">+ Nova sortida</button></div>`:"";
+  const properesBlock=properes.length?properes.map(o=>renderOutingCard(o)).join(""):cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Cap sortida programada</div>`);
+  const histBtn=passades.length?`<div style="margin:12px 14px 0"><button onclick="go({showOutingHistory:${!S.showOutingHistory}})" style="width:100%;padding:10px;background:${S.showOutingHistory?"#fff":"#f5f3ee"};border:.5px solid ${BORDER};border-radius:10px;color:${DARK};font-weight:600;font-size:13px;cursor:pointer">${S.showOutingHistory?"Amagar històric":"Veure històric"} · ${passades.length}</button></div>`:"";
+  const histBlock=S.showOutingHistory&&passades.length?`<div style="margin:14px 14px 4px">${lbl("Històric de sortides")}</div>`+passades.map(o=>renderOutingCard(o)).join(""):"";
+  return createBtn+form+properesBlock+histBtn+histBlock+`<div style="height:14px"></div>`;
 }
 
 function renderResultats(){
@@ -532,12 +561,59 @@ function renderAvisos(){
   const personal=all.filter(a=>a.kind==="personal");
   const publics=all.filter(a=>(!a.kind||a.kind==="public"));
   const logs=all.filter(a=>a.kind==="log");
+  const unread=personal.filter(a=>!a.read).length;
+  const filter=S.avisFilter||"all";
   const form=S.role==="patron"&&S.showAvisForm?cc(`${lbl("Nou avís del patró")}<textarea id="avis-text" placeholder="Escriu el missatge..." style="width:100%;padding:10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;min-height:80px;resize:vertical;margin-bottom:10px"></textarea><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><input type="checkbox" id="avis-pin" style="width:16px;height:16px;accent-color:${RED}"><label for="avis-pin" style="font-size:13px;color:#1a1a18;cursor:pointer">Fixar a dalt (important)</label></div><div style="display:flex;gap:8px"><button onclick="createAvis()" style="flex:1;padding:10px;background:${RED};border:none;border-radius:8px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Publicar</button><button onclick="go({showAvisForm:false})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
+  const tab=(k,label,n)=>`<button onclick="go({avisFilter:'${k}'})" style="flex:1;padding:7px 4px;border:none;border-radius:8px;background:${filter===k?DARK:"transparent"};color:${filter===k?"#fff":MUTED};font-size:11px;font-weight:${filter===k?700:500};cursor:pointer">${label}${n?` <span style="opacity:.75">${n}</span>`:""}</button>`;
+  const filterBar=`<div style="margin:10px 14px 0;background:#e2dfd6;border-radius:10px;padding:3px;display:flex;gap:2px">${tab("all","Tots",all.length)}${tab("personal","Personals",personal.length)}${tab("club","Club",publics.length)}${tab("logs","Historial",logs.length)}</div>`;
+  const markAll=unread&&S.role!=="patron"?`<div style="margin:8px 14px 0"><button onclick="markAllAvisRead()" style="width:100%;padding:9px;background:${GREEN};border:none;border-radius:10px;color:#fff;font-weight:600;font-size:13px;cursor:pointer">✓ Marcar tots els avisos personals com a llegits</button></div>`:"";
   const publicCards=publics.map(a=>`<div style="border-radius:12px;margin:8px 14px 0;overflow:hidden;border:.5px solid ${a.pin?RED:BORDER}">${a.pin?`<div style="background:${RED};padding:4px 12px;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase">📌 Avís important</div>`:`<div style="background:#f5f5f5;padding:4px 12px;font-size:10px;font-weight:600;color:${MUTED};text-transform:uppercase">📢 Avís del patró</div>`}<div style="background:#fff;padding:12px 14px"><div style="font-size:14px;color:#1a1a18;line-height:1.55;margin-bottom:8px">${a.text}</div><div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:11px;color:${MUTED}">⚓ Patró · ${a.date||""}</span>${S.role==="patron"?`<div style="display:flex;gap:6px"><button onclick="togglePin(${a.id})" style="background:none;border:.5px solid ${BORDER};border-radius:6px;color:${MUTED};font-size:11px;padding:3px 8px;cursor:pointer">${a.pin?"Desfiixar":"📌 Fixar"}</button><button onclick="delAvis(${a.id})" style="background:none;border:.5px solid ${BORDER};border-radius:6px;color:${RED};font-size:11px;padding:3px 8px;cursor:pointer">Eliminar</button></div>`:""}</div></div></div>`).join("");
   const personalCards=personal.map(a=>`<div style="border-radius:12px;margin:8px 14px 0;overflow:hidden;border:1.5px solid ${a.read?BORDER:GREEN}"><div style="background:${a.read?"#f5f5f5":"#e6f4ee"};padding:4px 12px;font-size:10px;font-weight:700;color:${a.read?MUTED:GREEN};text-transform:uppercase">${a.read?"✓ Avís llegit":"🔔 Avís personal"}</div><div style="background:#fff;padding:12px 14px"><div style="font-size:14px;font-weight:700;color:#1a1a18;margin-bottom:5px">${a.title||"Avís"}</div><div style="font-size:13px;color:#1a1a18;line-height:1.55;margin-bottom:8px">${a.message||a.text||""}</div><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font-size:11px;color:${MUTED}">${a.toName?`Per a ${a.toName} · `:""}${a.date||""}</span>${!a.read&&S.role!=="patron"?`<button onclick="markAvisRead(${a.id})" style="background:${GREEN};border:none;border-radius:6px;color:#fff;font-size:11px;padding:4px 8px;cursor:pointer;font-weight:600">Marcar llegit</button>`:""}</div></div></div>`).join("");
-  const logCards=logs.slice(0,80).map(a=>`<div style="background:#fff;border-radius:10px;margin:6px 14px 0;padding:10px 12px;border:.5px solid ${BORDER}"><div style="font-size:13px;color:#1a1a18;line-height:1.4">${a.text}</div><div style="font-size:10px;color:${MUTED};margin-top:5px">${gname(a.groupId)} · ${a.byName||"Sistema"} · ${a.date||""}</div></div>`).join("");
-  return(S.role==="patron"&&!S.showAvisForm?`<div style="margin:10px 14px 0"><button onclick="go({showAvisForm:true})" style="width:100%;padding:11px;background:${RED};border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">📢 Nou avís per a tothom</button></div>`:"")+form+(personal.length?`<div style="margin:12px 14px 4px">${lbl("Avisos personals")}</div>`+personalCards:"")+(publics.length?`<div style="margin:12px 14px 4px">${lbl("Avisos del club")}</div>`+publicCards:"")+(logs.length?`<div style="margin:12px 14px 4px">${lbl("Historial de sortides")}</div>`+logCards:"")+(all.length===0?cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Cap avís publicat</div>`):"")+`<div style="height:14px"></div>`;
+  const logCards=logs.slice(0,120).map(a=>`<div style="background:#fff;border-radius:10px;margin:6px 14px 0;padding:10px 12px;border:.5px solid ${BORDER}"><div style="font-size:13px;color:#1a1a18;line-height:1.4">${a.text}</div><div style="font-size:10px;color:${MUTED};margin-top:5px">${gname(a.groupId)} · ${a.byName||"Sistema"} · ${a.date||""}</div></div>`).join("");
+  const createBtn=S.role==="patron"&&!S.showAvisForm?`<div style="margin:10px 14px 0"><button onclick="go({showAvisForm:true})" style="width:100%;padding:11px;background:${RED};border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">📢 Nou avís per a tothom</button></div>`:"";
+  let body="";
+  if((filter==="all"||filter==="personal")&&personal.length)body+=`<div style="margin:12px 14px 4px">${lbl("Avisos personals")}</div>`+personalCards;
+  if((filter==="all"||filter==="club")&&publics.length)body+=`<div style="margin:12px 14px 4px">${lbl("Avisos del club")}</div>`+publicCards;
+  if((filter==="all"||filter==="logs")&&logs.length)body+=`<div style="margin:12px 14px 4px">${lbl("Historial d'activitat")}</div>`+logCards;
+  const empty=!body?cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Cap avís en aquest filtre</div>`):"";
+  return createBtn+form+filterBar+markAll+body+empty+`<div style="height:14px"></div>`;
 }
+
+function renderEstadistiques(){
+  const scope=S.role==="patron"?S.outings:S.role==="cap"?S.outings.filter(o=>o.groupId===S.capGroupId):S.outings.filter(o=>memberIsInOuting(o));
+  const past=scope.filter(isPastOuting);
+  const future=scope.filter(o=>!isPastOuting(o));
+  const signups=scope.reduce((a,o)=>a+safeArr(o.signups).length,0);
+  const waits=scope.reduce((a,o)=>a+safeArr(o.waitlist).length,0);
+  const capTotal=scope.reduce((a,o)=>a+(o.capacity||0),0);
+  const occ=capTotal?Math.round((signups/capTotal)*100):0;
+  const mine=S.role==="soci"?scope.filter(o=>safeArr(o.signups).some(s=>s.name===S.userName&&s.gid===S.userGroupId)):[];
+  let html=strow([[scope.length,"sortides"],[future.length,"properes"],[past.length,"històric"]]);
+  html+=strow([[signups,"apuntats"],[waits,"espera"],[occ+"%","ocupació"]]);
+  if(S.role==="soci"){
+    html+=cc(`${lbl("La meva activitat")}<div style="font-size:14px;color:#1a1a18;line-height:1.6">Has estat apuntat/da a <strong>${mine.length}</strong> sortida${mine.length!==1?"s":""}. ${scope.length-mine.length>0?`Tens <strong>${scope.length-mine.length}</strong> sortida${scope.length-mine.length!==1?"s":""} on has estat o estàs en llista d'espera.`:""}</div>`);
+  }
+  if(S.role==="patron"||S.role==="cap"){
+    const groups=(S.role==="patron"?S.groups:S.groups.filter(g=>g.id===S.capGroupId)).map(g=>{
+      const os=S.outings.filter(o=>o.groupId===g.id);
+      const s=os.reduce((a,o)=>a+safeArr(o.signups).length,0);
+      const c=os.reduce((a,o)=>a+(o.capacity||0),0);
+      const w=os.reduce((a,o)=>a+safeArr(o.waitlist).length,0);
+      const avg=c?Math.round((s/c)*100):0;
+      return {g,os,s,c,w,avg};
+    });
+    const rows=groups.map(x=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:.5px solid #f0ede6"><div><div style="font-size:13px;font-weight:600;color:#1a1a18">${x.g.name}</div><div style="font-size:11px;color:${MUTED}">${x.os.length} sortides · ${x.s}/${x.c||0} places · ${x.w} espera</div></div><div style="font-size:18px;font-weight:700;color:${x.avg>=80?RED:DARK}">${x.avg}%</div></div>`).join("");
+    html+=cc(`${lbl(S.role==="patron"?"Ocupació per grup":"Ocupació del meu grup")}${rows||`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Encara no hi ha dades</div>`}`);
+    const count={};
+    scope.forEach(o=>safeArr(o.signups).forEach(s=>{count[s.name]=(count[s.name]||0)+1;}));
+    const top=Object.entries(count).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    if(top.length){
+      html+=cc(`${lbl("Socis amb més assistència")} ${top.map(([n,c],i)=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:${i<top.length-1?'.5px solid #f0ede6':'none'}"><span style="font-size:13px;color:#1a1a18">${n}</span><strong style="font-size:13px;color:${DARK}">${c}</strong></div>`).join("")}`);
+    }
+  }
+  return html+`<div style="height:14px"></div>`;
+}
+
 function renderMembres(){
   if(S.role!=="patron")return cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Accés restringit al patró</div>`);
   const pending=S.membres.filter(m=>m.pending);
@@ -648,17 +724,18 @@ function render(){
   if(hasS)nav.push(["entrena","⛵","Sortides","social"]);
   if(hasC)nav.push(["resultats","🏆","Resultats",null]);
   nav.push(["vots","📊","Vots",null]);
+  nav.push(["estadistiques","📈","Stats",null]);
   if(S.role==="patron")nav.push(["membres","👥","Membres",null]);
   nav.push(["avisos","📢","Avisos",null]);
-  const screens={inici:renderInici,entrena:renderEntrena,resultats:hasC?renderResultats:renderInici,vots:renderVots,membres:renderMembres,avisos:renderAvisos};
-  const titles={inici:"Inici",entrena:S.section==="social"?"Sortides":"Entrenaments",resultats:"Resultats",vots:"Votacions",membres:"Membres",avisos:"Avisos"};
+  const screens={inici:renderInici,entrena:renderEntrena,resultats:hasC?renderResultats:renderInici,vots:renderVots,estadistiques:renderEstadistiques,membres:renderMembres,avisos:renderAvisos};
+  const titles={inici:"Inici",entrena:S.section==="social"?"Sortides":"Entrenaments",resultats:"Resultats",vots:"Votacions",estadistiques:"Estadístiques",membres:"Membres",avisos:"Avisos"};
   const userLabel=S.role==="patron"?"Patró":(S.userName||"");
   const userSub=S.role==="cap"?`${userLabel} · Cap ${gname(S.capGroupId).split(" · ")[0]}`:userLabel;
   const rb=S.role==="patron"?`<span style="background:${RED};color:#fff;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700">PATRÓ</span>`:S.role==="cap"?`<span style="background:rgba(255,255,255,.15);color:#fff;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">Cap</span>`:myGid?`<span style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.8);font-size:10px;padding:2px 8px;border-radius:20px">${gname(myGid).split(" · ")[0]}</span>`:"";
   const btnC=hasC?`<button onclick="go({section:'competicio',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="competicio"?DARK:"transparent"};color:${S.section==="competicio"?"#fff":MUTED}">🏆 Competició</button>`:"";
   const btnS=hasS?`<button onclick="go({section:'social',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="social"?DARK:"transparent"};color:${S.section==="social"?"#fff":MUTED}">⚓ Social</button>`:"";
-  const st=hasBoth&&S.screen!=="vots"&&S.screen!=="membres"&&S.screen!=="avisos"?`<div style="display:flex;margin:12px 14px 0;background:#e2dfd6;border-radius:10px;padding:3px">${btnC}${btnS}</div>`:"";
-  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:11px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${userSub}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,showMembreForm:false})`:`go({screen:'${k}',showForm:false,showAvisForm:false,showMembreForm:false})`;return`<button onclick="${clk}" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${S.showLogoutConfirm?renderLogoutModal():""}`;
+  const st=hasBoth&&S.screen!=="vots"&&S.screen!=="estadistiques"&&S.screen!=="membres"&&S.screen!=="avisos"?`<div style="display:flex;margin:12px 14px 0;background:#e2dfd6;border-radius:10px;padding:3px">${btnC}${btnS}</div>`:"";
+  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:11px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${userSub}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,showMembreForm:false,showOutingHistory:false})`:`go({screen:'${k}',showForm:false,showAvisForm:false,showMembreForm:false,showOutingHistory:false})`;return`<button onclick="${clk}" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${S.showLogoutConfirm?renderLogoutModal():""}`;
 }
 
 // ── Accions generals ────────────────────────────────────────────────────────────
@@ -667,7 +744,7 @@ function addMembre(){if(S.role!=="patron")return;const n=document.getElementById
 function delMembre(id){if(S.role!=="patron")return;if(!confirm("Eliminar el soci?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
 function signup(oid){
   const o=S.outings.find(x=>x.id===oid);
-  if(!o||S.role!=="soci")return;
+  if(!o||S.role!=="soci"||isPastOuting(o))return;
   if(!o.waitlist)o.waitlist=[];
   const isMyGroup=S.userGroupId===o.groupId;
   if(!isMyGroup&&!o.isOpen)return;
@@ -686,7 +763,7 @@ function signup(oid){
 }
 function unsignup(oid){
   const o=S.outings.find(x=>x.id===oid);
-  if(!o||S.role!=="soci")return;
+  if(!o||S.role!=="soci"||isPastOuting(o))return;
   if(!o.waitlist)o.waitlist=[];
   const wasIn=o.signups.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
   const wasWait=o.waitlist.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
@@ -705,7 +782,7 @@ function unsignup(oid){
 }
 function openOut(oid){
   const o=S.outings.find(x=>x.id===oid);
-  if(!o)return;
+  if(!o||isPastOuting(o))return;
   const isPatron=S.role==="patron";
   const isOwnCap=S.role==="cap"&&S.capGroupId===o.groupId;
   if(!isPatron&&!(isOwnCap&&o.signups.length<=8))return;
@@ -920,6 +997,7 @@ async function initApp(){
 }
 
 initApp();
+
 </script>
 </body>
 </html>

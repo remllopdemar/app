@@ -315,30 +315,44 @@ function renderCalendar(){
 }
 
 function renderOutingCard(o){
-  const grp=S.groups.find(g=>g.id===o.groupId),total=o.signups.length,pct=Math.round((total/o.capacity)*100),isFull=total>=o.capacity;
+  const grp=S.groups.find(g=>g.id===o.groupId);
+  if(!o.waitlist)o.waitlist=[];
+  const total=o.signups.length,pct=Math.round((total/o.capacity)*100),isFull=total>=o.capacity;
   const prefList=o.signups.filter(s=>s.gid===o.groupId),openList=o.signups.filter(s=>s.gid!==o.groupId);
   const isMyGroup=S.userGroupId===o.groupId||S.capGroupId===o.groupId;
   const isMyCap=S.role==="cap"&&S.capGroupId===o.groupId,isPatron=S.role==="patron";
   const amIn=S.role==="soci"&&o.signups.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
-  const canJoin=S.role==="soci"&&!amIn&&!isFull&&(isMyGroup||o.isOpen);
-  const cantJoin=S.role==="soci"&&!amIn&&!isMyGroup&&!o.isOpen;
+  const amInWait=S.role==="soci"&&o.waitlist.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
+  const canAccess=isMyGroup||o.isOpen;
+  const canJoin=S.role==="soci"&&!amIn&&!amInWait&&!isFull&&canAccess;
+  const canWait=S.role==="soci"&&!amIn&&!amInWait&&isFull&&canAccess;
+  const cantAccess=S.role==="soci"&&!amIn&&!amInWait&&!isMyGroup&&!o.isOpen;
   const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
   const names=(arr,col)=>arr.length?arr.map(s=>`<span style="display:inline-block;background:${col};border-radius:20px;font-size:11px;padding:3px 9px;margin:2px;color:#fff;font-weight:500">${s.name}</span>`).join(""):"";
-  const badge=o.isOpen?`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔓 Oberta</span>`:`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 ${grp?.name||""}</span>`;
+  // 🔒/🔓 badge — autogenerades comencen tancades, cap/patró les obre
+  const badge=o.isOpen
+    ?`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔓 Oberta</span>`
+    :`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 ${grp?.name||""}</span>`;
   const acts=[];
   if(canJoin)acts.push(`<button onclick="signup(${o.id})" style="flex:1;padding:9px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:13px;cursor:pointer">✋ Apuntar-me</button>`);
+  if(canWait)acts.push(`<button onclick="signup(${o.id})" style="flex:1;padding:9px;background:#e8a020;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:13px;cursor:pointer">⏳ Llista d'espera</button>`);
+  if(amInWait)acts.push(`<div style="flex:1;padding:9px;background:#fff8ee;border:.5px solid #e8a020;border-radius:8px;color:#b07a10;font-size:12px;text-align:center;font-weight:500">⏳ Estàs a la llista d'espera · pos. ${o.waitlist.findIndex(s=>s.name===S.userName&&s.gid===S.userGroupId)+1}<br><button onclick="unsignup(${o.id})" style="background:none;border:none;color:#b07a10;font-size:11px;cursor:pointer;text-decoration:underline;margin-top:2px;padding:0">Sortir de la llista</button></div>`);
   if(amIn)acts.push(`<button onclick="unsignup(${o.id})" style="flex:1;padding:9px;background:transparent;border:.5px solid ${RED};border-radius:8px;color:${RED};font-weight:500;font-size:13px;cursor:pointer">Desapuntar-me</button>`);
-  if(cantJoin&&!isFull)acts.push(`<div style="flex:1;padding:9px;background:#f8f8f8;border-radius:8px;color:${MUTED};font-size:12px;text-align:center">El cap ha d'obrir la inscripció</div>`);
-  if(isFull&&!amIn)acts.push(`<div style="flex:1;padding:9px;background:#fff0f0;border-radius:8px;color:${RED};font-size:12px;text-align:center">Complet</div>`);
-  if((isMyCap||isPatron)&&!o.isOpen&&total<=8)acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir</button>`);
-  if(isPatron)acts.push(`<button onclick="delOut(${o.id})" style="padding:9px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button>`);
-  else if(isMyCap)acts.push(`<button onclick="delOut(${o.id})" style="padding:9px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button>`);
+  if(cantAccess&&!isFull)acts.push(`<div style="flex:1;padding:9px;background:#f8f8f8;border-radius:8px;color:${MUTED};font-size:12px;text-align:center">El cap ha d'obrir la inscripció</div>`);
+  if(cantAccess&&isFull)acts.push(`<div style="flex:1;padding:9px;background:#fff0f0;border-radius:8px;color:${RED};font-size:12px;text-align:center">Complet</div>`);
+  // Els caps poden obrir si ≤8 apuntats (i el patró sempre)
+  if((isMyCap||isPatron)&&!o.isOpen&&total<=8)acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir a tothom</button>`);
+  if(isPatron||isMyCap)acts.push(`<button onclick="delOut(${o.id})" style="padding:9px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button>`);
+  // Secció de noms apuntats
+  const signupsBlock=(prefList.length||openList.length)?`<div style="padding:10px 14px;border-bottom:.5px solid #f5f3ee">${prefList.length?`<div style="${openList.length?"margin-bottom:6px":""}"><div style="font-size:10px;color:${MUTED};margin-bottom:4px;font-weight:600">PREFERENTS · ${grp?.name||""}</div>${names(prefList,DARK)}</div>`:""}${openList.length?`<div><div style="font-size:10px;color:${MUTED};margin-bottom:4px;font-weight:600">OBERTES</div>${names(openList,GREEN)}</div>`:""}</div>`:"";
+  // Llista d'espera (visible sempre que n'hi hagi)
+  const waitBlock=o.waitlist.length?`<div style="padding:8px 14px;border-bottom:.5px solid #f5f3ee;background:#fffdf7"><div style="font-size:10px;color:#b07a10;margin-bottom:4px;font-weight:600">⏳ LLISTA D'ESPERA (${o.waitlist.length})</div>${names(o.waitlist,"#e8a020")}</div>`:"";
   return`<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
     <div style="padding:12px 14px;border-bottom:.5px solid #f5f3ee"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:14px;font-weight:600;color:#1a1a18">${o.title}</div>${badge}</div>
     <div style="font-size:12px;color:${MUTED}">📅 ${dateStr} · ${o.time} h</div>
-    <div style="margin-top:10px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:11px;color:${MUTED}">Places</span><span style="font-size:11px;font-weight:600;color:${isFull?RED:DARK}">${total}/${o.capacity}</span></div>
+    <div style="margin-top:10px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:11px;color:${MUTED}">Places</span><span style="font-size:11px;font-weight:600;color:${isFull?RED:DARK}">${total}/${o.capacity}${o.waitlist.length?` · ${o.waitlist.length} esperant`:""}</span></div>
     <div style="background:#f0ede8;border-radius:4px;height:5px"><div style="background:${isFull?RED:DARK};height:5px;border-radius:4px;width:${pct}%"></div></div></div></div>
-    ${prefList.length||openList.length?`<div style="padding:10px 14px;border-bottom:.5px solid #f5f3ee">${prefList.length?`<div style="${openList.length?"margin-bottom:6px":""}"><div style="font-size:10px;color:${MUTED};margin-bottom:4px;font-weight:600">PREFERENTS · ${grp?.name||""}</div>${names(prefList,DARK)}</div>`:""}${openList.length?`<div><div style="font-size:10px;color:${MUTED};margin-bottom:4px;font-weight:600">OBERTES</div>${names(openList,GREEN)}</div>`:""}</div>`:""}
+    ${signupsBlock}${waitBlock}
     ${acts.length?`<div style="padding:10px 14px;display:flex;gap:8px">${acts.join("")}</div>`:""}
   </div>`;
 }
@@ -510,8 +524,33 @@ function render(){
 function togSec(sec){const s=S.membreSections.includes(sec)?S.membreSections.filter(x=>x!==sec):[...S.membreSections,sec];go({membreSections:s});}
 function addMembre(){const n=document.getElementById("m-nom")?.value?.trim()||"";if(!n||!S.membreSections.length)return;const gid=parseInt(document.getElementById("m-grup")?.value)||S.groups[0]?.id;S.membres.push({id:Date.now(),name:n,groupId:gid,sections:[...S.membreSections],pin:null,isCap:false,pending:false});save("membres");go({showMembreForm:false,membreSections:["social"]});}
 function delMembre(id){if(!confirm("Eliminar el soci?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
-function signup(oid){const o=S.outings.find(x=>x.id===oid);if(!o||o.signups.length>=o.capacity||o.signups.some(s=>s.name===S.userName&&s.gid===S.userGroupId))return;o.signups.push({name:S.userName,gid:S.userGroupId});save("outings");render();}
-function unsignup(oid){const o=S.outings.find(x=>x.id===oid);if(!o)return;o.signups=o.signups.filter(s=>!(s.name===S.userName&&s.gid===S.userGroupId));save("outings");render();}
+function signup(oid){
+  const o=S.outings.find(x=>x.id===oid);
+  if(!o)return;
+  if(!o.waitlist)o.waitlist=[];
+  const isMyGroup=S.userGroupId===o.groupId;
+  if(!isMyGroup&&!o.isOpen)return;
+  const alreadyIn=o.signups.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
+  const alreadyWait=o.waitlist.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
+  if(alreadyIn||alreadyWait)return;
+  const entry={name:S.userName,gid:S.userGroupId};
+  if(o.signups.length>=o.capacity){o.waitlist.push(entry);}
+  else{o.signups.push(entry);}
+  save("outings");render();
+}
+function unsignup(oid){
+  const o=S.outings.find(x=>x.id===oid);
+  if(!o)return;
+  if(!o.waitlist)o.waitlist=[];
+  const wasIn=o.signups.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
+  o.signups=o.signups.filter(s=>!(s.name===S.userName&&s.gid===S.userGroupId));
+  o.waitlist=o.waitlist.filter(s=>!(s.name===S.userName&&s.gid===S.userGroupId));
+  // Si estava a signups i hi ha gent esperant, el primer entra automàticament
+  if(wasIn&&o.waitlist.length>0&&o.signups.length<o.capacity){
+    o.signups.push(o.waitlist.shift());
+  }
+  save("outings");render();
+}
 function openOut(oid){const o=S.outings.find(x=>x.id===oid);if(o){o.isOpen=true;save("outings");render();}}
 function delOut(oid){if(!confirm("Cancel·lar la sortida?"))return;S.outings=S.outings.filter(o=>o.id!==oid);save("outings");render();}
 function addOut(){const t=document.getElementById("o-title")?.value?.trim();if(!t)return;const d=document.getElementById("o-date")?.value||td();const tm=document.getElementById("o-time")?.value||"09:00";const gid=parseInt(document.getElementById("o-group")?.value||S.groups[0]?.id);const cap=parseInt(document.getElementById("o-cap")?.value)||8;S.outings.push({id:Date.now(),groupId:gid,title:t,date:d,time:tm,capacity:cap,isOpen:false,signups:[],waitlist:[]});save("outings");go({showForm:false});}
@@ -528,6 +567,47 @@ function createPoll(){const q=document.getElementById("poll-q")?.value?.trim()||
 function castVote(pid,opt,name){const p=S.polls.find(x=>x.id===pid);if(!p||p.closed||!name)return;p.options.forEach(o=>{p.votes[o]=p.votes[o].filter(n=>n!==name);});if(!p.votes[opt])p.votes[opt]=[];p.votes[opt].push(name);save("polls");render();}
 function closePoll(pid){const p=S.polls.find(x=>x.id===pid);if(p){p.closed=true;save("polls");render();}}
 function delPoll(pid){S.polls=S.polls.filter(p=>p.id!==pid);save("polls");render();}
+
+// ── Sortides automàtiques (dissabte → genera Dl+Dc setmana vinent) ────────────
+const GROUP_TIMES={1:"20:15",2:"19:00",3:"17:45",4:"16:30",5:"09:15",6:"08:00"};
+
+function isoDate(d){return d.toISOString().split("T")[0];}
+
+function maybeAutoGenOutings(){
+  const now=new Date();
+  if(now.getDay()!==6)return;                          // Només dissabte
+  const todayStr=isoDate(now);
+  if(store.get("ldm:lastAutoGen")===todayStr)return;   // Ja fet avui
+
+  // Dilluns i dimecres de la setmana vinent
+  const mon=new Date(now); mon.setDate(now.getDate()+2);
+  const wed=new Date(now); wed.setDate(now.getDate()+4);
+  const monStr=isoDate(mon), wedStr=isoDate(wed);
+
+  const base=Date.now();
+  let generated=false;
+  S.groups.forEach((g,gi)=>{
+    const t=GROUP_TIMES[g.id]||"09:00";
+    [[monStr,"Dl"],[wedStr,"Dc"]].forEach(([ds,day],di)=>{
+      if(!S.outings.some(o=>o.date===ds&&o.groupId===g.id)){
+        S.outings.push({
+          id:base+gi*10+di,
+          groupId:g.id,
+          title:`Sortida setmanal · ${day}`,
+          date:ds, time:t, capacity:8,
+          isOpen:false, signups:[], waitlist:[], isAuto:true
+        });
+        generated=true;
+      }
+    });
+  });
+
+  if(generated){
+    save("outings");
+    store.set("ldm:lastAutoGen",todayStr);
+    console.log("✅ Sortides automàtiques generades ("+monStr+" + "+wedStr+")");
+  }
+}
 
 // ── Inicialització amb Supabase ───────────────────────────────────────────────
 async function initApp(){
@@ -565,6 +645,8 @@ async function initApp(){
 
   if(bar)bar.style.width="100%";
   await new Promise(r=>setTimeout(r,200));
+
+  maybeAutoGenOutings();   // ← Genera sortides si és dissabte
 
   // ── Recuperar sessió guardada ─────────────────────────────────────────────
   const session=store.get("ldm:session");

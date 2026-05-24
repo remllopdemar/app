@@ -405,8 +405,7 @@ async function submitRegister(){
 // ── Accions del panell de membres ──────────────────────────────────────────────
 function approvePending(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m){m.sections=normalizeSections(m.sections);m.pending=false;save("membres");render();}}
 function rejectPending(id){if(S.role!=="patron")return;if(!confirm("Rebutjar la sol·licitud?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
-function resetMemberPin(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m&&confirm("Reset de clau de "+m.name+"?
-Haurà de crear una nova clau al proper accés.")){m.pin=null;save("membres");render();}}
+function resetMemberPin(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m&&confirm("Reset de clau de "+m.name+"?\nHaurà de crear una nova clau al proper accés.")){m.pin=null;save("membres");render();}}
 function toggleIsCap(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m){m.isCap=!m.isCap;save("membres");render();}}
 
 function fetchMeteo(){

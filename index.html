@@ -194,7 +194,70 @@ const pollKey=(pid,opt)=>pid+":"+encodeURIComponent(opt);
 const nowIso=()=>new Date().toISOString();
 const mkId=()=>Date.now()+Math.floor(Math.random()*1000);
 function safeArr(a){return Array.isArray(a)?a:[];}
-function memberFromEntry(e){return S.membres.find(m=>m.id===e.mid)||S.membres.find(m=>m.name===e.name&&m.groupId===e.gid)||null;}
+function memberFromEntry(e){
+  if(!e)return null;
+  return S.membres.find(m=>e.mid&&m.id===e.mid)||S.membres.find(m=>m.name===e.name&&m.groupId===e.gid)||S.membres.find(m=>m.name===e.name)||null;
+}
+function entryKey(e){
+  const m=memberFromEntry(e);
+  if(m?.id)return "id:"+m.id;
+  return "name:"+String(e?.name||"").trim().toLowerCase();
+}
+function entryMatchesCurrent(e){
+  if(!e||!S.userName)return false;
+  if(S.memberId&&e.mid)return Number(e.mid)===Number(S.memberId);
+  const m=memberFromEntry(e);
+  if(S.memberId&&m?.id)return Number(m.id)===Number(S.memberId);
+  return String(e.name||"")===String(S.userName||"");
+}
+function entryMatchesPerson(e,name,gid,mid=null){
+  if(!e||!name)return false;
+  if(mid&&e.mid)return Number(e.mid)===Number(mid);
+  const m=memberFromEntry(e);
+  if(mid&&m?.id)return Number(m.id)===Number(mid);
+  return String(e.name||"")===String(name||"");
+}
+function entrySamePerson(a,b){
+  if(!a||!b)return false;
+  const ak=entryKey(a),bk=entryKey(b);
+  return ak&&bk&&ak===bk;
+}
+function normalizeOutingEntries(o){
+  if(!o)return false;
+  let changed=false;
+  if(!Array.isArray(o.signups)){o.signups=[];changed=true;}
+  if(!Array.isArray(o.waitlist)){o.waitlist=[];changed=true;}
+  const clean=list=>{
+    const seen=new Set(),out=[];
+    list.forEach(e=>{
+      if(!e||!e.name)return;
+      const m=memberFromEntry(e);
+      const n={...e};
+      if(m){
+        if(!n.mid){n.mid=m.id;changed=true;}
+        if(!n.gid){n.gid=m.groupId;changed=true;}
+      }
+      const k=entryKey(n);
+      if(seen.has(k)){changed=true;return;}
+      seen.add(k);out.push(n);
+    });
+    return out;
+  };
+  const signups=clean(o.signups);
+  const waitlist=clean(o.waitlist).filter(w=>{
+    const dup=signups.some(s=>entrySamePerson(s,w));
+    if(dup)changed=true;
+    return !dup;
+  });
+  if(signups.length!==o.signups.length||waitlist.length!==o.waitlist.length)changed=true;
+  o.signups=signups;o.waitlist=waitlist;
+  return changed;
+}
+function normalizeAllOutingEntries(){
+  let changed=false;
+  S.outings.forEach(o=>{if(normalizeOutingEntries(o))changed=true;});
+  return changed;
+}
 function outingLabel(o){return `${o.title} · ${new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"})} · ${o.time} h`;}
 function actorLabel(){return S.role==="patron"?"Patró":(S.userName||"Sistema");}
 function pushAviso(a){S.avisos.unshift({id:mkId(),date:td(),createdAt:nowIso(),pin:false,...a});}
@@ -227,8 +290,8 @@ function markAllAvisRead(){
 function todayStr(){return isoDate(new Date());}
 function isPastOuting(o){return (o.date||"")<todayStr();}
 function sortOutings(a,b){return (a.date||"").localeCompare(b.date||"")||(a.time||"").localeCompare(b.time||"");}
-function memberIsInOuting(o,name=S.userName,gid=S.userGroupId){
-  return safeArr(o.signups).some(s=>s.name===name&&s.gid===gid)||safeArr(o.waitlist).some(s=>s.name===name&&s.gid===gid);
+function memberIsInOuting(o,name=S.userName,gid=S.userGroupId,mid=S.memberId){
+  return safeArr(o.signups).some(s=>entryMatchesPerson(s,name,gid,mid))||safeArr(o.waitlist).some(s=>entryMatchesPerson(s,name,gid,mid));
 }
 function canSeeOuting(o){
   if(S.role==="patron")return true;
@@ -445,20 +508,36 @@ function renderCalendar(){
 }
 
 function renderOutingCard(o){
+  normalizeOutingEntries(o);
   const grp=S.groups.find(g=>g.id===o.groupId);
   if(!o.waitlist)o.waitlist=[];
   const total=o.signups.length,pct=Math.min(100,Math.round((total/o.capacity)*100)),isFull=total>=o.capacity,isPast=isPastOuting(o);
   const prefList=o.signups.filter(s=>s.gid===o.groupId),openList=o.signups.filter(s=>s.gid!==o.groupId);
   const isMyGroup=S.userGroupId===o.groupId||S.capGroupId===o.groupId;
   const isMyCap=S.role==="cap"&&S.capGroupId===o.groupId,isPatron=S.role==="patron";
-  const amIn=S.role==="soci"&&o.signups.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
-  const amInWait=S.role==="soci"&&o.waitlist.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
+  const amIn=S.role==="soci"&&o.signups.some(entryMatchesCurrent);
+  const amInWait=S.role==="soci"&&o.waitlist.some(entryMatchesCurrent);
   const canAccess=isMyGroup||o.isOpen;
   const canJoin=S.role==="soci"&&!isPast&&!amIn&&!amInWait&&!isFull&&canAccess;
   const canWait=S.role==="soci"&&!isPast&&!amIn&&!amInWait&&isFull&&canAccess;
   const cantAccess=S.role==="soci"&&!isPast&&!amIn&&!amInWait&&!isMyGroup&&!o.isOpen;
   const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
-  const names=(arr,col)=>arr.length?arr.map(s=>`<span style="display:inline-block;background:${col};border-radius:20px;font-size:11px;padding:3px 9px;margin:2px;color:#fff;font-weight:500">${s.name}</span>`).join(""):"";
+  const shortGroup=gid=>esc(gname(gid).split(" · ")[0]||"—");
+  const personChips=(arr,mode="signups")=>arr.length?`<div style="display:flex;flex-wrap:wrap;gap:6px">${arr.map(s=>{
+    const m=memberFromEntry(s),gid=s.gid||m?.groupId;
+    const hasOwner=o.groupId!==null&&o.groupId!==undefined&&o.groupId!=="";
+    const isOwner=hasOwner&&Number(gid)===Number(o.groupId);
+    const isWait=mode==="wait";
+    const bg=isWait?"#e8a020":(isOwner?DARK:GREEN);
+    const br=isWait?"#d38b00":(isOwner?DARK:GREEN);
+    const groupTxt=hasOwner?shortGroup(gid):"Club";
+    const title=isWait?"Llista d'espera":(isOwner?"Del grup de la sortida":"D'un altre grup");
+    return `<span title="${title}" style="display:inline-flex;align-items:center;gap:6px;max-width:100%;background:${bg};border:1px solid ${br};border-radius:999px;padding:5px 9px;color:#fff;font-size:12px;font-weight:600;line-height:1.15;box-shadow:0 1px 2px rgba(0,0,0,.06)">
+      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px">${esc(s.name)}</span>
+      <span style="font-size:10px;font-weight:700;opacity:.78;background:rgba(255,255,255,.18);border-radius:999px;padding:1px 6px;white-space:nowrap">${groupTxt}</span>
+    </span>`;
+  }).join("")}</div>`:"";
+  const outingLegend=o.groupId&&o.isOpen?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"><span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${DARK}"></span>Del grup</span><span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${GREEN}"></span>Altres grups</span></div>`:"";
   // 🔒/🔓 badge — autogenerades comencen tancades, cap/patró les obre
   const badge=o.isOpen
     ?`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔓 Oberta</span>`
@@ -466,17 +545,17 @@ function renderOutingCard(o){
   const acts=[];
   if(canJoin)acts.push(`<button onclick="signup(${o.id})" style="flex:1;padding:9px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:13px;cursor:pointer">✋ Apuntar-me</button>`);
   if(canWait)acts.push(`<button onclick="signup(${o.id})" style="flex:1;padding:9px;background:#e8a020;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:13px;cursor:pointer">⏳ Llista d'espera</button>`);
-  if(amInWait&&!isPast)acts.push(`<div style="flex:1;padding:9px;background:#fff8ee;border:.5px solid #e8a020;border-radius:8px;color:#b07a10;font-size:12px;text-align:center;font-weight:500">⏳ Estàs a la llista d'espera · pos. ${o.waitlist.findIndex(s=>s.name===S.userName&&s.gid===S.userGroupId)+1}<br><button onclick="unsignup(${o.id})" style="background:none;border:none;color:#b07a10;font-size:11px;cursor:pointer;text-decoration:underline;margin-top:2px;padding:0">Sortir de la llista</button></div>`);
+  if(amInWait&&!isPast)acts.push(`<div style="flex:1;padding:9px;background:#fff8ee;border:.5px solid #e8a020;border-radius:8px;color:#b07a10;font-size:12px;text-align:center;font-weight:500">⏳ Estàs a la llista d'espera · pos. ${o.waitlist.findIndex(entryMatchesCurrent)+1}<br><button onclick="unsignup(${o.id})" style="background:none;border:none;color:#b07a10;font-size:11px;cursor:pointer;text-decoration:underline;margin-top:2px;padding:0">Sortir de la llista</button></div>`);
   if(amIn&&!isPast)acts.push(`<button onclick="unsignup(${o.id})" style="flex:1;padding:9px;background:transparent;border:.5px solid ${RED};border-radius:8px;color:${RED};font-weight:500;font-size:13px;cursor:pointer">Desapuntar-me</button>`);
   if(cantAccess&&!isFull)acts.push(`<div style="flex:1;padding:9px;background:#f8f8f8;border-radius:8px;color:${MUTED};font-size:12px;text-align:center">El cap ha d'obrir la inscripció</div>`);
   if(cantAccess&&isFull)acts.push(`<div style="flex:1;padding:9px;background:#fff0f0;border-radius:8px;color:${RED};font-size:12px;text-align:center">Complet</div>`);
   // Els caps poden obrir si ≤8 apuntats (i el patró sempre)
   if((isMyCap||isPatron)&&!isPast&&!o.isOpen&&total<=8)acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir a tothom</button>`);
   if(isPatron)acts.push(`<button onclick="delOut(${o.id})" style="padding:9px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button>`);
-  // Secció de noms apuntats
-  const signupsBlock=(prefList.length||openList.length)?`<div style="padding:10px 14px;border-bottom:.5px solid #f5f3ee">${prefList.length?`<div style="${openList.length?"margin-bottom:6px":""}"><div style="font-size:10px;color:${MUTED};margin-bottom:4px;font-weight:600">PREFERENTS · ${grp?.name||""}</div>${names(prefList,DARK)}</div>`:""}${openList.length?`<div><div style="font-size:10px;color:${MUTED};margin-bottom:4px;font-weight:600">OBERTES</div>${names(openList,GREEN)}</div>`:""}</div>`:"";
+  // Secció de noms apuntats: una sola llista en format xip, amb colors per grup
+  const signupsBlock=o.signups.length?`<div style="padding:10px 14px;border-bottom:.5px solid #f5f3ee"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px"><div style="font-size:10px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em">APUNTATS</div><div style="font-size:10px;color:${MUTED};font-weight:600">${total}/${o.capacity}</div></div>${outingLegend}${personChips(o.signups,"signups")}</div>`:"";
   // Llista d'espera (visible sempre que n'hi hagi)
-  const waitBlock=o.waitlist.length?`<div style="padding:8px 14px;border-bottom:.5px solid #f5f3ee;background:#fffdf7"><div style="font-size:10px;color:#b07a10;margin-bottom:4px;font-weight:600">⏳ LLISTA D'ESPERA (${o.waitlist.length})</div>${names(o.waitlist,"#e8a020")}</div>`:"";
+  const waitBlock=o.waitlist.length?`<div style="padding:8px 14px;border-bottom:.5px solid #f5f3ee;background:#fffdf7"><div style="font-size:10px;color:#b07a10;margin-bottom:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">⏳ LLISTA D'ESPERA (${o.waitlist.length})</div>${personChips(o.waitlist,"wait")}</div>`:"";
   return`<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
     <div style="padding:12px 14px;border-bottom:.5px solid #f5f3ee"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:14px;font-weight:600;color:#1a1a18">${o.title}</div>${badge}</div>
     <div style="font-size:12px;color:${MUTED}">📅 ${dateStr} · ${o.time} h${isPast?` · <span style="background:#f5f3ee;color:${MUTED};font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">Històric</span>`:""}</div>
@@ -501,7 +580,7 @@ function renderPollCard(p){
   const tot=p.options.reduce((a,o)=>a+(p.votes[o]?.length||0),0);
   const win=p.closed&&p.options.length?p.options.reduce((a,b)=>(p.votes[b]?.length||0)>(p.votes[a]?.length||0)?b:a,p.options[0]):null;
   const canVote=!p.closed&&!!S.userName;
-  const rows=p.options.map(opt=>{
+  const rows=p.options.map((opt,optIdx)=>{
     const voters=p.votes[opt]||[];
     const cnt=voters.length;
     const pct=tot>0?Math.round((cnt/tot)*100):0;
@@ -509,7 +588,7 @@ function renderPollCard(p){
     const key=pollKey(p.id,opt);
     const open=!!(S.pollVotersOpen&&S.pollVotersOpen[key]);
     const barCol=isW?RED:(isMy?DARK:"#c8d4f0");
-    const voteAction=canVote?`onclick="castVote(${p.id},${jsArg(opt)},${jsArg(S.userName)})"`:"";
+    const voteAction=canVote?`onclick="castVoteByIndex(${p.id},${optIdx})"`:"";
     const voterList=open?`<div style="margin-top:8px;padding:8px 10px;background:#faf8f3;border-radius:10px;border:.5px solid #f0ede6"><div style="font-size:10px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Votants</div>${voters.length?voters.map(n=>`<span style="display:inline-block;background:#fff;border:.5px solid ${BORDER};border-radius:20px;font-size:11px;padding:3px 8px;margin:2px;color:#1a1a18">${esc(n)}</span>`).join(""):`<div style="font-size:12px;color:${MUTED};font-style:italic">Encara no hi ha cap vot</div>`}</div>`:"";
     return`<div style="margin-bottom:9px;padding:10px 10px 9px;background:${isMy?"#eef0fa":"#f8f9ff"};border:1.5px solid ${isMy?DARK:BORDER};border-radius:12px;${canVote?"cursor:pointer":""}" ${voteAction}>
       <div style="display:flex;align-items:flex-start;gap:9px">
@@ -520,7 +599,7 @@ function renderPollCard(p){
             <div style="font-size:12px;font-weight:700;color:${isW?RED:DARK};white-space:nowrap">${cnt} · ${pct}%</div>
           </div>
           <div style="background:#f0ede8;border-radius:20px;height:8px;overflow:hidden"><div style="background:${barCol};height:8px;border-radius:20px;width:${pct}%"></div></div>
-          <button onclick="event.stopPropagation();togglePollVoters(${p.id},${jsArg(opt)})" style="margin-top:7px;background:transparent;border:none;color:${DARK};font-size:11px;font-weight:700;cursor:pointer;padding:0">${open?"Amagar votants":"Veure votants"} · ${cnt}</button>
+          <button onclick="event.stopPropagation();togglePollVotersByIndex(${p.id},${optIdx})" style="margin-top:7px;background:transparent;border:none;color:${DARK};font-size:11px;font-weight:700;cursor:pointer;padding:0">${open?"Amagar votants":"Veure votants"} · ${cnt}</button>
           ${voterList}
         </div>
       </div>
@@ -774,11 +853,12 @@ function delMembre(id){if(S.role!=="patron")return;if(!confirm("Eliminar el soci
 function signup(oid){
   const o=S.outings.find(x=>x.id===oid);
   if(!o||S.role!=="soci"||isPastOuting(o))return;
+  normalizeOutingEntries(o);
   if(!o.waitlist)o.waitlist=[];
   const isMyGroup=S.userGroupId===o.groupId;
   if(!isMyGroup&&!o.isOpen)return;
-  const alreadyIn=o.signups.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
-  const alreadyWait=o.waitlist.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
+  const alreadyIn=o.signups.some(entryMatchesCurrent);
+  const alreadyWait=o.waitlist.some(entryMatchesCurrent);
   if(alreadyIn||alreadyWait)return;
   const entry={name:S.userName,gid:S.userGroupId,mid:S.memberId};
   if(o.signups.length>=o.capacity){
@@ -793,11 +873,12 @@ function signup(oid){
 function unsignup(oid){
   const o=S.outings.find(x=>x.id===oid);
   if(!o||S.role!=="soci"||isPastOuting(o))return;
+  normalizeOutingEntries(o);
   if(!o.waitlist)o.waitlist=[];
-  const wasIn=o.signups.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
-  const wasWait=o.waitlist.some(s=>s.name===S.userName&&s.gid===S.userGroupId);
-  o.signups=o.signups.filter(s=>!(s.name===S.userName&&s.gid===S.userGroupId));
-  o.waitlist=o.waitlist.filter(s=>!(s.name===S.userName&&s.gid===S.userGroupId));
+  const wasIn=o.signups.some(entryMatchesCurrent);
+  const wasWait=o.waitlist.some(entryMatchesCurrent);
+  o.signups=o.signups.filter(s=>!entryMatchesCurrent(s));
+  o.waitlist=o.waitlist.filter(s=>!entryMatchesCurrent(s));
   if(wasIn)addOutingLog(o,"unsignup",`${S.userName} es desapunta de ${outingLabel(o)}.`);
   if(wasWait)addOutingLog(o,"waitlist_leave",`${S.userName} surt de la llista d'espera de ${outingLabel(o)}.`);
   // Si estava a signups i hi ha gent esperant, el primer entra automàticament
@@ -851,8 +932,10 @@ function togglePin(id){const a=S.avisos.find(x=>x.id===id);if(a){a.pin=!a.pin;sa
 function addOpt(){go({pollOpts:[...S.pollOpts,""]});}
 function rmOpt(i){go({pollOpts:S.pollOpts.filter((_,j)=>j!==i)});}
 function togglePollVoters(pid,opt){const key=pollKey(pid,opt);const open=Object.assign({},S.pollVotersOpen||{});open[key]=!open[key];go({pollVotersOpen:open});}
+function togglePollVotersByIndex(pid,idx){const p=S.polls.find(x=>x.id===pid);const opt=p?.options?.[idx];if(opt==null)return;togglePollVoters(pid,opt);}
 function createPoll(){const q=document.getElementById("poll-q")?.value?.trim()||"";if(!q)return;const opts=S.pollOpts.map((_,i)=>document.getElementById(`opt-${i}`)?.value?.trim()||"").filter(Boolean);if(opts.length<2)return;const votes={};opts.forEach(o=>votes[o]=[]);S.polls.unshift({id:Date.now(),question:q,options:opts,votes,closed:false,date:td()});save("polls");go({showForm:false,pollQ:"",pollOpts:["",""]});}
-function castVote(pid,opt,name){const p=S.polls.find(x=>x.id===pid);name=name||S.userName;if(!p||p.closed||!name)return;p.votes=p.votes||{};p.options.forEach(o=>{if(!Array.isArray(p.votes[o]))p.votes[o]=[];p.votes[o]=p.votes[o].filter(n=>n!==name);});if(!p.votes[opt])p.votes[opt]=[];p.votes[opt].push(name);save("polls");render();}
+function castVote(pid,opt,name){const p=S.polls.find(x=>x.id===pid);name=name||S.userName;if(!p||p.closed||!name)return;p.votes=p.votes||{};(p.options||[]).forEach(o=>{if(!Array.isArray(p.votes[o]))p.votes[o]=[];p.votes[o]=p.votes[o].filter(n=>n!==name);});if(!p.votes[opt])p.votes[opt]=[];if(!p.votes[opt].includes(name))p.votes[opt].push(name);save("polls");render();}
+function castVoteByIndex(pid,idx){const p=S.polls.find(x=>x.id===pid);const opt=p?.options?.[idx];if(opt==null)return;castVote(pid,opt,S.userName);}
 function closePoll(pid){const p=S.polls.find(x=>x.id===pid);if(p){p.closed=true;save("polls");render();}}
 function delPoll(pid){S.polls=S.polls.filter(p=>p.id!==pid);save("polls");render();}
 
@@ -984,6 +1067,7 @@ async function initApp(){
     console.warn("⚠️ No s'han pogut migrar algunes claus:",e.message);
   }
   if(membresChanged){save("membres");}
+  if(normalizeAllOutingEntries()){save("outings");}
 
   if(bar)bar.style.width="100%";
   await new Promise(r=>setTimeout(r,200));

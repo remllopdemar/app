@@ -16,7 +16,12 @@ input, button, textarea, select { font-family: inherit; }
 <body>
 <div id="app"><div id="root"></div></div>
 <script>
-const PIN_PATRON="1234";
+// ── Seguretat bàsica ─────────────────────────────────────────────────────────
+// Nota: en una app 100% client-side això no substitueix una autenticació real de servidor,
+// però evita guardar claus en text pla a localStorage/Supabase.
+const SECURITY_VERSION=2;
+const MIN_PIN_LEN=6;
+const PATRON_HASH="sha256:2f2d8150a49414cbeb30ec480b2977fd9c880651043e7dbfd1e055f2d193dd13"; // hash de la clau actual del patró
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 const SUPA_URL="https://nibwwwtrwngiopqcqufi.supabase.co";
@@ -39,6 +44,37 @@ const store={
   get(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch{return null;}},
   set(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
 };
+
+async function sha256Hex(text){
+  if(!window.crypto?.subtle)throw new Error("Aquest navegador no suporta xifrat segur.");
+  const buf=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+async function hashPatronPin(pin){return "sha256:"+(await sha256Hex("ldm:patron:"+pin));}
+async function hashMemberPin(pin,m){return "sha256:"+(await sha256Hex("ldm:member:"+m.id+":"+m.name+":"+pin));}
+function isHashedPin(v){return typeof v==="string"&&/^sha256:[a-f0-9]{64}$/i.test(v);}
+async function migrateMemberPins(){
+  let changed=false;
+  for(const m of S.membres){
+    if(m.pin&&!isHashedPin(m.pin)){
+      m.pin=await hashMemberPin(m.pin,m);
+      changed=true;
+    }
+  }
+  return changed;
+}
+async function memberPinMatches(m,pin){
+  if(!m?.pin)return false;
+  if(isHashedPin(m.pin))return (await hashMemberPin(pin,m))===m.pin;
+  // Compatibilitat amb dades antigues: si encara hi havia clau en text pla,
+  // validem una vegada, migrem a hash i desem.
+  if(pin===m.pin){
+    m.pin=await hashMemberPin(pin,m);
+    save("membres");
+    return true;
+  }
+  return false;
+}
 
 const emblema=`<svg width="50" height="50" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg"><circle cx="25" cy="25" r="24" fill="white" stroke="#c8102e" stroke-width="3"/><circle cx="25" cy="25" r="18" fill="none" stroke="#1b3a7a" stroke-width="2"/><rect x="7" y="21" width="8" height="8" rx="1" fill="#c8102e"/><rect x="35" y="21" width="8" height="8" rx="1" fill="#c8102e"/><rect x="19" y="7" width="12" height="8" rx="1" fill="#c8102e"/><rect x="19" y="35" width="12" height="6" rx="1" fill="#c8102e"/><text x="25" y="29" text-anchor="middle" font-size="10" font-weight="bold" fill="#1b3a7a" font-family="serif">LM</text></svg>`;
 
@@ -86,7 +122,7 @@ let S={
   selectedMemberId:null,   // id del membre seleccionat al pas soci-list
   regErr:"",regSections:["social"],  // estat del formulari de registre
   screen:"inici",section:"competicio",
-  showForm:false,showAvisForm:false,showMembreForm:false,
+  showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,
   membreSections:["social"],
   newPos:1,calMonth:new Date().getMonth(),calYear:new Date().getFullYear(),
   pollQ:"",pollOpts:["",""],
@@ -130,11 +166,11 @@ function save(key){
 }
 
 function doLogout(force=false){
-  if(!force&&S.role&&!confirm("Realmente quieres salir?"))return;
+  if(!force&&S.role){go({showLogoutConfirm:true});return;}
   store.set("ldm:session",null);
   go({role:null,loginStep:"choose",pinErr:false,pinErrMsg:"",memberId:null,userName:"",
       userGroupId:null,userSections:[],capGroupId:null,selectedMemberId:null,
-      showForm:false,showAvisForm:false,showMembreForm:false,pollQ:"",pollOpts:["",""]});
+      showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,pollQ:"",pollOpts:["",""]});
 }
 
 function fetchMeteo(){
@@ -229,7 +265,7 @@ function renderLogin(){
     return wrap(`<div style="width:100%;max-width:300px">
       <div style="color:#fff;font-size:17px;font-weight:700;text-align:center;margin-bottom:4px">${isFirst?"Benvingut/da,":"Hola,"}</div>
       <div style="color:rgba(255,255,255,.75);font-size:21px;font-weight:600;text-align:center;margin-bottom:18px">${m.name}</div>
-      ${isFirst?`<div style="background:rgba(255,255,255,.08);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:rgba(255,255,255,.55);line-height:1.5;text-align:center">Primera vegada al dispositiu.<br>Crea la teva clau d'accés personal (mínim 4 caràcters).</div>`:""}
+      ${isFirst?`<div style="background:rgba(255,255,255,.08);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:rgba(255,255,255,.55);line-height:1.5;text-align:center">Primera vegada al dispositiu.<br>Crea la teva clau d'accés personal (mínim 6 caràcters).</div>`:""}
       ${pinInp("pin-in",isFirst?"Nova clau":"Clau d'accés",S.pinErr)}
       ${isFirst?pinInp("pin-in2","Confirma la clau"):""}
       ${errDiv(S.pinErrMsg)}
@@ -250,7 +286,7 @@ function renderLogin(){
         <div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Seccions *</div>
         <div style="display:flex;gap:8px">${secBtn("competicio","🏆 Competició")}${secBtn("social","⚓ Social")}</div>
       </div>
-      ${pinInp("reg-pin","Crea la teva clau (mínim 4 car.) *")}
+      ${pinInp("reg-pin","Crea la teva clau (mínim 6 car.) *")}
       ${pinInp("reg-pin2","Confirma la clau *")}
       ${errDiv(S.regErr)}
       ${btnP("ENVIAR SOL·LICITUD","submitRegister()")}
@@ -271,13 +307,17 @@ function renderLogin(){
 }
 
 // ── Funcions d'autenticació ────────────────────────────────────────────────────
-function tryPin(){
+async function tryPin(){
   const v=document.getElementById("pin-in")?.value||"";
-  if(v===PIN_PATRON){
-    store.set("ldm:session",{role:"patron"});
-    go({role:"patron",loginStep:"choose",pinErr:false,pinErrMsg:""});
-  } else {
-    go({pinErr:true,pinErrMsg:"Codi incorrecte"});
+  try{
+    if(await hashPatronPin(v)===PATRON_HASH){
+      store.set("ldm:session",{role:"patron",authVersion:SECURITY_VERSION});
+      go({role:"patron",loginStep:"choose",pinErr:false,pinErrMsg:""});
+    } else {
+      go({pinErr:true,pinErrMsg:"Codi incorrecte"});
+    }
+  }catch(e){
+    go({pinErr:true,pinErrMsg:e.message||"No s'ha pogut validar la clau"});
   }
 }
 
@@ -285,27 +325,31 @@ function selectSoci(id){
   go({selectedMemberId:id,loginStep:"soci-pin",pinErr:false,pinErrMsg:""});
 }
 
-function tryLoginSoci(){
+async function tryLoginSoci(){
   const m=S.membres.find(x=>x.id===S.selectedMemberId);
   if(!m)return;
   const pin=document.getElementById("pin-in")?.value||"";
-  if(!m.pin){
-    // Primera vegada: creació de clau
-    const pin2=document.getElementById("pin-in2")?.value||"";
-    if(pin.length<4)return go({pinErr:true,pinErrMsg:"La clau ha de tenir mínim 4 caràcters"});
-    if(pin!==pin2)return go({pinErr:true,pinErrMsg:"Les claus no coincideixen"});
-    m.pin=pin;
-    save("membres");
-  } else {
-    if(pin!==m.pin)return go({pinErr:true,pinErrMsg:"Clau incorrecta"});
+  try{
+    if(!m.pin){
+      // Primera vegada: creació de clau. Es guarda sempre en hash, mai en text pla.
+      const pin2=document.getElementById("pin-in2")?.value||"";
+      if(pin.length<MIN_PIN_LEN)return go({pinErr:true,pinErrMsg:`La clau ha de tenir mínim ${MIN_PIN_LEN} caràcters`});
+      if(pin!==pin2)return go({pinErr:true,pinErrMsg:"Les claus no coincideixen"});
+      m.pin=await hashMemberPin(pin,m);
+      save("membres");
+    } else {
+      if(!(await memberPinMatches(m,pin)))return go({pinErr:true,pinErrMsg:"Clau incorrecta"});
+    }
+    doLoginSoci(m);
+  }catch(e){
+    go({pinErr:true,pinErrMsg:e.message||"No s'ha pogut validar la clau"});
   }
-  doLoginSoci(m);
 }
 
 function doLoginSoci(m){
   m.sections=normalizeSections(m.sections);
   const role=m.isCap?"cap":"soci";
-  store.set("ldm:session",{role,memberId:m.id,pin:m.pin});
+  store.set("ldm:session",{role,memberId:m.id,pinHash:m.pin,authVersion:SECURITY_VERSION});
   go({role,capGroupId:m.isCap?m.groupId:null,memberId:m.id,userName:m.name,
       userGroupId:m.groupId,userSections:m.sections,loginStep:"choose",
       pinErr:false,pinErrMsg:"",section:m.sections.includes("competicio")?"competicio":"social"});
@@ -316,18 +360,24 @@ function togRegSec(sec){
   go({regSections:normalizeSections(next)});
 }
 
-function submitRegister(){
+async function submitRegister(){
   const nom=(document.getElementById("reg-nom")?.value||"").trim();
   const gid=parseInt(document.getElementById("reg-grup")?.value)||S.groups[0]?.id;
   const pin=document.getElementById("reg-pin")?.value||"";
   const pin2=document.getElementById("reg-pin2")?.value||"";
   if(!nom)return go({regErr:"El nom és obligatori"});
   if(!S.regSections.length)return go({regErr:"Selecciona almenys una secció"});
-  if(pin.length<4)return go({regErr:"La clau ha de tenir mínim 4 caràcters"});
+  if(pin.length<MIN_PIN_LEN)return go({regErr:`La clau ha de tenir mínim ${MIN_PIN_LEN} caràcters`});
   if(pin!==pin2)return go({regErr:"Les claus no coincideixen"});
-  S.membres.push({id:Date.now(),name:nom,groupId:gid,sections:normalizeSections(S.regSections),pin,isCap:false,pending:true});
-  save("membres");
-  go({loginStep:"register-ok"});
+  try{
+    const member={id:Date.now(),name:nom,groupId:gid,sections:normalizeSections(S.regSections),pin:null,isCap:false,pending:true};
+    member.pin=await hashMemberPin(pin,member);
+    S.membres.push(member);
+    save("membres");
+    go({loginStep:"register-ok"});
+  }catch(e){
+    go({regErr:e.message||"No s'ha pogut crear la clau"});
+  }
 }
 
 // ── Accions del panell de membres ──────────────────────────────────────────────
@@ -548,6 +598,23 @@ function renderMembres(){
   return pendingSection+(!S.showMembreForm?`<div style="margin:10px 14px 0"><button onclick="go({showMembreForm:true})" style="width:100%;padding:11px;background:${RED};border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">+ Afegir soci nou</button></div>`:"")+sum+form+llista+`<div style="height:14px"></div>`;
 }
 
+
+function renderLogoutModal(){
+  return `<div onclick="go({showLogoutConfirm:false})" style="position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px">
+    <div onclick="event.stopPropagation()" style="width:100%;max-width:320px;background:#fff;border-radius:18px;border:.5px solid ${BORDER};box-shadow:0 18px 50px rgba(0,0,0,.25);overflow:hidden">
+      <div style="padding:20px 18px 14px;text-align:center">
+        <div style="font-size:34px;margin-bottom:8px">⚓</div>
+        <div style="font-size:18px;font-weight:700;color:#1a1a18;margin-bottom:6px">Segur que vols sortir?</div>
+        <div style="font-size:13px;color:${MUTED};line-height:1.45">Es tancarà la sessió en aquest dispositiu.</div>
+      </div>
+      <div style="display:flex;gap:8px;padding:0 14px 14px">
+        <button onclick="go({showLogoutConfirm:false})" style="flex:1;padding:11px;background:#f5f3ee;border:.5px solid ${BORDER};border-radius:10px;color:${MUTED};font-size:14px;font-weight:600;cursor:pointer">Cancel·lar</button>
+        <button onclick="doLogout(true)" style="flex:1;padding:11px;background:${RED};border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Sortir</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 // ── Render principal ────────────────────────────────────────────────────────────
 function render(){
   const root=document.getElementById("root");
@@ -591,7 +658,7 @@ function render(){
   const btnC=hasC?`<button onclick="go({section:'competicio',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="competicio"?DARK:"transparent"};color:${S.section==="competicio"?"#fff":MUTED}">🏆 Competició</button>`:"";
   const btnS=hasS?`<button onclick="go({section:'social',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="social"?DARK:"transparent"};color:${S.section==="social"?"#fff":MUTED}">⚓ Social</button>`:"";
   const st=hasBoth&&S.screen!=="vots"&&S.screen!=="membres"&&S.screen!=="avisos"?`<div style="display:flex;margin:12px 14px 0;background:#e2dfd6;border-radius:10px;padding:3px">${btnC}${btnS}</div>`:"";
-  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:11px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${userSub}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,showMembreForm:false})`:`go({screen:'${k}',showForm:false,showAvisForm:false,showMembreForm:false})`;return`<button onclick="${clk}" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>`;
+  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:11px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${userSub}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,showMembreForm:false})`:`go({screen:'${k}',showForm:false,showAvisForm:false,showMembreForm:false})`;return`<button onclick="${clk}" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${S.showLogoutConfirm?renderLogoutModal():""}`;
 }
 
 // ── Accions generals ────────────────────────────────────────────────────────────
@@ -803,7 +870,13 @@ async function initApp(){
   }
 
   // Manté les dades antigues coherents amb la norma: competició implica social.
-  if(normalizeAllMemberSections()){save("membres");}
+  let membresChanged=normalizeAllMemberSections();
+  try{
+    if(await migrateMemberPins())membresChanged=true;
+  }catch(e){
+    console.warn("⚠️ No s'han pogut migrar algunes claus:",e.message);
+  }
+  if(membresChanged){save("membres");}
 
   if(bar)bar.style.width="100%";
   await new Promise(r=>setTimeout(r,200));
@@ -815,8 +888,19 @@ async function initApp(){
   if(session?.role==="patron"){
     Object.assign(S,{role:"patron",loginStep:"choose"});
   } else if(session?.memberId){
-    const m=S.membres.find(x=>x.id===session.memberId&&!x.pending&&x.pin&&x.pin===session.pin);
-    if(m){
+    const m=S.membres.find(x=>x.id===session.memberId&&!x.pending&&x.pin);
+    let ok=false;
+    if(m&&session.pinHash&&m.pin===session.pinHash)ok=true;
+    // Compatibilitat amb sessions antigues que encara guardaven la clau en text pla.
+    if(m&&!ok&&session.pin){
+      try{
+        if(await memberPinMatches(m,session.pin)){
+          store.set("ldm:session",{role:m.isCap?"cap":"soci",memberId:m.id,pinHash:m.pin,authVersion:SECURITY_VERSION});
+          ok=true;
+        }
+      }catch(e){console.warn("⚠️ Sessió antiga no validada:",e.message);}
+    }
+    if(m&&ok){
       m.sections=normalizeSections(m.sections);
       Object.assign(S,{
         role:m.isCap?"cap":"soci",
@@ -826,6 +910,8 @@ async function initApp(){
         loginStep:"choose",
         section:m.sections.includes("competicio")?"competicio":"social"
       });
+    } else if(session?.memberId){
+      store.set("ldm:session",null);
     }
   }
 

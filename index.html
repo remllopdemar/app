@@ -80,43 +80,27 @@ async function memberPinMatches(m,pin){
 const emblema=`<svg width="50" height="50" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg"><circle cx="25" cy="25" r="24" fill="white" stroke="#c8102e" stroke-width="3"/><circle cx="25" cy="25" r="18" fill="none" stroke="#1b3a7a" stroke-width="2"/><rect x="7" y="21" width="8" height="8" rx="1" fill="#c8102e"/><rect x="35" y="21" width="8" height="8" rx="1" fill="#c8102e"/><rect x="19" y="7" width="12" height="8" rx="1" fill="#c8102e"/><rect x="19" y="35" width="12" height="6" rx="1" fill="#c8102e"/><text x="25" y="29" text-anchor="middle" font-size="10" font-weight="bold" fill="#1b3a7a" font-family="serif">LM</text></svg>`;
 
 const DEF={
-  membres:[
-    {id:1,name:"Joan Roca",groupId:1,sections:["social"],pin:null,isCap:false,pending:false},
-    {id:2,name:"Maria Puig",groupId:2,sections:["social"],pin:null,isCap:false,pending:false},
-    {id:3,name:"Anna Mas",groupId:3,sections:["social"],pin:null,isCap:false,pending:false},
-    {id:4,name:"Pere Gómez",groupId:4,sections:["social"],pin:null,isCap:false,pending:false},
-    {id:5,name:"Laura Torres",groupId:5,sections:["social"],pin:null,isCap:false,pending:false},
-    {id:6,name:"Marc Bosch",groupId:6,sections:["social"],pin:null,isCap:false,pending:false},
-    {id:7,name:"Carles Nogué",groupId:1,sections:["competicio","social"],pin:null,isCap:true,pending:false},
-    {id:8,name:"Marta Serra",groupId:2,sections:["competicio","social"],pin:null,isCap:false,pending:false},
-  ],
+  membres:[],
   groups:[{id:1,name:"Grup A · 20.15h"},{id:2,name:"Grup B · 19.00h"},{id:3,name:"Grup C · 17.45h"},{id:4,name:"Grup D · 16.30h"},{id:5,name:"Grup E Matins · 9.15h"},{id:6,name:"Grup F · 8.00h"}],
-  avisos:[
-    {id:1,text:"Recordeu que el dijous 29 hi ha reunió de temporada a les 19h al local del club.",date:"2026-05-23",pin:true},
-  ],
-  outings:[
-    {id:1,groupId:1,title:"Sortida matinal",date:"2026-05-28",time:"09:00",capacity:8,isOpen:false,signups:[{name:"Joan Roca",gid:1},{name:"Maria Puig",gid:1}],waitlist:[]},
-    {id:2,groupId:2,title:"Sortida de tarda",date:"2026-05-30",time:"17:30",capacity:8,isOpen:true,signups:[{name:"Pere Gómez",gid:2},{name:"Laura Torres",gid:2},{name:"Marc Bosch",gid:2}],waitlist:[]},
-  ],
-  sessions:[
-    {id:1,date:"2026-05-22",type:"Sèrie de boies",duration:130,km:16,section:"competicio",note:""},
-    {id:2,date:"2026-05-20",type:"Fons llarg cap a Tossa",duration:180,km:28,section:"competicio",note:""},
-    {id:3,date:"2026-05-19",type:"Salida i arrancada",duration:90,km:10,section:"competicio",note:""},
-    {id:4,date:"2026-05-15",type:"Tàctica vent fort",duration:110,km:14,section:"competicio",note:"Tramuntana"},
-  ],
-  results:[
-    {id:1,race:"Regata Cap de Creus",date:"2026-05-10",place:"Cadaqués",pos:1,points:35},
-    {id:2,race:"Trofeu Festa Major Blanes",date:"2026-05-02",place:"Blanes",pos:2,points:28},
-    {id:3,race:"Regata de la Marinada",date:"2026-04-19",place:"Lloret de Mar",pos:1,points:35},
-    {id:4,race:"Copa Costa Brava",date:"2026-04-05",place:"Roses",pos:3,points:22},
-  ],
-  polls:[
-    {id:1,question:"Quan fem la pròxima sortida social?",options:["Dissabte 7 juny","Diumenge 8 juny","Dissabte 14 juny"],votes:{"Dissabte 7 juny":["Joan Roca","Maria Puig"],"Diumenge 8 juny":["Pere Gómez"],"Dissabte 14 juny":["Marc Bosch","Carles Nogué","Laura Torres"]},closed:false,date:"2026-05-23"},
-  ],
+  avisos:[],
+  outings:[],
+  sessions:[],
+  results:[],
+  polls:[],
   events:[]
 };
 
 function loadData(key){return store.get("ldm:"+key)||DEF[key]||[];}
+
+// Neteja localStorage si conté dades de demo (migració cap a Supabase com a font de veritat)
+function clearDemoLocalStorage(){
+  const m=store.get("ldm:membres");
+  const DEMO_IDS=[1,2,3,4,5,6,7,8];
+  if(m&&m.length<=8&&m.every(x=>DEMO_IDS.includes(x.id))&&m.some(x=>x.name==="Joan Roca"||x.name==="Maria Puig")){
+    console.log("🧹 Netejant dades de demo del localStorage...");
+    ["membres","avisos","outings","sessions","results","polls","events"].forEach(k=>localStorage.removeItem("ldm:"+k));
+  }
+}
 
 let S={
   role:null,loginStep:"choose",pinErr:false,pinErrMsg:"",
@@ -1284,7 +1268,7 @@ function maybeAutoGenOutings(){
 
 // ── Inicialització amb Supabase ───────────────────────────────────────────────
 async function initApp(){
-  // ── 1. Sessió i dades locals → render immediat (0ms d'espera) ─────────────
+  clearDemoLocalStorage(); // Neteja dades de demo si existeixen
   const session=store.get("ldm:session");
   if(session?.role==="patron"){
     Object.assign(S,{role:"patron",loginStep:"choose"});

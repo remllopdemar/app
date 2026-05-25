@@ -585,7 +585,7 @@ function renderClubCalendar(){
     }
   }
   const prev=mo===0?{m:11,y:y-1}:{m:mo-1,y:y},next=mo===11?{m:0,y:y+1}:{m:mo+1,y:y};
-  const legend=Object.entries(EVENT_TYPES).map(([k,c])=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${c.color}"></span>${c.short}</span>`).join("");
+  const legend=Object.entries(EVENT_TYPES).filter(([k])=>k!=="social").map(([k,c])=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${c.color}"></span>${c.short}</span>`).join("");
   return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><button onclick="go({calMonth:${prev.m},calYear:${prev.y},selectedCalDate:null,showEventForm:false,editEventId:null})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">‹</button><div style="font-size:14px;font-weight:700;color:#1a1a18">${MONTHS[mo]} ${y}</div><button onclick="go({calMonth:${next.m},calYear:${next.y},selectedCalDate:null,showEventForm:false,editEventId:null})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">›</button></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${hdr}${cells}</div><div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;padding-top:10px;border-top:.5px solid #f0ede6">${legend}</div><div style="font-size:11px;color:${MUTED};line-height:1.4;margin-top:9px">Només mostra regates i esdeveniments del club. Les sortides tenen secció pròpia.</div>`);
 }
 function renderClubAgenda(){

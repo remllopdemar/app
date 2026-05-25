@@ -1312,6 +1312,7 @@ function patronRemoveMember(oid,mid,fromHelm=false){
   }
   save("outings");save("avisos");render();
 }
+function openOut(oid){
   const o=S.outings.find(x=>x.id===oid);
   if(!o||isPastOuting(o))return;
   const isPatron=S.role==="patron";

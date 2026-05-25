@@ -767,7 +767,7 @@ function renderHomeAvisos(){
 }
 function renderHomeOutingMini(o){
   if(!o.waitlist)o.waitlist=[];
-  cleanOutingLists(o);
+  normalizeOutingEntries(o);
   const total=safeArr(o.signups).length;
   const isClub=!o.groupId;
   const grp=isClub?"Club":gname(o.groupId).split(" · ")[0];

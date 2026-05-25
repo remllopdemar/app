@@ -115,6 +115,7 @@ let S={
   pollQ:"",pollOpts:["",""],pollErr:"",
   meteo:null,meteoLoading:true,
   supaLoading:true,
+  patronAddOuting:null,
   groups:loadData("groups"),
   membres:loadData("membres"),
   avisos:loadData("avisos"),
@@ -663,12 +664,15 @@ function renderOutingCard(o){
     const isOwner=Number(gid)===Number(o.groupId);
     const isWait=mode==="wait";
     const isReserve=s.isReserve;
-    const bg=isWait?"#e8a020":isReserve?"#8b4513":(isOwner?DARK:GREEN);
+    const isHelm=mode==="helm";
+    const bg=isWait?"#e8a020":isHelm?"#4a7a3d":isReserve?"#8b4513":(isOwner?DARK:GREEN);
     const groupTxt=shortGroup(gid);
-    const title=isWait?"Llista d'espera":isReserve?"Plaça de reserva":(isOwner?"Del grup":"D'un altre grup");
-    return`<span title="${title}" style="display:inline-flex;align-items:center;gap:6px;background:${bg};border-radius:999px;padding:5px 9px;color:#fff;font-size:12px;font-weight:600;line-height:1.15">
-      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px">${esc(s.name)}</span>
-      <span style="font-size:10px;opacity:.78;background:rgba(255,255,255,.18);border-radius:999px;padding:1px 6px;white-space:nowrap">${isReserve?"R":groupTxt}</span>
+    const title=isWait?"Llista d'espera":isHelm?"Timoner":isReserve?"Plaça de reserva":(isOwner?"Del grup":"D'un altre grup");
+    const mid=s.mid||memberFromEntry(s)?.id;
+    const removeBtn=isPatron&&!isPast&&!isWait?` <button onclick="event.stopPropagation();patronRemoveMember(${o.id},${mid},${isHelm})" style="background:rgba(255,255,255,.25);border:none;border-radius:50%;width:14px;height:14px;color:#fff;font-size:10px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:1;padding:0;flex-shrink:0">×</button>`:"";
+    return`<span title="${title}" style="display:inline-flex;align-items:center;gap:4px;background:${bg};border-radius:999px;padding:5px 9px;color:#fff;font-size:12px;font-weight:600;line-height:1.15">
+      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">${esc(s.name)}</span>
+      <span style="font-size:10px;opacity:.78;background:rgba(255,255,255,.18);border-radius:999px;padding:1px 6px;white-space:nowrap">${isHelm?"Tim":isReserve?"R":groupTxt}</span>${removeBtn}
     </span>`;
   }).join("")}</div>`:"";
 
@@ -725,8 +729,33 @@ function renderOutingCard(o){
   }
   if((isMyCap||isPatron)&&!isPast&&!isOpen&&total<=8)
     acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir</button>`);
+  if(isPatron&&!isPast)
+    acts.push(`<button onclick="go({patronAddOuting:${o.id}})" style="padding:9px 12px;background:#fff;border:.5px solid ${DARK};border-radius:8px;color:${DARK};font-size:12px;font-weight:600;cursor:pointer">+ Afegir soci</button>`);
   if(isPatron)
     acts.push(`<button onclick="delOut(${o.id})" style="padding:9px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button>`);
+
+  // Modal d'afegir soci (patró)
+  const addMemberModal=isPatron&&S.patronAddOuting===o.id?`<div style="padding:10px 14px;border-top:.5px solid #f5f3ee;background:#f8f6f0">
+    <div style="font-size:11px;font-weight:700;color:${DARK};text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Afegir soci a la sortida</div>
+    <select id="patron-add-role-${o.id}" style="width:100%;padding:8px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:12px;background:#fff;outline:none;margin-bottom:8px">
+      <option value="rower">Vogador</option>
+      ${(o.helmsmen||0)>0?`<option value="helm">Timoner</option>`:""}
+    </select>
+    <select id="patron-add-mid-${o.id}" style="width:100%;padding:8px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:12px;background:#fff;outline:none;margin-bottom:8px">
+      <option value="">— Selecciona soci —</option>
+      ${S.membres.filter(m=>!m.pending).sort((a,b)=>a.name.localeCompare(b.name)).map(m=>{
+        const inOut=o.signups.some(s=>s.mid===m.id||s.name===m.name);
+        const inHelm=o.helmsmanSignups.some(s=>s.mid===m.id||s.name===m.name);
+        const inWait=o.waitlist.some(s=>s.mid===m.id||s.name===m.name);
+        const taken=inOut||inHelm||inWait;
+        return`<option value="${m.id}" ${taken?"disabled":""} style="color:${taken?MUTED:"#1a1a18"}">${esc(m.name)} · ${gname(m.groupId).split(" · ")[0]}${taken?" ✓":""}</option>`;
+      }).join("")}
+    </select>
+    <div style="display:flex;gap:8px">
+      <button onclick="patronAddMember(${o.id})" style="flex:1;padding:8px;background:${DARK};border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer">Afegir</button>
+      <button onclick="go({patronAddOuting:null})" style="padding:8px 12px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">Cancel·lar</button>
+    </div>
+  </div>`:"";
 
   return`<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
     <div style="padding:12px 14px;border-bottom:.5px solid #f5f3ee">
@@ -743,7 +772,7 @@ function renderOutingCard(o){
         <div style="background:#f0ede8;border-radius:4px;height:5px"><div style="background:${total>=capacity?RED:DARK};height:5px;border-radius:4px;width:${pct}%"></div></div>
       </div>
     </div>
-    ${helmsBlock}${signupsBlock}${waitBlock}
+    ${helmsBlock}${signupsBlock}${waitBlock}${addMemberModal}
     ${acts.length?`<div style="padding:10px 14px;display:flex;gap:8px;flex-wrap:wrap">${acts.join("")}</div>`:""}
   </div>`;
 }
@@ -1238,7 +1267,51 @@ function unsignup(oid){
   }
   save("outings");save("avisos");render();
 }
-function openOut(oid){
+function patronAddMember(oid){
+  if(S.role!=="patron")return;
+  const o=S.outings.find(x=>x.id===oid);
+  if(!o)return;
+  const mid=parseInt(document.getElementById(`patron-add-mid-${oid}`)?.value);
+  const role=document.getElementById(`patron-add-role-${oid}`)?.value||"rower";
+  if(!mid)return;
+  const m=S.membres.find(x=>x.id===mid);
+  if(!m)return;
+  if(!o.helmsmanSignups)o.helmsmanSignups=[];
+  const entry={name:m.name,gid:m.groupId,mid:m.id};
+  const alreadyIn=o.signups.some(s=>s.mid===m.id||s.name===m.name);
+  const alreadyHelm=o.helmsmanSignups.some(s=>s.mid===m.id||s.name===m.name);
+  const alreadyWait=o.waitlist.some(s=>s.mid===m.id||s.name===m.name);
+  if(alreadyIn||alreadyHelm||alreadyWait)return;
+  if(role==="helm"){
+    if(o.helmsmanSignups.length>=(o.helmsmen||0))return alert("Ja hi ha el màxim de timonels");
+    o.helmsmanSignups.push(entry);
+    addOutingLog(o,"helm_signup_patron",`El patró apunta ${m.name} de timoner a ${outingLabel(o)}.`);
+  } else {
+    o.signups.push(entry);
+    addOutingLog(o,"signup_patron",`El patró apunta ${m.name} a ${outingLabel(o)}.`);
+  }
+  save("outings");save("avisos");go({patronAddOuting:null});
+}
+
+function patronRemoveMember(oid,mid,fromHelm=false){
+  if(S.role!=="patron")return;
+  const o=S.outings.find(x=>x.id===oid);
+  if(!o)return;
+  if(fromHelm){
+    o.helmsmanSignups=o.helmsmanSignups.filter(s=>s.mid!==mid&&s.name!==S.membres.find(x=>x.id===mid)?.name);
+    addOutingLog(o,"helm_unsignup_patron",`El patró desapunta el timoner (id:${mid}) de ${outingLabel(o)}.`);
+  } else {
+    const m=S.membres.find(x=>x.id===mid);
+    const name=m?.name;
+    o.signups=o.signups.filter(s=>s.mid!==mid&&s.name!==name);
+    addOutingLog(o,"unsignup_patron",`El patró desapunta ${name||mid} de ${outingLabel(o)}.`);
+    // Promou de la llista d'espera si cal
+    while(o.signups.length<o.capacity&&o.waitlist.length>0){
+      promoteFromWaitlist(o);
+    }
+  }
+  save("outings");save("avisos");render();
+}
   const o=S.outings.find(x=>x.id===oid);
   if(!o||isPastOuting(o))return;
   const isPatron=S.role==="patron";

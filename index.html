@@ -504,6 +504,7 @@ function renderMeteo(){
 const EVENT_TYPES={
   regata_competicio:{label:"Regata competició",short:"Competi",ico:"🏁",color:RED,bg:"#fff0f0"},
   regata_social:{label:"Regata social",short:"Social",ico:"🚩",color:GREEN,bg:"#e6f4ee"},
+  social:{label:"Acte social",short:"Social",ico:"⚓",color:"#d38b00",bg:"#fff8ee"},
   altres:{label:"Altres",short:"Altres",ico:"📌",color:DARK,bg:"#eef0fa"}
 };
 function eventCfg(type){return EVENT_TYPES[type]||EVENT_TYPES.altres;}
@@ -584,7 +585,7 @@ function renderClubCalendar(){
     }
   }
   const prev=mo===0?{m:11,y:y-1}:{m:mo-1,y:y},next=mo===11?{m:0,y:y+1}:{m:mo+1,y:y};
-  const legend=Object.entries(EVENT_TYPES).filter(([k])=>k!=="social").map(([k,c])=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${c.color}"></span>${c.short}</span>`).join("");
+  const legend=Object.entries(EVENT_TYPES).map(([k,c])=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${c.color}"></span>${c.short}</span>`).join("");
   return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><button onclick="go({calMonth:${prev.m},calYear:${prev.y},selectedCalDate:null,showEventForm:false,editEventId:null})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">‹</button><div style="font-size:14px;font-weight:700;color:#1a1a18">${MONTHS[mo]} ${y}</div><button onclick="go({calMonth:${next.m},calYear:${next.y},selectedCalDate:null,showEventForm:false,editEventId:null})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">›</button></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${hdr}${cells}</div><div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;padding-top:10px;border-top:.5px solid #f0ede6">${legend}</div><div style="font-size:11px;color:${MUTED};line-height:1.4;margin-top:9px">Només mostra regates i esdeveniments del club. Les sortides tenen secció pròpia.</div>`);
 }
 function renderClubAgenda(){
@@ -1292,54 +1293,7 @@ function maybeAutoGenOutings(){
 
 // ── Inicialització amb Supabase ───────────────────────────────────────────────
 async function initApp(){
-  document.getElementById("root").innerHTML=`<div style="min-height:100vh;background:linear-gradient(160deg,${DARK} 60%,#122860);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px"><div style="display:inline-flex;align-items:center;justify-content:center;background:#fff;border-radius:50%;width:80px;height:80px;border:3px solid ${RED}">${emblema}</div><div style="color:rgba(255,255,255,.6);font-size:14px;letter-spacing:.05em">Carregant dades del club...</div><div style="width:40px;height:3px;background:rgba(255,255,255,.15);border-radius:2px;overflow:hidden"><div id="ldg-bar" style="height:100%;width:0%;background:${RED};border-radius:2px;transition:width .4s ease"></div></div></div>`;
-  const bar=document.getElementById("ldg-bar");
-  if(bar)bar.style.width="30%";
-
-  try{
-    const {data,error}=await supa
-      .from("app_data")
-      .select("key,value")
-      .in("key",SUPA_KEYS.map(k=>"ldm:"+k));
-
-    if(bar)bar.style.width="80%";
-
-    if(!error&&data&&data.length){
-      const map={};
-      data.forEach(r=>{map[r.key]=r.value;});
-      if(map["ldm:groups"])  {S.groups=map["ldm:groups"];   store.set("ldm:groups",  S.groups);}
-      if(map["ldm:membres"]) {S.membres=map["ldm:membres"]; store.set("ldm:membres", S.membres);}
-      if(map["ldm:avisos"])  {S.avisos=map["ldm:avisos"];   store.set("ldm:avisos",  S.avisos);}
-      if(map["ldm:outings"]) {S.outings=map["ldm:outings"]; store.set("ldm:outings", S.outings);}
-      if(map["ldm:sessions"]){S.sessions=map["ldm:sessions"];store.set("ldm:sessions",S.sessions);}
-      if(map["ldm:results"]) {S.results=map["ldm:results"]; store.set("ldm:results", S.results);}
-      if(map["ldm:polls"])   {S.polls=map["ldm:polls"];     store.set("ldm:polls",   S.polls);}
-      console.log("✅ Dades carregades de Supabase ("+data.length+" claus)");
-    } else if(error){
-      console.warn("⚠️ Error Supabase, usant dades locals:",error.message);
-    } else {
-      console.log("ℹ️ Supabase buit, usant dades per defecte (primera vegada)");
-    }
-  }catch(e){
-    console.warn("⚠️ Supabase no disponible, mode offline:",e.message);
-  }
-
-  // Manté les dades antigues coherents amb la norma: competició implica social.
-  let membresChanged=normalizeAllMemberSections();
-  try{
-    if(await migrateMemberPins())membresChanged=true;
-  }catch(e){
-    console.warn("⚠️ No s'han pogut migrar algunes claus:",e.message);
-  }
-  if(membresChanged){save("membres");}
-  if(normalizeAllOutingEntries()){save("outings");}
-
-  if(bar)bar.style.width="100%";
-  await new Promise(r=>setTimeout(r,200));
-
-  maybeAutoGenOutings();   // ← Genera sortides si és dissabte
-
-  // ── Recuperar sessió guardada ─────────────────────────────────────────────
+  // ── 1. Sessió i dades locals → render immediat (0ms d'espera) ─────────────
   const session=store.get("ldm:session");
   if(session?.role==="patron"){
     Object.assign(S,{role:"patron",loginStep:"choose"});
@@ -1347,15 +1301,6 @@ async function initApp(){
     const m=S.membres.find(x=>x.id===session.memberId&&!x.pending&&x.pin);
     let ok=false;
     if(m&&session.pinHash&&m.pin===session.pinHash)ok=true;
-    // Compatibilitat amb sessions antigues que encara guardaven la clau en text pla.
-    if(m&&!ok&&session.pin){
-      try{
-        if(await memberPinMatches(m,session.pin)){
-          store.set("ldm:session",{role:m.isCap?"cap":"soci",memberId:m.id,pinHash:m.pin,authVersion:SECURITY_VERSION});
-          ok=true;
-        }
-      }catch(e){console.warn("⚠️ Sessió antiga no validada:",e.message);}
-    }
     if(m&&ok){
       m.sections=normalizeSections(m.sections);
       Object.assign(S,{
@@ -1366,13 +1311,72 @@ async function initApp(){
         loginStep:"choose",
         section:m.sections.includes("competicio")?"competicio":"social"
       });
-    } else if(session?.memberId){
+    } else {
       store.set("ldm:session",null);
     }
   }
+  render(); // ← L'usuari ja veu l'app amb les dades del localStorage
 
-  fetchMeteo();
-  render();
+  fetchMeteo(); // ← En paral·lel, sense bloquejar
+
+  // ── 2. Sincronització Supabase en segon pla ────────────────────────────────
+  try{
+    const {data,error}=await supa
+      .from("app_data")
+      .select("key,value")
+      .in("key",SUPA_KEYS.map(k=>"ldm:"+k));
+
+    if(!error&&data&&data.length){
+      const map={};
+      data.forEach(r=>{map[r.key]=r.value;});
+      let changed=false;
+      const keys=["groups","membres","avisos","outings","sessions","results","polls"];
+      keys.forEach(k=>{
+        if(map["ldm:"+k]){S[k]=map["ldm:"+k];store.set("ldm:"+k,S[k]);changed=true;}
+      });
+      console.log("✅ Supabase sincronitzat ("+data.length+" claus)");
+
+      // Migracions lleugeres (ara que tenim les dades fresques)
+      let membresChanged=normalizeAllMemberSections();
+      try{if(await migrateMemberPins())membresChanged=true;}catch(e){}
+      if(membresChanged)save("membres");
+      if(normalizeAllOutingEntries())save("outings");
+
+      // Valida sessió activa contra dades fresques de Supabase
+      if(session?.memberId){
+        const m=S.membres.find(x=>x.id===session.memberId&&!x.pending&&x.pin);
+        let ok=false;
+        if(m&&session.pinHash&&m.pin===session.pinHash)ok=true;
+        if(m&&!ok&&session.pin){
+          try{
+            if(await memberPinMatches(m,session.pin)){
+              store.set("ldm:session",{role:m.isCap?"cap":"soci",memberId:m.id,pinHash:m.pin,authVersion:SECURITY_VERSION});
+              ok=true;
+            }
+          }catch(e){}
+        }
+        if(m&&ok){
+          m.sections=normalizeSections(m.sections);
+          Object.assign(S,{
+            role:m.isCap?"cap":"soci",
+            capGroupId:m.isCap?m.groupId:null,
+            memberId:m.id,userName:m.name,
+            userGroupId:m.groupId,userSections:m.sections,
+          });
+        } else if(session?.memberId&&S.role!=="patron"){
+          store.set("ldm:session",null);
+          Object.assign(S,{role:null,loginStep:"choose",memberId:null,userName:""});
+        }
+      }
+
+      maybeAutoGenOutings();
+      if(changed)render(); // ← Re-render només si hi ha dades noves de Supabase
+    } else if(error){
+      console.warn("⚠️ Error Supabase, usant dades locals:",error.message);
+    }
+  }catch(e){
+    console.warn("⚠️ Supabase no disponible, mode offline:",e.message);
+  }
 }
 
 initApp();

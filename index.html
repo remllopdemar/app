@@ -26,7 +26,7 @@ const PATRON_HASH="sha256:2f2d8150a49414cbeb30ec480b2977fd9c880651043e7dbfd1e055
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 const SUPA_URL="https://nibwwwtrwngiopqcqufi.supabase.co";
-const SUPA_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pYnd3d3Ryd25naW9wcWNxdWZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1OTM2NzAsImV4cCI6MjA5NTE2OTY3MH0.xTqIiMpU2MWnQ7c5PQur0TKKsay8Vl75dIKovs9QSg4"; // 👈 Enganxa aquí la teva anon key completa
+const SUPA_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."; // 👈 Enganxa aquí la teva anon key completa
 const supa=window.supabase.createClient(SUPA_URL,SUPA_KEY);
 const SUPA_KEYS=["membres","groups","avisos","outings","sessions","results","polls","events"];
 // ─────────────────────────────────────────────────────────────────────────────
@@ -216,6 +216,14 @@ function normalizeOutingEntries(o){
   let changed=false;
   if(!Array.isArray(o.signups)){o.signups=[];changed=true;}
   if(!Array.isArray(o.waitlist)){o.waitlist=[];changed=true;}
+  if(!Array.isArray(o.helmsmanSignups)){o.helmsmanSignups=[];changed=true;}
+  // Migra sortides antigues sense camps de timonel/reserva
+  if(o.helmsmen===undefined||o.helmsmen===null){
+    const cfg=getOutingCfg(o.groupId,o.date);
+    if(cfg){o.helmsmen=cfg.helmsmen;o.helmsmanRequired=cfg.helmsmanRequired;o.reserve=cfg.reserve;if(!o.capacity||o.capacity<cfg.capacity)o.capacity=cfg.capacity;}
+    else{o.helmsmen=0;o.helmsmanRequired=false;o.reserve=1;}
+    changed=true;
+  }
   const clean=list=>{
     const seen=new Set(),out=[];
     list.forEach(e=>{
@@ -610,58 +618,133 @@ function renderOutingCard(o){
   normalizeOutingEntries(o);
   const grp=S.groups.find(g=>g.id===o.groupId);
   if(!o.waitlist)o.waitlist=[];
-  const total=o.signups.length,pct=Math.min(100,Math.round((total/o.capacity)*100)),isFull=total>=o.capacity,isPast=isPastOuting(o);
-  const prefList=o.signups.filter(s=>s.gid===o.groupId),openList=o.signups.filter(s=>s.gid!==o.groupId);
+  if(!o.helmsmanSignups)o.helmsmanSignups=[];
+  const isOpen=o.isOpen||shouldBeOpen(o);
+  const cfg=getOutingCfg(o.groupId,o.date);
+  const capacity=o.capacity||8;
+  const reserve=o.reserve||1;
+  const maxHelm=o.helmsmen||0;
+  const helmsRequired=o.helmsmanRequired||false;
+  const total=o.signups.length;
+  const isFull=total>=capacity+(isOpen?0:reserve);
+  const isPast=isPastOuting(o);
   const isMyGroup=S.userGroupId===o.groupId||S.capGroupId===o.groupId;
-  const isMyCap=S.role==="cap"&&S.capGroupId===o.groupId,isPatron=S.role==="patron";
-  const amIn=S.role==="soci"&&o.signups.some(entryMatchesCurrent);
-  const amInWait=S.role==="soci"&&o.waitlist.some(entryMatchesCurrent);
-  const canAccess=isMyGroup||o.isOpen;
-  const canJoin=S.role==="soci"&&!isPast&&!amIn&&!amInWait&&!isFull&&canAccess;
-  const canWait=S.role==="soci"&&!isPast&&!amIn&&!amInWait&&isFull&&canAccess;
-  const cantAccess=S.role==="soci"&&!isPast&&!amIn&&!amInWait&&!isMyGroup&&!o.isOpen;
+  const isMyCap=S.role==="cap"&&S.capGroupId===o.groupId;
+  const isPatron=S.role==="patron";
+  const amHelm=o.helmsmanSignups.some(entryMatchesCurrent);
+  const amIn=o.signups.some(entryMatchesCurrent);
+  const amWait=o.waitlist.some(entryMatchesCurrent);
+  const canAccess=isMyGroup||isOpen;
   const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
+
+  // Obertura automàtica: auto-marca com a oberta si cal
+  if(!o.isOpen&&shouldBeOpen(o)){o.isOpen=true;save("outings");}
+
+  // Compta quan s'obre (per mostrar countdown)
+  let openInfo="";
+  if(!isOpen&&!isPast&&cfg){
+    const outingDate=parseLocalDate(o.date);
+    const openDate=new Date(outingDate);
+    openDate.setDate(openDate.getDate()+(cfg.openDayOffset||0));
+    const [hh,mm]=(cfg.openHour||"07:30").split(":").map(Number);
+    openDate.setHours(hh,mm,0,0);
+    const diff=openDate-new Date();
+    if(diff>0){
+      const h=Math.floor(diff/3600000),m2=Math.floor((diff%3600000)/60000);
+      const ddays=Math.floor(diff/86400000);
+      const openStr=ddays>=1?`demà a les ${cfg.openHour}`:`avui a les ${cfg.openHour}`;
+      openInfo=`<div style="font-size:11px;color:#b07a10;background:#fff8ee;border-radius:7px;padding:4px 8px;margin-top:6px;display:inline-block">🔒 S'obre a tothom ${openStr}</div>`;
+    }
+  }
+
   const shortGroup=gid=>esc(gname(gid).split(" · ")[0]||"—");
   const personChips=(arr,mode="signups")=>arr.length?`<div style="display:flex;flex-wrap:wrap;gap:6px">${arr.map(s=>{
-    const m=memberFromEntry(s),gid=s.gid||m?.groupId;
-    const hasOwner=o.groupId!==null&&o.groupId!==undefined&&o.groupId!=="";
-    const isOwner=hasOwner&&Number(gid)===Number(o.groupId);
+    const gid=s.gid||memberFromEntry(s)?.groupId;
+    const isOwner=Number(gid)===Number(o.groupId);
     const isWait=mode==="wait";
-    const bg=isWait?"#e8a020":(isOwner?DARK:GREEN);
-    const br=isWait?"#d38b00":(isOwner?DARK:GREEN);
-    const groupTxt=hasOwner?shortGroup(gid):"Club";
-    const title=isWait?"Llista d'espera":(isOwner?"Del grup de la sortida":"D'un altre grup");
-    return `<span title="${title}" style="display:inline-flex;align-items:center;gap:6px;max-width:100%;background:${bg};border:1px solid ${br};border-radius:999px;padding:5px 9px;color:#fff;font-size:12px;font-weight:600;line-height:1.15;box-shadow:0 1px 2px rgba(0,0,0,.06)">
+    const isReserve=s.isReserve;
+    const bg=isWait?"#e8a020":isReserve?"#8b4513":(isOwner?DARK:GREEN);
+    const groupTxt=shortGroup(gid);
+    const title=isWait?"Llista d'espera":isReserve?"Plaça de reserva":(isOwner?"Del grup":"D'un altre grup");
+    return`<span title="${title}" style="display:inline-flex;align-items:center;gap:6px;background:${bg};border-radius:999px;padding:5px 9px;color:#fff;font-size:12px;font-weight:600;line-height:1.15">
       <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px">${esc(s.name)}</span>
-      <span style="font-size:10px;font-weight:700;opacity:.78;background:rgba(255,255,255,.18);border-radius:999px;padding:1px 6px;white-space:nowrap">${groupTxt}</span>
+      <span style="font-size:10px;opacity:.78;background:rgba(255,255,255,.18);border-radius:999px;padding:1px 6px;white-space:nowrap">${isReserve?"R":groupTxt}</span>
     </span>`;
   }).join("")}</div>`:"";
-  const outingLegend=o.groupId&&o.isOpen?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"><span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${DARK}"></span>Del grup</span><span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${GREEN}"></span>Altres grups</span></div>`:"";
-  // 🔒/🔓 badge — autogenerades comencen tancades, cap/patró les obre
-  const badge=o.isOpen
+
+  const badge=isOpen
     ?`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔓 Oberta</span>`
-    :`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 ${grp?.name||""}</span>`;
+    :`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 ${grp?.name?.split(" · ")[0]||""}</span>`;
+
+  const pct=Math.min(100,Math.round((total/capacity)*100));
+
+  // Bloc timonels
+  const helmsBlock=maxHelm>0?`<div style="padding:8px 14px;border-bottom:.5px solid #f5f3ee;background:#f8f6f0">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <div style="font-size:10px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em">⛵ TIMONELS ${o.helmsmanSignups.length}/${maxHelm}${helmsRequired?" · obligatori":""}</div>
+    </div>
+    ${o.helmsmanSignups.length?personChips(o.helmsmanSignups,"helm"):`<div style="font-size:12px;color:${helmsRequired?RED:MUTED};font-style:italic">${helmsRequired?"Cal timoner per fer la sortida":"Sense timoner assignat"}</div>`}
+  </div>`:"";
+
+  const outingLegend=isOpen?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+    <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${DARK}"></span>Del grup</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${GREEN}"></span>Altres grups</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:#8b4513"></span>Reserva</span>
+  </div>`:"";
+
+  const signupsBlock=o.signups.length?`<div style="padding:10px 14px;border-bottom:.5px solid #f5f3ee">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+      <div style="font-size:10px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em">VOGADORS</div>
+      <div style="font-size:10px;color:${MUTED};font-weight:600">${total}/${capacity}${isMyGroup&&!isOpen?`+1R`:""}</div>
+    </div>${outingLegend}${personChips(o.signups,"signups")}</div>`:"";
+
+  const waitBlock=o.waitlist.length?`<div style="padding:8px 14px;border-bottom:.5px solid #f5f3ee;background:#fffdf7">
+    <div style="font-size:10px;color:#b07a10;margin-bottom:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">⏳ LLISTA D'ESPERA (${o.waitlist.length}) · Prioritat grup</div>
+    ${personChips(o.waitlist,"wait")}</div>`:"";
+
+  // Botons d'acció
   const acts=[];
-  if(canJoin)acts.push(`<button onclick="signup(${o.id})" style="flex:1;padding:9px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:13px;cursor:pointer">✋ Apuntar-me</button>`);
-  if(canWait)acts.push(`<button onclick="signup(${o.id})" style="flex:1;padding:9px;background:#e8a020;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:13px;cursor:pointer">⏳ Llista d'espera</button>`);
-  if(amInWait&&!isPast)acts.push(`<div style="flex:1;padding:9px;background:#fff8ee;border:.5px solid #e8a020;border-radius:8px;color:#b07a10;font-size:12px;text-align:center;font-weight:500">⏳ Estàs a la llista d'espera · pos. ${o.waitlist.findIndex(entryMatchesCurrent)+1}<br><button onclick="unsignup(${o.id})" style="background:none;border:none;color:#b07a10;font-size:11px;cursor:pointer;text-decoration:underline;margin-top:2px;padding:0">Sortir de la llista</button></div>`);
-  if(amIn&&!isPast)acts.push(`<button onclick="unsignup(${o.id})" style="flex:1;padding:9px;background:transparent;border:.5px solid ${RED};border-radius:8px;color:${RED};font-weight:500;font-size:13px;cursor:pointer">Desapuntar-me</button>`);
-  if(cantAccess&&!isFull)acts.push(`<div style="flex:1;padding:9px;background:#f8f8f8;border-radius:8px;color:${MUTED};font-size:12px;text-align:center">El cap ha d'obrir la inscripció</div>`);
-  if(cantAccess&&isFull)acts.push(`<div style="flex:1;padding:9px;background:#fff0f0;border-radius:8px;color:${RED};font-size:12px;text-align:center">Complet</div>`);
-  // Els caps poden obrir si ≤8 apuntats (i el patró sempre)
-  if((isMyCap||isPatron)&&!isPast&&!o.isOpen&&total<=8)acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir a tothom</button>`);
-  if(isPatron)acts.push(`<button onclick="delOut(${o.id})" style="padding:9px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button>`);
-  // Secció de noms apuntats: una sola llista en format xip, amb colors per grup
-  const signupsBlock=o.signups.length?`<div style="padding:10px 14px;border-bottom:.5px solid #f5f3ee"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px"><div style="font-size:10px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em">APUNTATS</div><div style="font-size:10px;color:${MUTED};font-weight:600">${total}/${o.capacity}</div></div>${outingLegend}${personChips(o.signups,"signups")}</div>`:"";
-  // Llista d'espera (visible sempre que n'hi hagi)
-  const waitBlock=o.waitlist.length?`<div style="padding:8px 14px;border-bottom:.5px solid #f5f3ee;background:#fffdf7"><div style="font-size:10px;color:#b07a10;margin-bottom:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">⏳ LLISTA D'ESPERA (${o.waitlist.length})</div>${personChips(o.waitlist,"wait")}</div>`:"";
+  if(S.role==="soci"&&!isPast){
+    const canJoinHelm=maxHelm>0&&!amHelm&&!amIn&&!amWait&&canAccess&&o.helmsmanSignups.length<maxHelm;
+    const canJoinRow=!amIn&&!amWait&&!amHelm&&canAccess;
+    const rowFull=total>=capacity+(isMyGroup?reserve:0);
+    const cantAccess=!isMyGroup&&!isOpen;
+
+    if(canJoinHelm)
+      acts.push(`<button onclick="signup(${o.id},true)" style="flex:1;padding:9px;background:#4a7a3d;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">⛵ Timoner</button>`);
+    if(canJoinRow&&!rowFull)
+      acts.push(`<button onclick="signup(${o.id},false)" style="flex:1;padding:9px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:13px;cursor:pointer">✋ Apuntar-me</button>`);
+    if(canJoinRow&&rowFull)
+      acts.push(`<button onclick="signup(${o.id},false)" style="flex:1;padding:9px;background:#e8a020;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:13px;cursor:pointer">⏳ Llista d'espera</button>`);
+    if((amIn||amHelm)&&!isPast)
+      acts.push(`<button onclick="unsignup(${o.id})" style="flex:1;padding:9px;background:transparent;border:.5px solid ${RED};border-radius:8px;color:${RED};font-weight:500;font-size:13px;cursor:pointer">Desapuntar-me</button>`);
+    if(amWait&&!isPast)
+      acts.push(`<div style="flex:1;padding:9px;background:#fff8ee;border:.5px solid #e8a020;border-radius:8px;color:#b07a10;font-size:12px;text-align:center;font-weight:500">⏳ Llista d'espera · pos.${o.waitlist.findIndex(entryMatchesCurrent)+1}<br><button onclick="unsignup(${o.id})" style="background:none;border:none;color:#b07a10;font-size:11px;cursor:pointer;text-decoration:underline;margin-top:2px;padding:0">Sortir</button></div>`);
+    if(cantAccess)
+      acts.push(`<div style="flex:1;padding:9px;background:#f8f8f8;border-radius:8px;color:${MUTED};font-size:12px;text-align:center">El cap ha d'obrir la inscripció</div>`);
+  }
+  if((isMyCap||isPatron)&&!isPast&&!isOpen&&total<=8)
+    acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir</button>`);
+  if(isPatron)
+    acts.push(`<button onclick="delOut(${o.id})" style="padding:9px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button>`);
+
   return`<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
-    <div style="padding:12px 14px;border-bottom:.5px solid #f5f3ee"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:14px;font-weight:600;color:#1a1a18">${o.title}</div>${badge}</div>
-    <div style="font-size:12px;color:${MUTED}">📅 ${dateStr} · ${o.time} h${isPast?` · <span style="background:#f5f3ee;color:${MUTED};font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">Històric</span>`:""}</div>
-    <div style="margin-top:10px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:11px;color:${MUTED}">Places</span><span style="font-size:11px;font-weight:600;color:${isFull?RED:DARK}">${total}/${o.capacity}${o.waitlist.length?` · ${o.waitlist.length} esperant`:""}</span></div>
-    <div style="background:#f0ede8;border-radius:4px;height:5px"><div style="background:${isFull?RED:DARK};height:5px;border-radius:4px;width:${pct}%"></div></div></div></div>
-    ${signupsBlock}${waitBlock}
-    ${acts.length?`<div style="padding:10px 14px;display:flex;gap:8px">${acts.join("")}</div>`:""}
+    <div style="padding:12px 14px;border-bottom:.5px solid #f5f3ee">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:14px;font-weight:600;color:#1a1a18">${esc(o.title)}</div>${badge}
+      </div>
+      <div style="font-size:12px;color:${MUTED}">📅 ${dateStr} · ${esc(o.time)} h${isPast?` · <span style="background:#f5f3ee;color:${MUTED};font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">Històric</span>`:""}</div>
+      ${openInfo}
+      <div style="margin-top:10px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="font-size:11px;color:${MUTED}">Vogadors</span>
+          <span style="font-size:11px;font-weight:600;color:${total>=capacity?RED:DARK}">${total}/${capacity}${o.waitlist.length?` · ${o.waitlist.length} esperant`:""}</span>
+        </div>
+        <div style="background:#f0ede8;border-radius:4px;height:5px"><div style="background:${total>=capacity?RED:DARK};height:5px;border-radius:4px;width:${pct}%"></div></div>
+      </div>
+    </div>
+    ${helmsBlock}${signupsBlock}${waitBlock}
+    ${acts.length?`<div style="padding:10px 14px;display:flex;gap:8px;flex-wrap:wrap">${acts.join("")}</div>`:""}
   </div>`;
 }
 
@@ -1053,23 +1136,46 @@ function cancelEditMembre(){go({editMemberId:null,editMemberSections:["social"]}
 function togEditSec(sec){const s=S.editMemberSections.includes(sec)?S.editMemberSections.filter(x=>x!==sec):[...S.editMemberSections,sec];go({editMemberSections:normalizeSections(s)});}
 function saveEditMembre(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id&&!x.pending);if(!m)return;const nom=(document.getElementById("edit-nom-"+id)?.value||"").trim();const gid=parseInt(document.getElementById("edit-grup-"+id)?.value)||m.groupId;const sections=normalizeSections(S.editMemberSections);if(!confirm(`Desar canvis per a "${nom||m.name}"?`))return;if(nom)m.name=nom;m.groupId=gid;m.sections=sections;save("membres");go({editMemberId:null,editMemberSections:["social"]});}
 function delMembre(id){if(S.role!=="patron")return;if(!confirm("Eliminar el soci?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
-function signup(oid){
+function signup(oid,asHelm=false){
   const o=S.outings.find(x=>x.id===oid);
   if(!o||S.role!=="soci"||isPastOuting(o))return;
   normalizeOutingEntries(o);
   if(!o.waitlist)o.waitlist=[];
+  if(!o.helmsmanSignups)o.helmsmanSignups=[];
   const isMyGroup=S.userGroupId===o.groupId;
-  if(!isMyGroup&&!o.isOpen)return;
-  const alreadyIn=o.signups.some(entryMatchesCurrent);
-  const alreadyWait=o.waitlist.some(entryMatchesCurrent);
-  if(alreadyIn||alreadyWait)return;
+  const isOpen=o.isOpen||shouldBeOpen(o);
+  if(!isMyGroup&&!isOpen)return;
   const entry={name:S.userName,gid:S.userGroupId,mid:S.memberId};
-  if(o.signups.length>=o.capacity){
-    o.waitlist.push(entry);
-    addOutingLog(o,"waitlist_join",`${S.userName} entra a la llista d'espera de ${outingLabel(o)}.`);
+  // No pot ser timoner i vogador alhora
+  const amHelm=o.helmsmanSignups.some(entryMatchesCurrent);
+  const amRower=o.signups.some(entryMatchesCurrent);
+  const amWait=o.waitlist.some(entryMatchesCurrent);
+  if(amHelm||amRower||amWait)return;
+  if(asHelm){
+    // Timoner: qualsevol del grup (o tothom si oberta)
+    const maxHelm=o.helmsmen||0;
+    if(!maxHelm)return;
+    if(o.helmsmanSignups.length>=maxHelm)return;
+    o.helmsmanSignups.push(entry);
+    addOutingLog(o,"helm_signup",`${S.userName} s'apunta de timoner a ${outingLabel(o)}.`);
   } else {
-    o.signups.push(entry);
-    addOutingLog(o,"signup",`${S.userName} s'apunta a ${outingLabel(o)}.`);
+    // Vogador: plaça normal o reserva (+1 per al grup)
+    const maxNormal=o.capacity||8;
+    const maxWithReserve=isMyGroup?(maxNormal+(o.reserve||1)):maxNormal;
+    if(o.signups.length>=maxNormal){
+      if(isMyGroup&&o.signups.length<maxWithReserve){
+        // Plaça de reserva del grup
+        o.signups.push({...entry,isReserve:true});
+        addOutingLog(o,"signup_reserve",`${S.userName} ocupa la plaça de reserva de ${outingLabel(o)}.`);
+      } else {
+        // Llista d'espera (prioritat grup)
+        o.waitlist.push(entry);
+        addOutingLog(o,"waitlist_join",`${S.userName} entra a la llista d'espera de ${outingLabel(o)}.`);
+      }
+    } else {
+      o.signups.push(entry);
+      addOutingLog(o,"signup",`${S.userName} s'apunta a ${outingLabel(o)}.`);
+    }
   }
   save("outings");save("avisos");render();
 }
@@ -1078,18 +1184,21 @@ function unsignup(oid){
   if(!o||S.role!=="soci"||isPastOuting(o))return;
   normalizeOutingEntries(o);
   if(!o.waitlist)o.waitlist=[];
+  if(!o.helmsmanSignups)o.helmsmanSignups=[];
+  const wasHelm=o.helmsmanSignups.some(entryMatchesCurrent);
   const wasIn=o.signups.some(entryMatchesCurrent);
   const wasWait=o.waitlist.some(entryMatchesCurrent);
+  o.helmsmanSignups=o.helmsmanSignups.filter(s=>!entryMatchesCurrent(s));
   o.signups=o.signups.filter(s=>!entryMatchesCurrent(s));
   o.waitlist=o.waitlist.filter(s=>!entryMatchesCurrent(s));
+  if(wasHelm)addOutingLog(o,"helm_unsignup",`${S.userName} es desapunta de timoner de ${outingLabel(o)}.`);
   if(wasIn)addOutingLog(o,"unsignup",`${S.userName} es desapunta de ${outingLabel(o)}.`);
   if(wasWait)addOutingLog(o,"waitlist_leave",`${S.userName} surt de la llista d'espera de ${outingLabel(o)}.`);
-  // Si estava a signups i hi ha gent esperant, el primer entra automàticament
-  if(wasIn&&o.waitlist.length>0&&o.signups.length<o.capacity){
-    const promoted=o.waitlist.shift();
-    o.signups.push(promoted);
-    addPersonalAviso(o,promoted,"waitlist_promoted","Has entrat a la sortida",`S'ha alliberat una plaça i has entrat automàticament a ${outingLabel(o)}.`);
-    addOutingLog(o,"waitlist_promoted",`${promoted.name} entra automàticament des de la llista d'espera a ${outingLabel(o)}.`);
+  // Si allibera plaça de vogador, promou el primer de la llista (grup primer)
+  if(wasIn){
+    while(o.signups.length<o.capacity&&o.waitlist.length>0){
+      promoteFromWaitlist(o);
+    }
   }
   save("outings");save("avisos");render();
 }
@@ -1183,6 +1292,63 @@ function delEvent(id){
 // ── Sortides automàtiques (dissabte → genera Dl+Dc setmana vinent) ────────────
 const GROUP_TIMES={1:"20:15",2:"19:00",3:"17:45",4:"16:30",5:"09:15",6:"08:00"};
 
+// Configuració per grup i dia (dow: 1=Dl, 3=Dc)
+// capacity: places de vogador base
+// reserve: +1 plaça reserva per al grup
+// helmsmen: places de timoner (0=cap, 1 o 2)
+// helmsmanRequired: si cal timoner per sortir
+// openHour: hora local a partir de la qual s'obre a externs (HH:MM)
+// openDayOffset: 0=mateix dia, -1=dia anterior
+const OUTING_CONFIG={
+  1:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false,openDayOffset:0,openHour:"07:30"},
+     Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true, openDayOffset:0,openHour:"07:30"}},
+  2:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false,openDayOffset:0,openHour:"07:30"},
+     Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true, openDayOffset:0,openHour:"07:30"}},
+  3:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false,openDayOffset:0,openHour:"07:30"},
+     Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true, openDayOffset:0,openHour:"07:30"}},
+  4:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false,openDayOffset:0,openHour:"07:30"},
+     Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true, openDayOffset:0,openHour:"07:30"}},
+  5:{Dl:{capacity:16,reserve:1,helmsmen:2,helmsmanRequired:true, openDayOffset:-1,openHour:"20:00"},
+     Dc:{capacity:16,reserve:1,helmsmen:1,helmsmanRequired:true, openDayOffset:-1,openHour:"20:00"}},
+  6:{Dl:{capacity:8,reserve:1,helmsmen:1,helmsmanRequired:true, openDayOffset:0,openHour:"07:30"},
+     Dc:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false,openDayOffset:0,openHour:"07:30"}},
+};
+
+function getOutingCfg(groupId,dateStr){
+  const dow=parseLocalDate(dateStr)?.getDay();
+  const day=dow===1?"Dl":dow===3?"Dc":null;
+  return (day&&OUTING_CONFIG[groupId])?OUTING_CONFIG[groupId][day]:null;
+}
+
+// Calcula si una sortida hauria d'estar oberta ara mateix
+function shouldBeOpen(o){
+  if(o.isOpen)return true;
+  const cfg=getOutingCfg(o.groupId,o.date);
+  if(!cfg)return false;
+  const outingDate=parseLocalDate(o.date);
+  if(!outingDate)return false;
+  const openDate=new Date(outingDate);
+  openDate.setDate(openDate.getDate()+cfg.openDayOffset);
+  const [hh,mm]=(cfg.openHour||"07:30").split(":").map(Number);
+  openDate.setHours(hh,mm,0,0);
+  return new Date()>=openDate;
+}
+
+// Llista d'espera amb prioritat de grup
+function promoteFromWaitlist(o){
+  if(!o.waitlist||!o.waitlist.length)return false;
+  const spotsLeft=o.capacity-o.signups.length;
+  if(spotsLeft<=0)return false;
+  // Ordena: primers els del grup, després la resta per ordre d'inserció
+  const groupFirst=[...o.waitlist.filter(w=>w.gid===o.groupId),...o.waitlist.filter(w=>w.gid!==o.groupId)];
+  const promoted=groupFirst[0];
+  o.waitlist=o.waitlist.filter(w=>!(w.name===promoted.name&&w.gid===promoted.gid));
+  o.signups.push(promoted);
+  addPersonalAviso(o,promoted,"waitlist_promoted","Has entrat a la sortida",`S'ha alliberat una plaça i has entrat automàticament a ${outingLabel(o)}.`);
+  addOutingLog(o,"waitlist_promoted",`${promoted.name} entra automàticament des de la llista d'espera a ${outingLabel(o)}.`);
+  return true;
+}
+
 // Data local YYYY-MM-DD. Evita el desplaçament d'un dia que pot provocar toISOString()
 // quan el navegador està en zona Europe/Madrid a primera hora del dia.
 function isoDate(d){
@@ -1199,7 +1365,7 @@ function parseLocalDate(ds){
 }
 function nextWeekMonWed(now){
   const ref=dateAtLocalNoon(now);
-  const dow=ref.getDay(); // 0=dg,1=dl,...,6=ds
+  const dow=ref.getDay();
   let daysToMon=(8-dow)%7;
   if(daysToMon===0)daysToMon=7;
   const mon=new Date(ref); mon.setDate(ref.getDate()+daysToMon);
@@ -1209,61 +1375,57 @@ function nextWeekMonWed(now){
 
 function maybeAutoGenOutings(){
   const now=new Date();
-  if(now.getDay()!==6)return;                          // Només dissabte
+  if(now.getDay()!==6)return; // Només dissabte
 
   const todayStr=isoDate(now);
   const {mon,wed,monStr,wedStr}=nextWeekMonWed(now);
   const wanted=[{ds:monStr,day:"Dl",date:mon},{ds:wedStr,day:"Dc",date:wed}];
-
   const base=Date.now();
   let changed=false;
 
   S.groups.forEach((g,gi)=>{
     const t=GROUP_TIMES[g.id]||"09:00";
     wanted.forEach(({ds,day,date},di)=>{
-      // Si ja hi ha una sortida per aquest grup i dia correcte, no dupliquem.
       let existing=S.outings.find(o=>o.date===ds&&o.groupId===g.id);
-
-      // Si en una versió anterior s'havia creat amb data desplaçada per zona horària
-      // però el títol indicava Dl/Dc, la corregim en lloc de crear un duplicat.
       if(!existing){
         const wrong=S.outings.find(o=>
           o.groupId===g.id&&o.isAuto&&(o.title||"").includes(`· ${day}`)&&
           parseLocalDate(o.date)&&Math.abs(daysBetweenDates(parseLocalDate(o.date),date))<=2
         );
-        if(wrong){
-          wrong.date=ds;
-          wrong.time=wrong.time||t;
-          wrong.capacity=wrong.capacity||8;
-          wrong.signups=safeArr(wrong.signups);
-          wrong.waitlist=safeArr(wrong.waitlist);
-          existing=wrong;
-          changed=true;
-        }
+        if(wrong){wrong.date=ds;wrong.time=wrong.time||t;existing=wrong;changed=true;}
       }
-
       if(!existing){
+        const cfg=OUTING_CONFIG[g.id]?.[day]||{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false};
         S.outings.push({
           id:base+gi*10+di,
           groupId:g.id,
           title:`Sortida setmanal · ${day}`,
-          date:ds, time:t, capacity:8,
+          date:ds, time:t,
+          capacity:cfg.capacity,
+          reserve:cfg.reserve,
+          helmsmen:cfg.helmsmen,
+          helmsmanRequired:cfg.helmsmanRequired,
+          helmsmanSignups:[],
           isOpen:false, signups:[], waitlist:[], isAuto:true
         });
         changed=true;
       } else {
+        // Migra sortides antigues sense els nous camps
         if(!Array.isArray(existing.signups)){existing.signups=[];changed=true;}
         if(!Array.isArray(existing.waitlist)){existing.waitlist=[];changed=true;}
+        if(!Array.isArray(existing.helmsmanSignups)){existing.helmsmanSignups=[];changed=true;}
+        const cfg=OUTING_CONFIG[g.id]?.[day];
+        if(cfg){
+          if(existing.helmsmen===undefined){existing.helmsmen=cfg.helmsmen;changed=true;}
+          if(existing.helmsmanRequired===undefined){existing.helmsmanRequired=cfg.helmsmanRequired;changed=true;}
+          if(existing.reserve===undefined){existing.reserve=cfg.reserve;changed=true;}
+        }
       }
     });
   });
 
-  // Marquem la generació només després d'haver comprovat que dilluns i dimecres existeixen.
   store.set("ldm:lastAutoGen",todayStr);
-  if(changed){
-    save("outings");
-    console.log("✅ Sortides automàtiques revisades/generades ("+monStr+" + "+wedStr+")");
-  }
+  if(changed){save("outings");console.log("✅ Sortides automàtiques revisades/generades ("+monStr+" + "+wedStr+")");}
 }
 
 // ── Inicialització amb Supabase ───────────────────────────────────────────────

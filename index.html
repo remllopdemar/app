@@ -938,6 +938,7 @@ function renderMembres(){
       </div>
       ${S.editMemberId===m.id?`<div style="margin-top:10px;padding-top:10px;border-top:.5px solid #f5f3ee;background:#fbfaf7;border-radius:10px;padding:10px">
         <div style="font-size:11px;font-weight:700;color:${DARK};text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">✏️ Editar membre</div>
+        <input id="edit-nom-${m.id}" value="${m.name}" placeholder="Nom i cognom" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px">
         <select id="edit-grup-${m.id}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;margin-bottom:10px">
           ${S.groups.map(g=>`<option value="${g.id}" ${g.id===m.groupId?"selected":""}>${g.name}</option>`).join("")}
         </select>
@@ -1067,7 +1068,7 @@ function addMembre(){if(S.role!=="patron")return;const n=document.getElementById
 function startEditMembre(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id&&!x.pending);if(!m)return;go({editMemberId:id,editMemberSections:normalizeSections(m.sections),showMembreForm:false});}
 function cancelEditMembre(){go({editMemberId:null,editMemberSections:["social"]});}
 function togEditSec(sec){const s=S.editMemberSections.includes(sec)?S.editMemberSections.filter(x=>x!==sec):[...S.editMemberSections,sec];go({editMemberSections:normalizeSections(s)});}
-function saveEditMembre(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id&&!x.pending);if(!m)return;const gid=parseInt(document.getElementById("edit-grup-"+id)?.value)||m.groupId;const sections=normalizeSections(S.editMemberSections);m.groupId=gid;m.sections=sections;save("membres");go({editMemberId:null,editMemberSections:["social"]});}
+function saveEditMembre(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id&&!x.pending);if(!m)return;const nom=(document.getElementById("edit-nom-"+id)?.value||"").trim();const gid=parseInt(document.getElementById("edit-grup-"+id)?.value)||m.groupId;const sections=normalizeSections(S.editMemberSections);if(!confirm(`Desar canvis per a "${nom||m.name}"?`))return;if(nom)m.name=nom;m.groupId=gid;m.sections=sections;save("membres");go({editMemberId:null,editMemberSections:["social"]});}
 function delMembre(id){if(S.role!=="patron")return;if(!confirm("Eliminar el soci?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
 function signup(oid){
   const o=S.outings.find(x=>x.id===oid);
@@ -1146,7 +1147,7 @@ function delSess(id){S.sessions=S.sessions.filter(s=>s.id!==id);save("sessions")
 function addRes(){const r=document.getElementById("r-race")?.value||"";if(!r)return;S.results.unshift({id:Date.now(),race:r,date:document.getElementById("r-date")?.value||"",place:document.getElementById("r-place")?.value||"",pos:S.newPos,points:PTS[S.newPos]||10});save("results");go({showForm:false,newPos:1});}
 function delRes(id){S.results=S.results.filter(r=>r.id!==id);save("results");render();}
 function createAvis(){if(S.role!=="patron")return;const t=document.getElementById("avis-text")?.value?.trim()||"";if(!t)return;const pin=document.getElementById("avis-pin")?.checked||false;const audience=document.getElementById("avis-audience")?.value||"general";pushAviso({kind:"public",audience,text:t,pin});save("avisos");go({showAvisForm:false,avisFilter:"club"});}
-function delAvis(id){S.avisos=S.avisos.filter(a=>a.id!==id);save("avisos");render();}
+function delAvis(id){if(!confirm("Eliminar aquest avís?"))return;S.avisos=S.avisos.filter(a=>a.id!==id);save("avisos");render();}
 function togglePin(id){const a=S.avisos.find(x=>x.id===id);if(a){a.pin=!a.pin;save("avisos");render();}}
 function addOpt(){go({pollOpts:[...S.pollOpts,""]});}
 function rmOpt(i){go({pollOpts:S.pollOpts.filter((_,j)=>j!==i)});}
@@ -1371,6 +1372,21 @@ async function initApp(){
     console.warn("⚠️ Supabase no disponible, mode offline:",e.message);
     S.supaLoading=false;render();
   }
+
+  // ── Refresc automàtic cada 60s ────────────────────────────────────────────
+  setInterval(async()=>{
+    try{
+      const {data,error}=await supa.from("app_data").select("key,value").in("key",SUPA_KEYS.map(k=>"ldm:"+k));
+      if(!error&&data&&data.length){
+        const map={};data.forEach(r=>{map[r.key]=r.value;});
+        let changed=false;
+        ["groups","membres","avisos","outings","sessions","results","polls"].forEach(k=>{
+          if(map["ldm:"+k]){S[k]=map["ldm:"+k];store.set("ldm:"+k,S[k]);changed=true;}
+        });
+        if(changed)render();
+      }
+    }catch(e){/* silenciós en offline */}
+  },60000);
 }
 
 initApp();

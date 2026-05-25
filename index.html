@@ -1029,7 +1029,12 @@ function renderMembres(){
     </div>`).join("")}
   </div>`).join("");
 
-  return pendingSection+(!S.showMembreForm?`<div style="margin:10px 14px 0"><button onclick="go({showMembreForm:true,editMemberId:null,editMemberSections:['social']})" style="width:100%;padding:11px;background:${RED};border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">+ Afegir soci nou</button></div>`:"")+sum+form+llista+`<div style="height:14px"></div>`;
+  const debugBtn=`<div style="margin:16px 14px 0;padding:12px;background:#f8f6f0;border-radius:10px;border:.5px dashed ${BORDER}">
+    <div style="font-size:10px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">🛠 Eines de prova</div>
+    <button onclick="forceGenOutings()" style="width:100%;padding:9px;background:#fff;border:.5px solid ${BORDER};border-radius:8px;color:${DARK};font-size:12px;font-weight:600;cursor:pointer">⚡ Forçar generació sortides setmana vinent</button>
+  </div>`;
+
+  return pendingSection+(!S.showMembreForm?`<div style="margin:10px 14px 0"><button onclick="go({showMembreForm:true,editMemberId:null,editMemberSections:['social']})" style="width:100%;padding:11px;background:${RED};border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">+ Afegir soci nou</button></div>`:"")+sum+form+llista+debugBtn+`<div style="height:14px"></div>`;
 }
 
 
@@ -1070,6 +1075,37 @@ function renderMemberAddedModal(){
   </div>`;
 }
 
+
+// ── DEBUG: Forçar generació de sortides (només patró) ─────────────────────────
+function forceGenOutings(){
+  if(S.role!=="patron")return;
+  const now=new Date();
+  const {monStr,wedStr}=nextWeekMonWed(now);
+  const base=Date.now();
+  let changed=false;
+  S.groups.forEach((g,gi)=>{
+    const t=GROUP_TIMES[g.id]||"09:00";
+    [{ds:monStr,day:"Dl"},{ds:wedStr,day:"Dc"}].forEach(({ds,day},di)=>{
+      const existing=S.outings.find(o=>o.date===ds&&o.groupId===g.id);
+      if(!existing){
+        const cfg=OUTING_CONFIG[g.id]?.[day]||{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false};
+        S.outings.push({
+          id:base+gi*10+di,
+          groupId:g.id,
+          title:`Sortida setmanal · ${day}`,
+          date:ds,time:t,
+          capacity:cfg.capacity,reserve:cfg.reserve,
+          helmsmen:cfg.helmsmen,helmsmanRequired:cfg.helmsmanRequired,
+          helmsmanSignups:[],isOpen:false,signups:[],waitlist:[],isAuto:true
+        });
+        changed=true;
+      }
+    });
+  });
+  if(changed){save("outings");alert(`Sortides generades: ${monStr} i ${wedStr}`);}
+  else alert(`Ja existeixen sortides per ${monStr} i ${wedStr}`);
+  render();
+}
 
 // ── Render principal ────────────────────────────────────────────────────────────
 function render(){

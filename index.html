@@ -28,7 +28,7 @@ const PATRON_HASH="sha256:2f2d8150a49414cbeb30ec480b2977fd9c880651043e7dbfd1e055
 const SUPA_URL="https://nibwwwtrwngiopqcqufi.supabase.co";
 const SUPA_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."; // 👈 Enganxa aquí la teva anon key completa
 const supa=window.supabase.createClient(SUPA_URL,SUPA_KEY);
-const SUPA_KEYS=["membres","groups","avisos","outings","sessions","results","polls"];
+const SUPA_KEYS=["membres","groups","avisos","outings","sessions","results","polls","events"];
 // ─────────────────────────────────────────────────────────────────────────────
 const DARK="#1b3a7a",RED="#c8102e",GREEN="#1b6b3a",BG="#f4f1eb",MUTED="#7a7872",BORDER="#ddd9d0";
 const DAYS=["Dg","Dl","Dt","Dc","Dj","Dv","Ds"];
@@ -112,7 +112,8 @@ const DEF={
   ],
   polls:[
     {id:1,question:"Quan fem la pròxima sortida social?",options:["Dissabte 7 juny","Diumenge 8 juny","Dissabte 14 juny"],votes:{"Dissabte 7 juny":["Joan Roca","Maria Puig"],"Diumenge 8 juny":["Pere Gómez"],"Dissabte 14 juny":["Marc Bosch","Carles Nogué","Laura Torres"]},closed:false,date:"2026-05-23"},
-  ]
+  ],
+  events:[]
 };
 
 function loadData(key){return store.get("ldm:"+key)||DEF[key]||[];}
@@ -124,9 +125,10 @@ let S={
   regErr:"",regSections:["social"],  // estat del formulari de registre
   screen:"inici",section:"competicio",
   showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,showMemberAdded:false,memberAdded:null,editMemberId:null,editMemberSections:["social"],showOutingHistory:false,outingHistoryPage:0,avisFilter:"all",avisLogPage:0,pollVotersOpen:{},
+  selectedCalDate:null,showEventForm:false,editEventId:null,eventErr:"",
   membreSections:["social"],
   newPos:1,calMonth:new Date().getMonth(),calYear:new Date().getFullYear(),
-  pollQ:"",pollOpts:["",""],
+  pollQ:"",pollOpts:["",""],pollErr:"",
   meteo:null,meteoLoading:true,
   groups:loadData("groups"),
   membres:loadData("membres"),
@@ -135,6 +137,7 @@ let S={
   sessions:loadData("sessions"),
   results:loadData("results"),
   polls:loadData("polls"),
+  events:loadData("events"),
 };
 
 function normalizeSections(secs){
@@ -171,7 +174,7 @@ function doLogout(force=false){
   store.set("ldm:session",null);
   go({role:null,loginStep:"choose",pinErr:false,pinErrMsg:"",memberId:null,userName:"",
       userGroupId:null,userSections:[],capGroupId:null,selectedMemberId:null,
-      showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,showMemberAdded:false,memberAdded:null,editMemberId:null,editMemberSections:["social"],showOutingHistory:false,outingHistoryPage:0,avisFilter:"all",avisLogPage:0,pollVotersOpen:{},pollQ:"",pollOpts:["",""]});
+      showForm:false,showAvisForm:false,showMembreForm:false,showLogoutConfirm:false,showMemberAdded:false,memberAdded:null,editMemberId:null,editMemberSections:["social"],showOutingHistory:false,outingHistoryPage:0,avisFilter:"all",avisLogPage:0,pollVotersOpen:{},selectedCalDate:null,showEventForm:false,editEventId:null,eventErr:"",pollQ:"",pollOpts:["",""],pollErr:""});
 }
 
 function fetchMeteo(){
@@ -188,6 +191,7 @@ const secBadge=secs=>{const c=[];if(secs.includes("competicio"))c.push(`<span st
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
 const jsArg=v=>JSON.stringify(String(v??"")).replace(/</g,"\\u003c").replace(/>/g,"\\u003e");
 const pollKey=(pid,opt)=>pid+":"+encodeURIComponent(opt);
+const initials=name=>String(name||"").trim().split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]?.toUpperCase()||"").join("")||"?";
 
 
 // ── Fase 3: avisos personals + historial de sortides ─────────────────────────
@@ -495,6 +499,110 @@ function renderMeteo(){
   return`<div style="background:linear-gradient(135deg,${DARK},#122860);border-radius:14px;margin:10px 14px 0;padding:16px;color:#fff"><div style="font-size:11px;opacity:.5;margin-bottom:10px">📍 Port de Sant Feliu de Guíxols</div><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:40px;font-weight:700;line-height:1">${Math.round(m.current.temperature_2m)}°</div><div style="font-size:12px;opacity:.65;margin-top:5px">${wIcon(m.current.weathercode)} ${wDesc(m.current.weathercode)}</div></div><div style="text-align:right"><div style="font-size:10px;opacity:.5;margin-bottom:2px">Vent</div><div style="font-size:28px;font-weight:700;color:${strong?"#ff6b6b":"#7ec8e3"}">${kn} kn</div><div style="font-size:11px;opacity:.5">${wDir(m.current.wind_direction_10m)}</div></div></div><div style="display:flex;gap:4px;margin-top:14px;padding-top:12px;border-top:.5px solid rgba(255,255,255,.15)">${days}</div></div>${strong?`<div style="background:#fff0f0;border:.5px solid ${RED};border-radius:10px;margin:8px 14px 0;padding:10px 12px;display:flex;gap:8px;align-items:center">⚠️<span style="font-size:12px;color:${RED}">Vent fort (${kn} kn). Consulteu amb el patró.</span></div>`:""}`;
 }
 
+
+// ── Agenda comuna del club ──────────────────────────────────────────────────
+const EVENT_TYPES={
+  regata_competicio:{label:"Regata competició",short:"Competi",ico:"🏁",color:RED,bg:"#fff0f0"},
+  regata_social:{label:"Regata social",short:"Social",ico:"🚩",color:GREEN,bg:"#e6f4ee"},
+  social:{label:"Acte social",short:"Social",ico:"⚓",color:"#d38b00",bg:"#fff8ee"},
+  altres:{label:"Altres",short:"Altres",ico:"📌",color:DARK,bg:"#eef0fa"}
+};
+function eventCfg(type){return EVENT_TYPES[type]||EVENT_TYPES.altres;}
+function normalizeEventType(type){return EVENT_TYPES[type]?type:"altres";}
+function allCalendarEvents(){
+  const manual=safeArr(S.events).map(e=>({source:"event",...e,type:normalizeEventType(e.type)}));
+  const regates=safeArr(S.results).filter(r=>r.date).map(r=>({
+    id:"res-"+r.id,source:"result",type:"regata_competicio",title:r.race||"Regata",date:r.date,time:"",place:r.place||"",desc:`${POS[r.pos]||((r.pos||"")+"è")}${r.points?` · ${r.points} pts`:""}`,resultId:r.id
+  }));
+  return [...manual,...regates].filter(e=>e.date).sort((a,b)=>(a.date||"").localeCompare(b.date||"")||(a.time||"").localeCompare(b.time||"")||(a.title||"").localeCompare(b.title||""));
+}
+function eventsByDate(){
+  const out={};
+  allCalendarEvents().forEach(e=>{(out[e.date]=out[e.date]||[]).push(e);});
+  return out;
+}
+function selectedDayEvents(date=S.selectedCalDate){return allCalendarEvents().filter(e=>e.date===date);}
+function nextCalendarEvents(limit=4){return allCalendarEvents().filter(e=>(e.date||"")>=todayStr()).slice(0,limit);}
+function ensureAgendaSelectedDate(){
+  const current=S.selectedCalDate||td();
+  const hasCurrent=selectedDayEvents(current).length>0;
+  if(hasCurrent)return current;
+  const next=nextCalendarEvents(1)[0];
+  if(next&&(!S.selectedCalDate||S.selectedCalDate===td())){
+    S.selectedCalDate=next.date;
+    S.calMonth=Number(String(next.date).slice(5,7))-1;
+    S.calYear=Number(String(next.date).slice(0,4));
+    return next.date;
+  }
+  return current;
+}
+function eventTypeOptions(selected="altres"){
+  return Object.entries(EVENT_TYPES).map(([k,c])=>`<option value="${k}" ${k===selected?"selected":""}>${c.ico} ${c.label}</option>`).join("");
+}
+function renderEventForm(e=null){
+  const isEdit=!!e;
+  const id=isEdit?e.id:"new";
+  const type=normalizeEventType(e?.type||"regata_competicio");
+  return cc(`${lbl(isEdit?"Editar esdeveniment":"Nou esdeveniment")}
+    <select id="ev-type-${id}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;margin-bottom:8px">${eventTypeOptions(type)}</select>
+    <input id="ev-title-${id}" placeholder="Títol *" value="${esc(e?.title||"")}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px">
+    <div style="display:flex;gap:8px;margin-bottom:8px"><input id="ev-date-${id}" type="date" value="${esc(e?.date||S.selectedCalDate||td())}" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"><input id="ev-time-${id}" type="time" value="${esc(e?.time||"")}" style="width:112px;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"></div>
+    <input id="ev-place-${id}" placeholder="Lloc" value="${esc(e?.place||"")}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px">
+    <textarea id="ev-desc-${id}" placeholder="Notes o detalls" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;min-height:58px;resize:vertical;margin-bottom:8px">${esc(e?.desc||"")}</textarea>
+    ${S.eventErr?`<div style="color:${RED};font-size:12px;margin-bottom:8px">${esc(S.eventErr)}</div>`:""}
+    <div style="display:flex;gap:8px"><button onclick="${isEdit?`saveEvent(${e.id})`:"addEvent()"}" style="flex:1;padding:10px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">${isEdit?"Desar canvis":"Crear esdeveniment"}</button><button onclick="go({showEventForm:false,editEventId:null,eventErr:''})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`);
+}
+function renderEventCard(e){
+  const c=eventCfg(e.type);
+  const editable=S.role==="patron"&&e.source==="event";
+  if(S.editEventId===e.id&&editable)return renderEventForm(e);
+  return `<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
+    <div style="height:4px;background:${c.color}"></div>
+    <div style="padding:12px 14px">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <div style="width:34px;height:34px;border-radius:10px;background:${c.bg};color:${c.color};display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${c.ico}</div>
+        <div style="flex:1;min-width:0"><div style="font-size:10px;color:${c.color};font-weight:800;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">${c.label}</div><div style="font-size:15px;font-weight:750;color:#1a1a18;line-height:1.3">${esc(e.title||"Esdeveniment")}</div><div style="font-size:12px;color:${MUTED};margin-top:4px">${e.time?`🕒 ${esc(e.time)} h · `:""}${e.place?`📍 ${esc(e.place)}`:""}${!e.time&&!e.place?"Sense hora ni lloc":""}</div>${e.desc?`<div style="font-size:13px;color:#1a1a18;line-height:1.45;margin-top:8px">${esc(e.desc)}</div>`:""}</div>
+      </div>
+      ${S.role==="patron"?`<div style="display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:.5px solid #f5f3ee">${editable?`<button onclick="startEditEvent(${e.id})" style="flex:1;padding:8px;background:#fff;border:.5px solid ${BORDER};border-radius:8px;color:${DARK};font-size:12px;font-weight:700;cursor:pointer">✏️ Editar</button><button onclick="delEvent(${e.id})" style="padding:8px 12px;background:#fff;border:.5px solid ${BORDER};border-radius:8px;color:${RED};font-size:12px;cursor:pointer">Eliminar</button>`:`<button onclick="go({screen:'resultats'})" style="flex:1;padding:8px;background:#fff;border:.5px solid ${BORDER};border-radius:8px;color:${DARK};font-size:12px;font-weight:700;cursor:pointer">Veure a Resultats</button>`}</div>`:""}
+    </div>
+  </div>`;
+}
+function renderClubCalendar(){
+  const y=S.calYear,mo=S.calMonth,dim=new Date(y,mo+1,0).getDate();
+  let sdow=new Date(y,mo,1).getDay();sdow=sdow===0?6:sdow-1;
+  const byDate=eventsByDate(),tod=td();
+  const hdr=["Dl","Dt","Dc","Dj","Dv","Ds","Dg"].map(d=>`<div style="font-size:10px;color:${MUTED};text-align:center;padding:3px 0">${d}</div>`).join("");
+  let cells="";for(let i=0;i<sdow;i++)cells+=`<div></div>`;
+  for(let d=1;d<=dim;d++){
+    const ds=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const evs=byDate[ds]||[],isToday=ds===tod,isSel=ds===S.selectedCalDate;
+    const dots=evs.slice(0,4).map(e=>`<span style="width:5px;height:5px;border-radius:50%;background:${eventCfg(e.type).color};display:inline-block"></span>`).join("");
+    const common=`aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:9px;color:${isSel?"#fff":(ds<tod?"#b9b3a9":"#1a1a18")};font-size:12px;font-weight:${evs.length||isToday?700:400};border:${isToday&&!isSel?`2px solid ${RED}`:`.5px solid ${evs.length?BORDER:"transparent"}`};position:relative`;
+    if(evs.length){
+      cells+=`<button onclick="go({selectedCalDate:'${ds}',showEventForm:false,editEventId:null,eventErr:''})" style="${common};background:${isSel?DARK:"#fff"};cursor:pointer"><span>${d}</span><span style="display:flex;gap:2px;min-height:6px;margin-top:2px">${dots}</span></button>`;
+    }else{
+      cells+=`<div style="${common};background:transparent;cursor:default"><span>${d}</span><span style="display:flex;gap:2px;min-height:6px;margin-top:2px"></span></div>`;
+    }
+  }
+  const prev=mo===0?{m:11,y:y-1}:{m:mo-1,y:y},next=mo===11?{m:0,y:y+1}:{m:mo+1,y:y};
+  const legend=Object.entries(EVENT_TYPES).map(([k,c])=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${c.color}"></span>${c.short}</span>`).join("");
+  return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><button onclick="go({calMonth:${prev.m},calYear:${prev.y},selectedCalDate:null,showEventForm:false,editEventId:null})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">‹</button><div style="font-size:14px;font-weight:700;color:#1a1a18">${MONTHS[mo]} ${y}</div><button onclick="go({calMonth:${next.m},calYear:${next.y},selectedCalDate:null,showEventForm:false,editEventId:null})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">›</button></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${hdr}${cells}</div><div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;padding-top:10px;border-top:.5px solid #f0ede6">${legend}</div><div style="font-size:11px;color:${MUTED};line-height:1.4;margin-top:9px">Només mostra regates i esdeveniments del club. Les sortides tenen secció pròpia.</div>`);
+}
+function renderClubAgenda(){
+  const selectedDate=S.selectedCalDate;
+  const selected=selectedDate?selectedDayEvents(selectedDate):[];
+  const addBtn=S.role==="patron"&&!S.showEventForm?`<div style="margin:10px 14px 0"><button onclick="go({showEventForm:true,editEventId:null,eventErr:''})" style="width:100%;padding:11px;background:${DARK};border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">+ Nou esdeveniment</button></div>`:"";
+  const form=S.role==="patron"&&S.showEventForm?renderEventForm():"";
+  let selectedBlock="";
+  if(selectedDate&&selected.length){
+    const dateLabel=new Date(selectedDate+"T12:00:00").toLocaleDateString("ca-ES",{weekday:"long",day:"numeric",month:"long"});
+    selectedBlock=`<div style="margin:12px 14px 4px;display:flex;align-items:center;justify-content:space-between"><div>${lbl("Esdeveniments del dia")}<div style="font-size:13px;color:#1a1a18;font-weight:700;text-transform:capitalize">${dateLabel}</div></div><span style="background:#fff;border:.5px solid ${BORDER};border-radius:20px;font-size:11px;color:${MUTED};padding:3px 9px">${selected.length}</span></div>`+selected.map(renderEventCard).join("");
+  }else if(!S.showEventForm){
+    selectedBlock=cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:.6rem 0">Clica un dia amb punt de color per veure'n el detall.</div>`);
+  }
+  return renderClubCalendar()+addBtn+form+selectedBlock;
+}
+
 function renderCalendar(){
   const y=S.calYear,mo=S.calMonth,dim=new Date(y,mo+1,0).getDate();
   let sdow=new Date(y,mo,1).getDay();sdow=sdow===0?6:sdow-1;
@@ -585,52 +693,105 @@ function renderPollCard(p){
   p.options.forEach(o=>{if(!Array.isArray(p.votes[o]))p.votes[o]=[];});
   const mv=getUserVote(p);
   const tot=p.options.reduce((a,o)=>a+(p.votes[o]?.length||0),0);
-  const win=p.closed&&p.options.length?p.options.reduce((a,b)=>(p.votes[b]?.length||0)>(p.votes[a]?.length||0)?b:a,p.options[0]):null;
+  const counts=p.options.map(o=>p.votes[o]?.length||0);
+  const maxVotes=counts.length?Math.max(...counts):0;
+  const winners=p.options.filter(o=>(p.votes[o]?.length||0)===maxVotes&&maxVotes>0);
   const canVote=!p.closed&&!!S.userName;
+  const status=p.closed
+    ?`<span style="background:#fff0f0;color:${RED};font-size:10px;padding:3px 9px;border-radius:20px;font-weight:700;white-space:nowrap">Tancada</span>`
+    :`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:3px 9px;border-radius:20px;font-weight:700;white-space:nowrap">Oberta</span>`;
+  const userBadge=mv?`<div style="margin-top:7px;display:inline-flex;align-items:center;gap:5px;background:#eef0fa;color:${DARK};font-size:11px;font-weight:700;padding:4px 8px;border-radius:20px">✓ El teu vot: ${esc(mv)}</div>`:"";
   const rows=p.options.map((opt,optIdx)=>{
     const voters=p.votes[opt]||[];
     const cnt=voters.length;
     const pct=tot>0?Math.round((cnt/tot)*100):0;
-    const isW=win===opt,isMy=mv===opt;
+    const isMy=mv===opt;
+    const isWinner=p.closed&&winners.length===1&&winners[0]===opt;
+    const isTie=p.closed&&winners.length>1&&winners.includes(opt);
     const key=pollKey(p.id,opt);
     const open=!!(S.pollVotersOpen&&S.pollVotersOpen[key]);
-    const barCol=isW?RED:(isMy?DARK:"#c8d4f0");
-    const voteAction=canVote?`onclick="castVoteByIndex(${p.id},${optIdx})"`:"";
-    const voterList=open?`<div style="margin-top:8px;padding:8px 10px;background:#faf8f3;border-radius:10px;border:.5px solid #f0ede6"><div style="font-size:10px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Votants</div>${voters.length?voters.map(n=>`<span style="display:inline-block;background:#fff;border:.5px solid ${BORDER};border-radius:20px;font-size:11px;padding:3px 8px;margin:2px;color:#1a1a18">${esc(n)}</span>`).join(""):`<div style="font-size:12px;color:${MUTED};font-style:italic">Encara no hi ha cap vot</div>`}</div>`:"";
-    return`<div style="margin-bottom:9px;padding:10px 10px 9px;background:${isMy?"#eef0fa":"#f8f9ff"};border:1.5px solid ${isMy?DARK:BORDER};border-radius:12px;${canVote?"cursor:pointer":""}" ${voteAction}>
-      <div style="display:flex;align-items:flex-start;gap:9px">
-        <div style="width:18px;height:18px;border-radius:50%;border:1.5px solid ${isMy?DARK:BORDER};background:${isMy?DARK:"#fff"};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;margin-top:1px">${isMy?"✓":""}</div>
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:6px">
-            <div style="font-size:13px;font-weight:${isMy||isW?700:500};color:${isW?RED:(isMy?DARK:"#1a1a18")};line-height:1.35;word-break:break-word">${isW&&p.closed?"🏆 ":""}${esc(opt)}</div>
-            <div style="font-size:12px;font-weight:700;color:${isW?RED:DARK};white-space:nowrap">${cnt} · ${pct}%</div>
+    const bg=isMy?"#eef0fa":"#fff";
+    const br=isMy?DARK:(isWinner?RED:BORDER);
+    const barCol=isWinner?RED:(isMy?DARK:"#c8d4f0");
+    // Els noms dels votants NO es mostren per defecte: només apareixen en desplegar "Veure votants".
+    const topVoters="", extra="";
+    const expanded=open?`<div style="margin-top:8px;padding:8px 9px;background:#faf8f3;border-radius:10px;border:.5px solid #f0ede6">
+      <div style="font-size:10px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px">Votants</div>
+      ${voters.length?`<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">${voters.map(n=>`<span style="display:inline-flex;align-items:center;max-width:100%;background:#fff;border:.5px solid ${BORDER};border-radius:999px;color:#1a1a18;font-size:11px;font-weight:600;line-height:1.2;padding:4px 8px;white-space:nowrap">${esc(n)}</span>`).join("")}</div>`:`<div style="font-size:12px;color:${MUTED};font-style:italic">Encara no hi ha cap vot.</div>`}
+    </div>`:"";
+    const voteBtn=canVote?`<button onclick="event.stopPropagation();castVoteByIndex(${p.id},${optIdx})" style="margin-top:8px;width:100%;padding:8px;background:${isMy?DARK:"transparent"};border:1px solid ${isMy?DARK:BORDER};border-radius:9px;color:${isMy?"#fff":DARK};font-size:12px;font-weight:700;cursor:pointer">${isMy?"✓ Votat":"Votar aquesta opció"}</button>`:"";
+    const votersBtn=`<button onclick="event.stopPropagation();togglePollVotersByIndex(${p.id},${optIdx})" style="margin-top:8px;background:transparent;border:none;color:${cnt?DARK:MUTED};font-size:11px;font-weight:700;cursor:${cnt?"pointer":"default"};padding:0" ${cnt?"":"disabled"}>${open?"Amagar votants":"Veure votants"} · ${cnt}</button>`;
+    return`<div style="position:relative;overflow:hidden;margin-bottom:10px;background:${bg};border:1.5px solid ${br};border-radius:13px;padding:10px 10px 9px">
+      <div style="position:absolute;left:0;top:0;bottom:0;width:${pct}%;background:${isMy?"rgba(27,58,122,.08)":"rgba(200,212,240,.22)"};pointer-events:none"></div>
+      <div style="position:relative">
+        <div style="display:flex;align-items:flex-start;gap:9px">
+          <div style="width:22px;height:22px;border-radius:50%;border:1.5px solid ${isMy?DARK:BORDER};background:${isMy?DARK:"#fff"};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;margin-top:1px;font-weight:700">${isMy?"✓":""}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+              <div style="font-size:14px;font-weight:${isMy||isWinner?700:600};line-height:1.35;color:${isWinner?RED:(isMy?DARK:"#1a1a18")};word-break:break-word">${isWinner?"🏆 ":isTie?"↔️ ":""}${esc(opt)}</div>
+              <div style="text-align:right;white-space:nowrap"><div style="font-size:13px;font-weight:800;color:${isWinner?RED:DARK}">${cnt}</div><div style="font-size:10px;color:${MUTED};font-weight:700">${pct}%</div></div>
+            </div>
+            <div style="background:#f0ede8;border-radius:20px;height:7px;overflow:hidden;margin-top:7px"><div style="background:${barCol};height:7px;border-radius:20px;width:${pct}%"></div></div>
+            <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:7px">${votersBtn}</div>
+            ${expanded}
+            ${voteBtn}
           </div>
-          <div style="background:#f0ede8;border-radius:20px;height:8px;overflow:hidden"><div style="background:${barCol};height:8px;border-radius:20px;width:${pct}%"></div></div>
-          <button onclick="event.stopPropagation();togglePollVotersByIndex(${p.id},${optIdx})" style="margin-top:7px;background:transparent;border:none;color:${DARK};font-size:11px;font-weight:700;cursor:pointer;padding:0">${open?"Amagar votants":"Veure votants"} · ${cnt}</button>
-          ${voterList}
         </div>
       </div>
     </div>`;
   }).join("");
-  const sb=p.closed?`<span style="background:#fff0f0;color:${RED};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">Tancada</span>`:`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">Oberta</span>`;
-  const pa=S.role==="patron"?`<div style="display:flex;gap:8px;padding:10px 14px;border-top:.5px solid #f5f3ee">${!p.closed?`<button onclick="closePoll(${p.id})" style="flex:1;padding:8px;background:transparent;border:.5px solid ${RED};border-radius:8px;color:${RED};font-size:12px;cursor:pointer;font-weight:600">Tancar votació</button>`:""}<button onclick="delPoll(${p.id})" style="padding:8px 12px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button></div>`:"";
-  const hint=!p.closed&&S.userName?`<div style="font-size:11px;color:${MUTED};margin-bottom:10px">Pots tocar una opció per votar o canviar el vot. Els vots són visibles per a tothom.</div>`:"";
-  return`<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden"><div style="padding:12px 14px 0"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;gap:8px"><div style="font-size:14px;font-weight:700;color:#1a1a18;flex:1;line-height:1.35">${esc(p.question)}</div>${sb}</div><div style="font-size:11px;color:${MUTED};margin-bottom:8px">${tot} vot${tot!==1?"s":""} · ${esc(p.date||"")}</div>${hint}${rows}${mv&&!p.closed?`<div style="font-size:11px;color:${MUTED};margin-top:2px;margin-bottom:12px">Has votat: <strong>${esc(mv)}</strong></div>`:`<div style="height:12px"></div>`}</div>${pa}</div>`;
+  const hint=p.closed
+    ?`<div style="font-size:11px;color:${MUTED};margin-bottom:10px;line-height:1.45">La votació està tancada. Els resultats queden visibles i pots desplegar els votants.</div>`
+    :S.userName?`<div style="font-size:11px;color:${MUTED};margin-bottom:10px;line-height:1.45">Toca una opció per votar o canviar el vot. Els vots no són anònims.</div>`
+    :`<div style="font-size:11px;color:${MUTED};margin-bottom:10px;line-height:1.45">Entra com a soci per votar. Pots veure els resultats i desplegar els votants.</div>`;
+  const patronActions=S.role==="patron"?`<div style="display:flex;gap:8px;padding:10px 14px;border-top:.5px solid #f5f3ee;background:#fbfaf7">${!p.closed?`<button onclick="closePoll(${p.id})" style="flex:1;padding:8px;background:#fff;border:.5px solid ${RED};border-radius:8px;color:${RED};font-size:12px;cursor:pointer;font-weight:700">Tancar votació</button>`:""}<button onclick="delPoll(${p.id})" style="padding:8px 12px;background:#fff;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button></div>`:"";
+  return`<div style="background:#fff;border-radius:15px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden;box-shadow:0 1px 0 rgba(0,0,0,.02)">
+    <div style="padding:13px 14px 0">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:7px;gap:8px"><div style="font-size:15px;font-weight:800;color:#1a1a18;flex:1;line-height:1.35">${esc(p.question)}</div>${status}</div>
+      <div style="font-size:11px;color:${MUTED};margin-bottom:5px">${tot} vot${tot!==1?"s":""} · ${esc(p.date||"")}</div>
+      ${userBadge}
+      <div style="height:10px"></div>
+      ${hint}
+      ${rows}
+      <div style="height:3px"></div>
+    </div>${patronActions}
+  </div>`;
 }
 
 // ── Pantalles principals ────────────────────────────────────────────────────────
+function renderHomeAvisos(){
+  const list=[...S.avisos].filter(a=>(!a.kind||a.kind==="public")&&canSeeAvis(a)).sort((a,b)=>(b.pin?1:0)-(a.pin?1:0)||(b.date||"").localeCompare(a.date||"")).slice(0,2);
+  const body=list.length?list.map(a=>`<div style="border-radius:12px;margin-bottom:8px;overflow:hidden;border:.5px solid ${a.pin?RED:BORDER}">${a.pin?`<div style="background:${RED};padding:4px 10px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase">📌 Avís important · ${audienceLabel(a)}</div>`:`<div style="background:#f5f5f5;padding:4px 10px;font-size:10px;font-weight:700;color:${MUTED};text-transform:uppercase">📢 ${audienceLabel(a)}</div>`}<div style="background:#fff;padding:10px 12px;font-size:13px;color:#1a1a18;line-height:1.45">${esc(a.text)}</div></div>`).join(""):`<div style="font-size:13px;color:${MUTED};text-align:center;padding:.8rem 0">Cap avís pendent</div>`;
+  return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">${lbl("📢 Avisos")}<span style="background:#eef0fa;color:${DARK};font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px">${list.length}</span></div>${body}<div style="display:flex;justify-content:flex-end;margin-top:8px"><button onclick="go({screen:'avisos'})" style="border:none;background:${BG};border-radius:8px;color:${DARK};font-size:11px;font-weight:800;padding:6px 9px;cursor:pointer">Veure avisos</button></div>`);
+}
+function renderHomeOutingMini(o){
+  if(!o.waitlist)o.waitlist=[];
+  cleanOutingLists(o);
+  const total=safeArr(o.signups).length;
+  const isClub=!o.groupId;
+  const grp=isClub?"Club":gname(o.groupId).split(" · ")[0];
+  const dateStr=new Date((o.date||td())+"T12:00:00").toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
+  const chips=safeArr(o.signups).slice(0,6).map(s=>`<span style="display:inline-block;background:${s.gid===o.groupId?DARK:GREEN};border-radius:20px;font-size:11px;padding:3px 8px;margin:2px;color:#fff;font-weight:650">${esc(s.name)}</span>`).join("");
+  const more=total>6?`<span style="display:inline-block;background:#f0ede8;border-radius:20px;font-size:11px;padding:3px 8px;margin:2px;color:${MUTED};font-weight:700">+${total-6}</span>`:"";
+  return `<div style="border:.5px solid ${BORDER};border-radius:14px;overflow:hidden;margin-bottom:9px;background:#fff"><div style="padding:11px 12px;border-bottom:.5px solid #f0ede6;display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div style="min-width:0"><div style="font-size:14px;font-weight:750;color:#1a1a18;line-height:1.25">${esc(o.title||"Sortida")}</div><div style="font-size:11px;color:${MUTED};line-height:1.35;margin-top:3px">${dateStr} · ${esc(o.time||"")} h · ${grp} · ${total}/${o.capacity||8} places</div></div><span style="font-size:10px;font-weight:800;border-radius:99px;padding:3px 8px;white-space:nowrap;background:${o.isOpen?"#e6f4ee":"#fff8ee"};color:${o.isOpen?GREEN:"#b07a10"}">${o.isOpen?"🔓 Oberta":"🔒 Grup"}</span></div>${chips||more?`<div style="padding:8px 10px;display:flex;gap:2px;flex-wrap:wrap">${chips}${more}</div>`:""}</div>`;
+}
+function renderHomeSortides(){
+  const list=visibleOutings().filter(o=>!isPastOuting(o)).sort(sortOutings).slice(0,2);
+  const body=list.length?list.map(renderHomeOutingMini).join(""):`<div style="font-size:13px;color:${MUTED};text-align:center;padding:.8rem 0">Cap sortida programada</div>`;
+  return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">${lbl("⛵ Sortides")}<span style="background:#e6f4ee;color:${GREEN};font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px">${list.length}</span></div>${body}<div style="font-size:11px;color:${MUTED};line-height:1.35;margin-top:4px">Les sortides es gestionen a la seva pròpia secció i no formen part del calendari d'esdeveniments.</div><div style="display:flex;justify-content:flex-end;margin-top:8px"><button onclick="go({screen:'entrena',section:'social'})" style="border:none;background:${BG};border-radius:8px;color:${DARK};font-size:11px;font-weight:800;padding:6px 9px;cursor:pointer">Veure sortides</button></div>`);
+}
+function renderHomePollMini(p){
+  const tot=Object.values(p.votes||{}).reduce((a,v)=>a+(Array.isArray(v)?v.length:0),0);
+  const rows=(p.options||[]).slice(0,3).map(opt=>{const cnt=(p.votes?.[opt]||[]).length,pct=tot>0?Math.round(cnt/tot*100):0;return `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>${esc(opt)}</span><strong>${cnt} · ${pct}%</strong></div><div style="height:7px;background:#f0ede8;border-radius:999px;overflow:hidden"><span style="display:block;height:100%;background:${DARK};border-radius:999px;width:${pct}%"></span></div></div>`;}).join("");
+  return `<div style="border:.5px solid ${BORDER};border-radius:14px;padding:11px 12px;background:#fff"><div style="font-size:14px;font-weight:750;color:#1a1a18;margin-bottom:9px">${esc(p.question)}</div>${rows}</div>`;
+}
+function renderHomeEnquestes(){
+  const open=S.polls.filter(p=>!p.closed);
+  const body=open.length?renderHomePollMini(open[0]):`<div style="font-size:13px;color:${MUTED};text-align:center;padding:.8rem 0">Cap enquesta oberta</div>`;
+  return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">${lbl("📊 Enquestes")}<span style="background:#eef0fa;color:${DARK};font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px">${open.length}</span></div>${body}<div style="display:flex;justify-content:flex-end;margin-top:8px"><button onclick="go({screen:'vots'})" style="border:none;background:${BG};border-radius:8px;color:${DARK};font-size:11px;font-weight:800;padding:6px 9px;cursor:pointer">Veure enquestes</button></div>`);
+}
 function renderInici(){
-  const pins=S.avisos.filter(a=>(!a.kind||a.kind==="public")&&a.pin&&canSeeAvis(a));
-  const pinB=pins.map(a=>`<div style="border-radius:12px;margin:8px 14px 0;overflow:hidden;border:1.5px solid ${RED}"><div style="background:${RED};padding:4px 12px;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase">📌 Avís important</div><div style="background:#fff;padding:10px 14px;font-size:13px;color:#1a1a18;line-height:1.5">${a.text}</div></div>`).join("");
-  if(S.section==="competicio"){
-    const s=S.sessions,r=S.results,km=s.reduce((a,x)=>a+(x.km||0),0),best=r.length?Math.min(...r.map(x=>x.pos)):null;
-    return pinB+renderMeteo()+strow([[s.length,"sessions"],[Math.round(km)+" km","remats"],[best?(POS[best]||best+"è"):"—","millor pos."]])+`<div style="background:linear-gradient(135deg,${RED},#a00020);border-radius:14px;margin:10px 14px 0;padding:14px;display:flex;align-items:center;justify-content:space-between;color:#fff"><div><div style="font-size:10px;font-weight:700;margin-bottom:3px;text-transform:uppercase;opacity:.8">🏁 Propera regata</div><div style="font-size:15px;font-weight:600">Trofeu Costa Brava</div><div style="font-size:11px;opacity:.65;margin-top:2px">31 maig · Palamós</div></div><div style="text-align:right"><div style="font-size:36px;font-weight:700">8</div><div style="font-size:10px;opacity:.6">dies</div></div></div>`+renderCalendar()+`<div style="height:14px"></div>`;
-  }
-  const myGid=S.userGroupId||S.capGroupId||null;
-  const list=visibleOutings().filter(o=>!isPastOuting(o)).sort(sortOutings);
-  const op=S.polls.filter(p=>!p.closed);
-  const pn=op.length?`<div style="background:#eef0fa;border:.5px solid ${DARK};border-radius:10px;margin:10px 14px 0;padding:10px 14px;display:flex;align-items:center;justify-content:space-between"><span style="font-size:13px;color:${DARK}">📊 ${op.length} votació${op.length>1?"ns":""} oberta${op.length>1?"s":""}</span><button onclick="go({screen:'vots'})" style="background:${DARK};border:none;border-radius:8px;color:#fff;font-size:12px;padding:5px 10px;cursor:pointer;font-weight:600">Votar →</button></div>`:"";
-  return pinB+renderMeteo()+pn+(list.length?list.map(o=>renderOutingCard(o)).join(""):cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Cap sortida programada</div>`))+`<div style="height:14px"></div>`;
+  return renderHomeAvisos()+renderHomeSortides()+renderHomeEnquestes()+`<div style="margin:12px 14px 4px">${lbl("📅 Calendari del club")}</div>`+renderClubAgenda()+`<div style="height:14px"></div>`;
 }
 
 function renderEntrena(){
@@ -674,9 +835,11 @@ function renderResultats(){
 function renderVots(){
   const open=S.polls.filter(p=>!p.closed),cl=S.polls.filter(p=>p.closed);
   const nO=S.pollOpts.length;
-  const oi=S.pollOpts.map((o,i)=>`<div style="display:flex;gap:8px;margin-bottom:8px"><input id="opt-${i}" placeholder="Opció ${i+1}${i<2?" *":""}" value="${esc(o)}" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none">${i>=2?`<button onclick="rmOpt(${i})" style="padding:8px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:16px;cursor:pointer;flex-shrink:0">×</button>`:""}</div>`).join("");
-  const form=S.role==="patron"&&S.showForm?cc(`${lbl("Nova enquesta")}<input id="poll-q" placeholder="Pregunta *" value="${esc(S.pollQ)}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:12px">${lbl("Opcions")}${oi}${nO<6?`<button onclick="addOpt()" style="width:100%;padding:8px;background:transparent;border:.5px dashed ${BORDER};border-radius:8px;color:${MUTED};font-size:13px;cursor:pointer;margin-bottom:12px">+ Afegir opció</button>`:"<div style='height:12px'></div>"}<div style="display:flex;gap:8px"><button onclick="createPoll()" style="flex:1;padding:10px;background:${RED};border:none;border-radius:8px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Publicar enquesta</button><button onclick="go({showForm:false,pollQ:'',pollOpts:['','']})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
-  return(S.role==="patron"&&!S.showForm?`<div style="margin:12px 14px 0"><button onclick="go({showForm:true})" style="width:100%;padding:11px;background:${RED};border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">📊 Nova enquesta</button></div>`:"")+form+(open.length?`<div style="margin:12px 14px 4px">${lbl("Votacions obertes")}</div>`+open.map(p=>renderPollCard(p)).join(""):"")+( cl.length?`<div style="margin:12px 14px 4px">${lbl("Tancades")}</div>`+cl.map(p=>renderPollCard(p)).join(""):"")+( S.polls.length===0?cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Cap enquesta</div>`):"")+`<div style="height:14px"></div>`;
+  const oi=S.pollOpts.map((o,i)=>`<div style="display:flex;gap:8px;margin-bottom:8px"><input id="opt-${i}" placeholder="Opció ${i+1}${i<2?" *":""}" value="${esc(o)}" style="flex:1;padding:10px 11px;border-radius:10px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none">${i>=2?`<button onclick="rmOpt(${i})" style="padding:8px 10px;background:#fff;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:16px;cursor:pointer;flex-shrink:0">×</button>`:""}</div>`).join("");
+  const form=S.role==="patron"&&S.showForm?cc(`${lbl("Nova votació")}<div style="font-size:12px;color:${MUTED};line-height:1.45;margin-bottom:10px">Les votacions mostren resultats i votants, com a WhatsApp. Els socis poden canviar el vot mentre estigui oberta.</div><input id="poll-q" placeholder="Pregunta *" value="${esc(S.pollQ)}" style="width:100%;padding:10px 11px;border-radius:10px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:12px">${lbl("Opcions")} ${oi}${S.pollErr?`<div style="background:#fff0f0;border:.5px solid ${RED};border-radius:9px;color:${RED};font-size:12px;padding:8px 10px;margin-bottom:10px">${esc(S.pollErr)}</div>`:""}${nO<6?`<button onclick="addOpt()" style="width:100%;padding:9px;background:#fff;border:.5px dashed ${BORDER};border-radius:9px;color:${DARK};font-size:13px;cursor:pointer;margin-bottom:12px;font-weight:600">+ Afegir opció</button>`:"<div style='height:12px'></div>"}<div style="display:flex;gap:8px"><button onclick="createPoll()" style="flex:1;padding:10px;background:${RED};border:none;border-radius:9px;color:#fff;font-weight:800;font-size:14px;cursor:pointer">Publicar votació</button><button onclick="go({showForm:false,pollQ:'',pollOpts:['',''],pollErr:''})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:9px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
+  const createBtn=S.role==="patron"&&!S.showForm?`<div style="margin:12px 14px 0"><button onclick="go({showForm:true,pollErr:''})" style="width:100%;padding:11px;background:${RED};border:none;border-radius:10px;color:#fff;font-weight:800;font-size:14px;cursor:pointer">📊 Nova votació</button></div>`:"";
+  const summary=(open.length||cl.length)?strow([[open.length,"obertes"],[cl.length,"tancades"],[S.polls.length,"totals"]]):"";
+  return createBtn+form+summary+(open.length?`<div style="margin:12px 14px 4px">${lbl("Votacions obertes")}</div>`+open.map(p=>renderPollCard(p)).join(""):"")+(cl.length?`<div style="margin:12px 14px 4px">${lbl("Tancades")}</div>`+cl.map(p=>renderPollCard(p)).join(""):"")+(S.polls.length===0?cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Cap votació</div>`):"")+`<div style="height:14px"></div>`;
 }
 
 function renderAvisos(){
@@ -892,7 +1055,7 @@ function render(){
   if(hasC)nav.push(["entrena","🚣","Entrena","competicio"]);
   if(hasS)nav.push(["entrena","⛵","Sortides","social"]);
   if(hasC)nav.push(["resultats","🏆","Resultats",null]);
-  nav.push(["vots","📊","Vots",null]);
+  nav.push(["vots","📊","Enquestes",null]);
   nav.push(["estadistiques","📈","Stats",null]);
   if(S.role==="patron")nav.push(["membres","👥","Membres",null]);
   nav.push(["avisos","📢","Avisos",null]);
@@ -903,8 +1066,8 @@ function render(){
   const rb=S.role==="patron"?`<span style="background:${RED};color:#fff;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700">PATRÓ</span>`:S.role==="cap"?`<span style="background:rgba(255,255,255,.15);color:#fff;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">Cap</span>`:myGid?`<span style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.8);font-size:10px;padding:2px 8px;border-radius:20px">${gname(myGid).split(" · ")[0]}</span>`:"";
   const btnC=hasC?`<button onclick="go({section:'competicio',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="competicio"?DARK:"transparent"};color:${S.section==="competicio"?"#fff":MUTED}">🏆 Competició</button>`:"";
   const btnS=hasS?`<button onclick="go({section:'social',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="social"?DARK:"transparent"};color:${S.section==="social"?"#fff":MUTED}">⚓ Social</button>`:"";
-  const st=hasBoth&&S.screen!=="vots"&&S.screen!=="estadistiques"&&S.screen!=="membres"&&S.screen!=="avisos"?`<div style="display:flex;margin:12px 14px 0;background:#e2dfd6;border-radius:10px;padding:3px">${btnC}${btnS}</div>`:"";
-  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:11px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${userSub}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false})`:`go({screen:'${k}',showForm:false,showAvisForm:false,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false})`;return`<button onclick="${clk}" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${S.showLogoutConfirm?renderLogoutModal():""}${S.showMemberAdded?renderMemberAddedModal():""}`;
+  const st=hasBoth&&S.screen!=="inici"&&S.screen!=="vots"&&S.screen!=="estadistiques"&&S.screen!=="membres"&&S.screen!=="avisos"?`<div style="display:flex;margin:12px 14px 0;background:#e2dfd6;border-radius:10px;padding:3px">${btnC}${btnS}</div>`:"";
+  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:11px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${userSub}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`:`go({screen:'${k}',showForm:false,showAvisForm:false,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`;return`<button onclick="${clk}" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${S.showLogoutConfirm?renderLogoutModal():""}${S.showMemberAdded?renderMemberAddedModal():""}`;
 }
 
 // ── Accions generals ────────────────────────────────────────────────────────────
@@ -998,11 +1161,49 @@ function addOpt(){go({pollOpts:[...S.pollOpts,""]});}
 function rmOpt(i){go({pollOpts:S.pollOpts.filter((_,j)=>j!==i)});}
 function togglePollVoters(pid,opt){const key=pollKey(pid,opt);const open=Object.assign({},S.pollVotersOpen||{});open[key]=!open[key];go({pollVotersOpen:open});}
 function togglePollVotersByIndex(pid,idx){const p=S.polls.find(x=>x.id===pid);const opt=p?.options?.[idx];if(opt==null)return;togglePollVoters(pid,opt);}
-function createPoll(){const q=document.getElementById("poll-q")?.value?.trim()||"";if(!q)return;const opts=S.pollOpts.map((_,i)=>document.getElementById(`opt-${i}`)?.value?.trim()||"").filter(Boolean);if(opts.length<2)return;const votes={};opts.forEach(o=>votes[o]=[]);S.polls.unshift({id:Date.now(),question:q,options:opts,votes,closed:false,date:td()});save("polls");go({showForm:false,pollQ:"",pollOpts:["",""]});}
+function createPoll(){const q=document.getElementById("poll-q")?.value?.trim()||"";if(!q)return;const opts=S.pollOpts.map((_,i)=>document.getElementById(`opt-${i}`)?.value?.trim()||"").filter(Boolean);if(opts.length<2)return;const votes={};opts.forEach(o=>votes[o]=[]);S.polls.unshift({id:Date.now(),question:q,options:opts,votes,closed:false,date:td()});save("polls");go({showForm:false,pollQ:"",pollOpts:["",""],pollErr:""});}
 function castVote(pid,opt,name){const p=S.polls.find(x=>x.id===pid);name=name||S.userName;if(!p||p.closed||!name)return;p.votes=p.votes||{};(p.options||[]).forEach(o=>{if(!Array.isArray(p.votes[o]))p.votes[o]=[];p.votes[o]=p.votes[o].filter(n=>n!==name);});if(!p.votes[opt])p.votes[opt]=[];if(!p.votes[opt].includes(name))p.votes[opt].push(name);save("polls");render();}
 function castVoteByIndex(pid,idx){const p=S.polls.find(x=>x.id===pid);const opt=p?.options?.[idx];if(opt==null)return;castVote(pid,opt,S.userName);}
 function closePoll(pid){const p=S.polls.find(x=>x.id===pid);if(p){p.closed=true;save("polls");render();}}
 function delPoll(pid){S.polls=S.polls.filter(p=>p.id!==pid);save("polls");render();}
+
+
+function readEventForm(id){
+  return {
+    type:normalizeEventType(document.getElementById(`ev-type-${id}`)?.value||"altres"),
+    title:(document.getElementById(`ev-title-${id}`)?.value||"").trim(),
+    date:document.getElementById(`ev-date-${id}`)?.value||td(),
+    time:document.getElementById(`ev-time-${id}`)?.value||"",
+    place:(document.getElementById(`ev-place-${id}`)?.value||"").trim(),
+    desc:(document.getElementById(`ev-desc-${id}`)?.value||"").trim()
+  };
+}
+function addEvent(){
+  if(S.role!=="patron")return;
+  const e=readEventForm("new");
+  if(!e.title)return go({eventErr:"El títol és obligatori"});
+  S.events.unshift({id:Date.now(),...e});
+  save("events");
+  go({showEventForm:false,editEventId:null,eventErr:"",selectedCalDate:e.date,calMonth:Number(e.date.slice(5,7))-1,calYear:Number(e.date.slice(0,4))});
+}
+function startEditEvent(id){if(S.role!=="patron")return;go({editEventId:id,showEventForm:false,eventErr:""});}
+function saveEvent(id){
+  if(S.role!=="patron")return;
+  const e=S.events.find(x=>x.id===id);
+  if(!e)return;
+  const vals=readEventForm(id);
+  if(!vals.title)return go({eventErr:"El títol és obligatori"});
+  Object.assign(e,vals);
+  save("events");
+  go({editEventId:null,eventErr:"",selectedCalDate:e.date,calMonth:Number(e.date.slice(5,7))-1,calYear:Number(e.date.slice(0,4))});
+}
+function delEvent(id){
+  if(S.role!=="patron")return;
+  if(!confirm("Eliminar aquest esdeveniment?"))return;
+  S.events=S.events.filter(e=>e.id!==id);
+  save("events");
+  render();
+}
 
 // ── Sortides automàtiques (dissabte → genera Dl+Dc setmana vinent) ────────────
 const GROUP_TIMES={1:"20:15",2:"19:00",3:"17:45",4:"16:30",5:"09:15",6:"08:00"};

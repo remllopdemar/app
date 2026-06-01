@@ -26,7 +26,7 @@ const PATRON_HASH="sha256:2f2d8150a49414cbeb30ec480b2977fd9c880651043e7dbfd1e055
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 const SUPA_URL="https://nibwwwtrwngiopqcqufi.supabase.co";
-const SUPA_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pYnd3d3Ryd25naW9wcWNxdWZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1OTM2NzAsImV4cCI6MjA5NTE2OTY3MH0.xTqIiMpU2MWnQ7c5PQur0TKKsay8Vl75dIKovs9QSg4"; // 👈 Enganxa aquí la teva anon key completa
+const SUPA_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pYnd3d3Ryd25naW9wcWNxdWZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1OTM2NzAsImV4cCI6MjA5NTE2OTY3MH0.xTqIiMpU2MWnQ7c5PQur0TKKsay8Vl75dIKovs9QSg4";
 const supa=window.supabase.createClient(SUPA_URL,SUPA_KEY);
 const SUPA_KEYS=["membres","groups","avisos","outings","sessions","results","polls","events"];
 // ─────────────────────────────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ let S={
   membreSections:["social"],
   newPos:1,calMonth:new Date().getMonth(),calYear:new Date().getFullYear(),
   pollQ:"",pollOpts:["",""],pollErr:"",
-  meteo:null,meteoLoading:true,
+  meteo:null,marine:null,meteoLoading:true,marineLoading:true,selectedMeteoDate:null,
   supaLoading:true,
   patronAddOuting:null,
   groups:loadData("groups"),
@@ -164,14 +164,25 @@ function doLogout(force=false){
 }
 
 function fetchMeteo(){
-  fetch("https://api.open-meteo.com/v1/forecast?latitude=41.7833&longitude=3.0167&current=temperature_2m,wind_speed_10m,wind_direction_10m,weathercode&daily=temperature_2m_max&timezone=Europe%2FMadrid&forecast_days=5")
-    .then(r=>r.json()).then(d=>{S.meteo=d;S.meteoLoading=false;render();}).catch(()=>{S.meteoLoading=false;render();});
+  const meteoUrl="https://api.open-meteo.com/v1/forecast?latitude=41.7833&longitude=3.0167&current=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code,precipitation&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_sum&timezone=Europe%2FMadrid&forecast_days=7";
+  const marineUrl="https://marine-api.open-meteo.com/v1/marine?latitude=41.7833&longitude=3.0167&hourly=wave_height,wave_direction,wave_period,wind_wave_height,wind_wave_direction,swell_wave_height,swell_wave_direction,swell_wave_period&timezone=Europe%2FMadrid&forecast_days=7&cell_selection=sea";
+  S.meteoLoading=true;S.marineLoading=true;
+  Promise.allSettled([
+    fetch(meteoUrl).then(r=>{if(!r.ok)throw new Error("meteo");return r.json();}),
+    fetch(marineUrl).then(r=>{if(!r.ok)throw new Error("marine");return r.json();})
+  ]).then(([meteo,marine])=>{
+    if(meteo.status==="fulfilled")S.meteo=meteo.value;
+    if(marine.status==="fulfilled")S.marine=marine.value;
+    S.meteoLoading=false;S.marineLoading=false;
+    if(!S.selectedMeteoDate&&S.meteo?.daily?.time?.length)S.selectedMeteoDate=firstRegularOutingDate(S.meteo.daily.time);
+    render();
+  }).catch(()=>{S.meteoLoading=false;S.marineLoading=false;render();});
 }
 
 const cc=(h,x="")=>`<div style="background:#fff;border-radius:14px;margin:10px 14px 0;padding:14px;border:.5px solid ${BORDER};${x}">${h}</div>`;
 const lbl=t=>`<div style="font-size:11px;font-weight:600;color:${MUTED};text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">${t}</div>`;
 const strow=items=>`<div style="display:flex;gap:8px;margin:10px 14px 0">${items.map(([v,l])=>`<div style="flex:1;background:#fff;border-radius:12px;padding:10px;border:.5px solid ${BORDER};text-align:center"><div style="font-size:20px;font-weight:700;color:${DARK}">${v}</div><div style="font-size:10px;color:${MUTED};margin-top:1px">${l}</div></div>`).join("")}</div>`;
-const gname=id=>S.groups.find(g=>g.id===id)?.name||"—";
+const gname=id=>Number(id)===0?"Tots els grups":(S.groups.find(g=>g.id===id)?.name||"—");
 const td=()=>isoDate(new Date());
 const secBadge=secs=>{const c=[];if(secs.includes("competicio"))c.push(`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600">🏆</span>`);if(secs.includes("social"))c.push(`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600">⚓</span>`);return c.join(" ");};
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
@@ -296,11 +307,12 @@ function todayStr(){return isoDate(new Date());}
 function isPastOuting(o){return (o.date||"")<todayStr();}
 function sortOutings(a,b){return (a.date||"").localeCompare(b.date||"")||(a.time||"").localeCompare(b.time||"");}
 function memberIsInOuting(o,name=S.userName,gid=S.userGroupId,mid=S.memberId){
-  return safeArr(o.signups).some(s=>entryMatchesPerson(s,name,gid,mid))||safeArr(o.waitlist).some(s=>entryMatchesPerson(s,name,gid,mid));
+  return safeArr(o.signups).some(s=>entryMatchesPerson(s,name,gid,mid))||safeArr(o.waitlist).some(s=>entryMatchesPerson(s,name,gid,mid))||safeArr(o.helmsmanSignups).some(s=>entryMatchesPerson(s,name,gid,mid));
 }
 function canSeeOuting(o){
   const isOpen=shouldBeOpen(o);
   if(S.role==="patron")return true;
+  if(isGeneralOuting(o))return isOpen||memberIsInOuting(o);
   if(S.role==="cap")return o.groupId===S.capGroupId||isOpen;
   if(S.role==="soci")return o.groupId===S.userGroupId||isOpen||memberIsInOuting(o);
   return false;
@@ -490,17 +502,119 @@ function resetMemberPin(id){if(S.role!=="patron")return;const m=S.membres.find(x
 function toggleIsCap(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m){m.isCap=!m.isCap;save("membres");render();}}
 
 function fetchMeteo(){
-  fetch("https://api.open-meteo.com/v1/forecast?latitude=41.7833&longitude=3.0167&current=temperature_2m,wind_speed_10m,wind_direction_10m,weathercode&daily=temperature_2m_max&timezone=Europe%2FMadrid&forecast_days=5")
-    .then(r=>r.json()).then(d=>{S.meteo=d;S.meteoLoading=false;render();}).catch(()=>{S.meteoLoading=false;render();});
+  const meteoUrl="https://api.open-meteo.com/v1/forecast?latitude=41.7833&longitude=3.0167&current=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code,precipitation&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_sum&timezone=Europe%2FMadrid&forecast_days=7";
+  const marineUrl="https://marine-api.open-meteo.com/v1/marine?latitude=41.7833&longitude=3.0167&hourly=wave_height,wave_direction,wave_period,wind_wave_height,wind_wave_direction,swell_wave_height,swell_wave_direction,swell_wave_period&timezone=Europe%2FMadrid&forecast_days=7&cell_selection=sea";
+  S.meteoLoading=true;S.marineLoading=true;
+  Promise.allSettled([
+    fetch(meteoUrl).then(r=>{if(!r.ok)throw new Error("meteo");return r.json();}),
+    fetch(marineUrl).then(r=>{if(!r.ok)throw new Error("marine");return r.json();})
+  ]).then(([meteo,marine])=>{
+    if(meteo.status==="fulfilled")S.meteo=meteo.value;
+    if(marine.status==="fulfilled")S.marine=marine.value;
+    S.meteoLoading=false;S.marineLoading=false;
+    if(!S.selectedMeteoDate&&S.meteo?.daily?.time?.length)S.selectedMeteoDate=firstRegularOutingDate(S.meteo.daily.time);
+    render();
+  }).catch(()=>{S.meteoLoading=false;S.marineLoading=false;render();});
 }
 
 // ── Helpers de UI ─────────────────────────────────────────────────────────────
+function num(v,d=1){return Number.isFinite(Number(v))?Number(v).toFixed(d).replace(".0",""):"—";}
+function firstVal(...vals){for(const v of vals){if(v!==undefined&&v!==null&&!Number.isNaN(Number(v)))return v;}return null;}
+function weatherCodeFrom(obj){return firstVal(obj?.weather_code,obj?.weathercode);}
+function meteoHourlyIndex(data,date,time){
+  const times=data?.hourly?.time||[];
+  const wanted=`${date}T${time}`;
+  let idx=times.indexOf(wanted);
+  if(idx>=0)return idx;
+  let best=-1,bestDiff=9999;
+  const [th,tm]=(time||"00:00").split(":").map(Number);
+  const target=(th||0)*60+(tm||0);
+  times.forEach((t,i)=>{
+    if(!String(t).startsWith(date+"T"))return;
+    const hh=Number(t.slice(11,13)),mm=Number(t.slice(14,16));
+    const diff=Math.abs((hh*60+mm)-target);
+    if(diff<bestDiff){best=i;bestDiff=diff;}
+  });
+  return best;
+}
+function meteoSlotLabel(time){
+  const pairs=Object.entries(GROUP_TIMES||{}).map(([gid,t])=>({gid:Number(gid),time:t,name:gname(Number(gid)).split(" · ")[0]}));
+  return pairs.filter(x=>x.time===time).map(x=>x.name).join(" / ")||"Sortida";
+}
+function seaStateLabel(h){
+  const v=Number(h);
+  if(!Number.isFinite(v))return "Mar no disponible";
+  if(v>=1)return "Mar moguda";
+  if(v>=0.6)return "Mar moderada";
+  return "Mar tranquil·la";
+}
+function isRegularOutingDay(ds){
+  const dow=parseLocalDate(ds)?.getDay();
+  return dow===1||dow===3||dow===5; // dilluns, dimecres i divendres
+}
+function firstRegularOutingDate(days){
+  return (days||[]).find(isRegularOutingDay)||(days||[])[0]||td();
+}
 function renderMeteo(){
-  if(S.meteoLoading)return`<div style="background:${DARK};border-radius:14px;margin:10px 14px 0;padding:16px;color:rgba(255,255,255,.5);font-size:13px">Carregant meteo del port...</div>`;
+  if(S.meteoLoading&&!S.meteo)return`<div style="background:${DARK};border-radius:14px;margin:10px 14px 0;padding:16px;color:rgba(255,255,255,.5);font-size:13px">Carregant meteo del port...</div>`;
   if(!S.meteo)return`<div style="background:${DARK};border-radius:14px;margin:10px 14px 0;padding:16px;color:rgba(255,255,255,.5);font-size:13px">Meteo no disponible</div>`;
-  const m=S.meteo,kn=Math.round(m.current.wind_speed_10m*.539957),strong=kn>=15;
-  const days=m.daily.time.slice(0,5).map((d,i)=>{const dy=new Date(d);return`<div style="flex:1;text-align:center;font-size:10px;color:${i===0?"#fff":"rgba(255,255,255,.5)"}"><div style="${i===0?`background:${RED};border-radius:5px;padding:1px 0;font-weight:700`:""}">${DAYS[dy.getDay()]}</div><div style="font-size:13px;font-weight:${i===0?600:400};margin-top:3px">${Math.round(m.daily.temperature_2m_max[i])}°</div></div>`;}).join("");
-  return`<div style="background:linear-gradient(135deg,${DARK},#122860);border-radius:14px;margin:10px 14px 0;padding:16px;color:#fff"><div style="font-size:11px;opacity:.5;margin-bottom:10px">📍 Port de Sant Feliu de Guíxols</div><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:40px;font-weight:700;line-height:1">${Math.round(m.current.temperature_2m)}°</div><div style="font-size:12px;opacity:.65;margin-top:5px">${wIcon(m.current.weathercode)} ${wDesc(m.current.weathercode)}</div></div><div style="text-align:right"><div style="font-size:10px;opacity:.5;margin-bottom:2px">Vent</div><div style="font-size:28px;font-weight:700;color:${strong?"#ff6b6b":"#7ec8e3"}">${kn} kn</div><div style="font-size:11px;opacity:.5">${wDir(m.current.wind_direction_10m)}</div></div></div><div style="display:flex;gap:4px;margin-top:14px;padding-top:12px;border-top:.5px solid rgba(255,255,255,.15)">${days}</div></div>${strong?`<div style="background:#fff0f0;border:.5px solid ${RED};border-radius:10px;margin:8px 14px 0;padding:10px 12px;display:flex;gap:8px;align-items:center">⚠️<span style="font-size:12px;color:${RED}">Vent fort (${kn} kn). Consulteu amb el patró.</span></div>`:""}`;
+
+  const m=S.meteo;
+  const availableDays=(m.daily?.time||[]).slice(0,7);
+  const outingDays=availableDays.filter(isRegularOutingDay);
+  const dayList=outingDays.length?outingDays:availableDays.slice(0,5);
+  let sel=S.selectedMeteoDate||firstRegularOutingDate(availableDays);
+  if(dayList.length&&!dayList.includes(sel))sel=dayList[0];
+
+  const curCode=weatherCodeFrom(m.current);
+  const kn=Math.round((m.current?.wind_speed_10m||0)*.539957),strong=kn>=15;
+  const selIndex=availableDays.indexOf(sel);
+  const max=selIndex>=0?m.daily?.temperature_2m_max?.[selIndex]:null;
+  const min=selIndex>=0?m.daily?.temperature_2m_min?.[selIndex]:null;
+  const rainDay=selIndex>=0?m.daily?.precipitation_sum?.[selIndex]:null;
+  const dayButtons=dayList.map((d,i)=>{
+    const dy=parseLocalDate(d)||new Date(d);
+    const idx=availableDays.indexOf(d);
+    const isSel=d===sel;
+    const maxDay=idx>=0?m.daily?.temperature_2m_max?.[idx]:null;
+    const code=weatherCodeFrom({weather_code:idx>=0?m.daily?.weather_code?.[idx]:null,weathercode:idx>=0?m.daily?.weathercode?.[idx]:null});
+    const label=d===td()?"Avui":DAYS[dy.getDay()];
+    return`<button onclick="go({selectedMeteoDate:'${d}'})" style="flex:1;text-align:center;font-size:10px;color:${isSel?'#fff':'rgba(255,255,255,.62)'};background:${isSel?'rgba(255,255,255,.16)':'transparent'};border:${isSel?'1px solid rgba(255,255,255,.28)':'1px solid transparent'};border-radius:9px;padding:6px 3px;cursor:pointer"><div style="font-weight:800;margin-bottom:2px">${label}</div><div style="font-size:15px;line-height:1">${wIcon(code)}</div><div style="font-size:11px;font-weight:700;margin-top:2px">${maxDay!==null&&maxDay!==undefined?Math.round(maxDay)+'°':'—'}</div></button>`;
+  }).join("");
+
+  const hourSlots=["08:00","11:00","14:00","17:00","20:00"];
+  const rows=hourSlots.map(t=>{
+    const wi=meteoHourlyIndex(m,sel,t),mi=meteoHourlyIndex(S.marine,sel,t);
+    const h=m.hourly||{},mh=S.marine?.hourly||{};
+    const temp=wi>=0?h.temperature_2m?.[wi]:null;
+    const wkn=wi>=0?Math.round((h.wind_speed_10m?.[wi]||0)*.539957):null;
+    const wdeg=wi>=0?h.wind_direction_10m?.[wi]:null;
+    const code=wi>=0?firstVal(h.weather_code?.[wi],h.weathercode?.[wi]):null;
+    const rain=wi>=0?h.precipitation?.[wi]:null;
+    const wh=mi>=0?mh.wave_height?.[mi]:null;
+    const wdir=mi>=0?mh.wave_direction?.[mi]:null;
+    const wp=mi>=0?mh.wave_period?.[mi]:null;
+    const warn=(Number(wkn)>=15)||(Number(wh)>=0.8);
+    return`<div style="display:flex;align-items:center;gap:7px;background:${warn?'rgba(255,107,107,.12)':'rgba(255,255,255,.075)'};border:1px solid ${warn?'rgba(255,107,107,.32)':'rgba(255,255,255,.08)'};border-radius:10px;padding:7px 8px;margin-top:6px;font-size:12px;color:rgba(255,255,255,.82);line-height:1.25">
+      <div style="width:38px;font-weight:850;color:#fff;flex-shrink:0">${t.slice(0,2)}h</div>
+      <div style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${wIcon(code)} ${temp!==null&&temp!==undefined?Math.round(temp)+'°':'—'} · ${wkn!==null?wkn+' kn':'—'} ${wdeg!==null?wDir(wdeg):''}${rain!==null&&rain!==undefined&&Number(rain)>0?` · 🌧️ ${num(rain,1)} mm`:''}</div>
+      <div style="flex-shrink:0;text-align:right;white-space:nowrap;color:${warn?'#ffb4b4':'rgba(255,255,255,.78)'}">🌊 ${wh!==null&&wh!==undefined?num(wh,1)+' m':'—'} ${wdir!==null?wDir(wdir):''}${wp!==null&&wp!==undefined?` · ${num(wp,0)}s`:''}</div>
+    </div>`;
+  }).join("");
+
+  const selDate=parseLocalDate(sel)||new Date(sel);
+  const selTitle=selDate.toLocaleDateString("ca-ES",{weekday:"long",day:"numeric",month:"long"});
+  const marineNote=S.marine?"":"<div style='font-size:11px;color:rgba(255,255,255,.48);margin-top:8px'>Estat del mar no disponible ara mateix.</div>";
+  const daySummary=`${min!==null&&min!==undefined?Math.round(min)+'° / ':''}${max!==null&&max!==undefined?Math.round(max)+'°':''}${rainDay!==null&&rainDay!==undefined&&Number(rainDay)>0?` · Pluja ${num(rainDay,1)} mm`:''}`;
+
+  return`<div style="background:linear-gradient(135deg,${DARK},#122860);border-radius:14px;margin:10px 14px 0;padding:14px;color:#fff">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
+      <div><div style="font-size:11px;opacity:.55">📍 Port de Sant Feliu de Guíxols</div><div style="font-size:13px;font-weight:850;margin-top:3px">Previsió meteo i mar</div></div>
+      <div style="text-align:right"><div style="font-size:10px;opacity:.55">Ara</div><div style="font-size:16px;font-weight:850;color:${strong?'#ffb4b4':'#fff'}">${Math.round(m.current?.temperature_2m??0)}° · ${kn} kn</div><div style="font-size:10px;opacity:.55">${wIcon(curCode)} ${wDir(m.current?.wind_direction_10m||0)}</div></div>
+    </div>
+    <div style="display:flex;gap:5px;padding-top:10px;border-top:.5px solid rgba(255,255,255,.15)">${dayButtons}</div>
+    <div style="margin-top:11px"><div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px"><div style="font-size:13px;font-weight:850;text-transform:capitalize">${selTitle}</div><div style="font-size:11px;color:rgba(255,255,255,.62);white-space:nowrap">${daySummary}</div></div>${rows}${marineNote}</div>
+  </div>${strong?`<div style="background:#fff0f0;border:.5px solid ${RED};border-radius:10px;margin:8px 14px 0;padding:10px 12px;display:flex;gap:8px;align-items:center">⚠️<span style="font-size:12px;color:${RED}">Vent fort (${kn} kn). Consulteu amb el patró.</span></div>`:""}`;
 }
 
 
@@ -613,7 +727,7 @@ function renderCalendar(){
   const hdr=["Dl","Dt","Dc","Dj","Dv","Ds","Dg"].map(d=>`<div style="font-size:10px;color:${MUTED};text-align:center;padding:3px 0">${d}</div>`).join("");
   let cells="";for(let i=0;i<sdow;i++)cells+=`<div></div>`;
   for(let d=1;d<=dim;d++){
-    const dt=new Date(y,mo,d),dow=dt.getDay(),isWC=dow===1||dow===3;
+    const dt=new Date(y,mo,d),dow=dt.getDay(),isWC=dow===1||dow===3||dow===5;
     const ds=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
     const hasSess=sessDates.has(ds),isToday=ds===tod,isPast=ds<tod;
     let bg="transparent",col=isPast?"#c5c0b8":"#1a1a18",fw=400,brd="none";
@@ -622,12 +736,13 @@ function renderCalendar(){
     cells+=`<div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:8px;background:${bg};color:${col};font-size:12px;font-weight:${fw};border:${brd}">${d}</div>`;
   }
   const prev=mo===0?{m:11,y:y-1}:{m:mo-1,y:y},next=mo===11?{m:0,y:y+1}:{m:mo+1,y:y};
-  return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><button onclick="go({calMonth:${prev.m},calYear:${prev.y}})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">‹</button><div style="font-size:14px;font-weight:600;color:#1a1a18">${MONTHS[mo]} ${y}</div><button onclick="go({calMonth:${next.m},calYear:${next.y}})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">›</button></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">${hdr}${cells}</div><div style="display:flex;gap:12px;margin-top:10px;padding-top:10px;border-top:.5px solid #f0ede6"><div style="display:flex;align-items:center;gap:4px"><div style="width:10px;height:10px;border-radius:3px;background:#e8edf8"></div><span style="font-size:10px;color:${MUTED}">Entreno Dl/Dc</span></div><div style="display:flex;align-items:center;gap:4px"><div style="width:10px;height:10px;border-radius:3px;background:${DARK}"></div><span style="font-size:10px;color:${MUTED}">Registrat</span></div></div>`);
+  return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><button onclick="go({calMonth:${prev.m},calYear:${prev.y}})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">‹</button><div style="font-size:14px;font-weight:600;color:#1a1a18">${MONTHS[mo]} ${y}</div><button onclick="go({calMonth:${next.m},calYear:${next.y}})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">›</button></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">${hdr}${cells}</div><div style="display:flex;gap:12px;margin-top:10px;padding-top:10px;border-top:.5px solid #f0ede6"><div style="display:flex;align-items:center;gap:4px"><div style="width:10px;height:10px;border-radius:3px;background:#e8edf8"></div><span style="font-size:10px;color:${MUTED}">Entreno Dl/Dc/Dv</span></div><div style="display:flex;align-items:center;gap:4px"><div style="width:10px;height:10px;border-radius:3px;background:${DARK}"></div><span style="font-size:10px;color:${MUTED}">Registrat</span></div></div>`);
 }
 
 function renderOutingCard(o){
   normalizeOutingEntries(o);
   if(reconcileOutingWaitlist(o)){save("outings");save("avisos");}
+  const isGeneral=isGeneralOuting(o);
   const grp=S.groups.find(g=>g.id===o.groupId);
   if(!o.waitlist)o.waitlist=[];
   if(!o.helmsmanSignups)o.helmsmanSignups=[];
@@ -635,31 +750,33 @@ function renderOutingCard(o){
   const openTrigger=openTriggerReached(o);
   const hasGeneralSpots=hasOpenGeneralSpots(o);
   const cfg=getOutingCfg(o.groupId,o.date);
-  const capacity=o.capacity||8;
-  const reserve=o.reserve||1;
-  const maxHelm=o.helmsmen||0;
+  const capacity=outingCapacity(o);
+  const reserve=isGeneral?0:Number(o.reserve||1);
+  const maxHelm=o.helmsmen||cfg?.helmsmen||0;
   const helmsRequired=o.helmsmanRequired||false;
   const total=o.signups.length;
   const isFull=total>=capacity+(isOpen?0:reserve);
   const isPast=isPastOuting(o);
-  const isMyGroup=S.userGroupId===o.groupId||S.capGroupId===o.groupId;
-  const isMyCap=S.role==="cap"&&S.capGroupId===o.groupId;
+  const isMyGroup=!isGeneral&&(S.userGroupId===o.groupId||S.capGroupId===o.groupId);
+  const isMyCap=!isGeneral&&S.role==="cap"&&S.capGroupId===o.groupId;
   const isPatron=S.role==="patron";
   const amHelm=o.helmsmanSignups.some(entryMatchesCurrent);
   const amIn=o.signups.some(entryMatchesCurrent);
   const amWait=o.waitlist.some(entryMatchesCurrent);
-  const canAccess=isMyGroup||isOpen;
+  const canAccess=isGeneral?isOpen:(isMyGroup||isOpen);
   const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
 
-  // Estat clar: reservada al grup fins a l'obertura general natural.
+  // Estat clar: reservada al grup o programada per a tots fins a l'obertura natural.
   // L'obertura a tots no és un estat permanent: només és activa si ja toca i hi ha places lliures.
   let openInfo="";
   const openDate=getNaturalOpenDate(o);
   if(!isOpen&&!isPast){
-    const groupLabel=esc(grp?.name?.split(" · ")[0]||"grup");
+    const groupLabel=isGeneral?"tots els grups":esc(grp?.name?.split(" · ")[0]||"grup");
     const openStr=openDate?formatNaturalOpenLabel(o):"quan el cap o el patró l'obrin";
     if(openTrigger&&!hasGeneralSpots){
       openInfo=`<div style="font-size:11px;color:${RED};background:#fff0f0;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🔒 L'hora d'obertura ja ha passat, però no s'obre a tots perquè no hi ha places lliures.</div>`;
+    }else if(isGeneral){
+      openInfo=`<div style="font-size:11px;color:#b07a10;background:#fff8ee;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🔒 Programada per a ${groupLabel}. S'obrirà ${openStr} si hi ha places lliures.</div>`;
     }else{
       openInfo=`<div style="font-size:11px;color:#b07a10;background:#fff8ee;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🔒 Reservada al ${groupLabel}. S'obrirà a tots ${openStr} si hi ha places lliures.</div>`;
     }
@@ -668,13 +785,13 @@ function renderOutingCard(o){
   const shortGroup=gid=>esc(gname(gid).split(" · ")[0]||"—");
   const personChips=(arr,mode="signups")=>arr.length?`<div style="display:flex;flex-wrap:wrap;gap:6px">${arr.map(s=>{
     const gid=s.gid||memberFromEntry(s)?.groupId;
-    const isOwner=Number(gid)===Number(o.groupId);
+    const isOwner=!isGeneral&&Number(gid)===Number(o.groupId);
     const isWait=mode==="wait";
     const isReserve=s.isReserve;
     const isHelm=mode==="helm";
     const bg=isWait?"#e8a020":isHelm?"#4a7a3d":isReserve?"#8b4513":(isOwner?DARK:GREEN);
     const groupTxt=shortGroup(gid);
-    const title=isWait?"Llista d'espera":isHelm?"Timoner":isReserve?"Plaça de reserva":(isOwner?"Del grup":"D'un altre grup");
+    const title=isWait?"Llista d'espera":isHelm?"Timoner":isReserve?"Plaça de reserva":(isGeneral?`Grup ${groupTxt}`:(isOwner?"Del grup":"D'un altre grup"));
     const mid=s.mid||memberFromEntry(s)?.id;
     const removeBtn=isPatron&&!isPast&&!isWait?` <button onclick="event.stopPropagation();patronRemoveMember(${o.id},${mid},${isHelm})" style="background:rgba(255,255,255,.25);border:none;border-radius:50%;width:14px;height:14px;color:#fff;font-size:10px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:1;padding:0;flex-shrink:0">×</button>`:"";
     return`<span title="${title}" style="display:inline-flex;align-items:center;gap:4px;background:${bg};border-radius:999px;padding:5px 9px;color:#fff;font-size:12px;font-weight:600;line-height:1.15">
@@ -687,7 +804,9 @@ function renderOutingCard(o){
     ?`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔓 Oberta a tots</span>`
     :(openTrigger&&!hasGeneralSpots
       ?`<span style="background:#fff0f0;color:${RED};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 Sense places</span>`
-      :`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 Reservada ${grp?.name?.split(" · ")[0]||""}</span>`);
+      :(isGeneral
+        ?`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 Tots els grups</span>`
+        :`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 Reservada ${grp?.name?.split(" · ")[0]||""}</span>`));
 
   const pct=Math.min(100,Math.round((total/capacity)*100));
 
@@ -700,9 +819,7 @@ function renderOutingCard(o){
   </div>`:"";
 
   const outingLegend=isOpen?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
-    <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${DARK}"></span>Del grup</span>
-    <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${GREEN}"></span>Altres grups</span>
-    <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:#8b4513"></span>Reserva</span>
+    ${isGeneral?`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${GREEN}"></span>Oberta a tots els grups</span>`:`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${DARK}"></span>Del grup</span><span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${GREEN}"></span>Altres grups</span><span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:#8b4513"></span>Reserva</span>`}
   </div>`:"";
 
   const signupsBlock=o.signups.length?`<div style="padding:10px 14px;border-bottom:.5px solid #f5f3ee">
@@ -712,7 +829,7 @@ function renderOutingCard(o){
     </div>${outingLegend}${personChips(o.signups,"signups")}</div>`:"";
 
   const waitBlock=o.waitlist.length?`<div style="padding:8px 14px;border-bottom:.5px solid #f5f3ee;background:#fffdf7">
-    <div style="font-size:10px;color:#b07a10;margin-bottom:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">⏳ LLISTA D'ESPERA (${o.waitlist.length}) · Prioritat grup</div>
+    <div style="font-size:10px;color:#b07a10;margin-bottom:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">⏳ LLISTA D'ESPERA (${o.waitlist.length}) · ${isGeneral?"Ordre d'inscripció":"Prioritat grup"}</div>
     ${personChips(o.waitlist,"wait")}</div>`:"";
 
   // Botons d'acció
@@ -734,7 +851,7 @@ function renderOutingCard(o){
     if(amWait&&!isPast)
       acts.push(`<div style="flex:1;padding:9px;background:#fff8ee;border:.5px solid #e8a020;border-radius:8px;color:#b07a10;font-size:12px;text-align:center;font-weight:500">⏳ Llista d'espera · pos.${o.waitlist.findIndex(entryMatchesCurrent)+1}<br><button onclick="unsignup(${o.id})" style="background:none;border:none;color:#b07a10;font-size:11px;cursor:pointer;text-decoration:underline;margin-top:2px;padding:0">Sortir</button></div>`);
     if(cantAccess)
-      acts.push(`<div style="flex:1;padding:9px;background:#f8f8f8;border-radius:8px;color:${MUTED};font-size:12px;text-align:center">Reservada al ${shortGroup(o.groupId)} fins a l'obertura general</div>`);
+      acts.push(`<div style="flex:1;padding:9px;background:#f8f8f8;border-radius:8px;color:${MUTED};font-size:12px;text-align:center">${isGeneral?`S'obrirà a tots ${formatNaturalOpenLabel(o)}`:`Reservada al ${shortGroup(o.groupId)} fins a l'obertura general`}</div>`);
   }
   if((isMyCap||isPatron)&&!isPast&&!isOpen&&!o.isOpen&&hasGeneralSpots)
     acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir</button>`);
@@ -904,7 +1021,7 @@ function renderHomeEnquestes(){
   return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">${lbl("📊 Enquestes")}<span style="background:#eef0fa;color:${DARK};font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px">${open.length}</span></div>${body}<div style="display:flex;justify-content:flex-end;margin-top:8px"><button onclick="go({screen:'vots'})" style="border:none;background:${BG};border-radius:8px;color:${DARK};font-size:11px;font-weight:800;padding:6px 9px;cursor:pointer">Veure enquestes</button></div>`);
 }
 function renderInici(){
-  return renderHomeAvisos()+renderHomeSortides()+renderHomeEnquestes()+`<div style="margin:12px 14px 4px">${lbl("📅 Calendari del club")}</div>`+renderClubAgenda()+`<div style="height:14px"></div>`;
+  return renderHomeAvisos()+renderMeteo()+renderHomeSortides()+renderHomeEnquestes()+`<div style="margin:12px 14px 4px">${lbl("📅 Calendari del club")}</div>`+renderClubAgenda()+`<div style="height:14px"></div>`;
 }
 
 function renderEntrena(){
@@ -1125,31 +1242,9 @@ function renderMemberAddedModal(){
 // ── DEBUG: Forçar generació de sortides (només patró) ─────────────────────────
 function forceGenOutings(){
   if(S.role!=="patron")return;
-  const now=new Date();
-  const {monStr,wedStr}=nextWeekMonWed(now);
-  const base=Date.now();
-  let changed=false;
-  S.groups.forEach((g,gi)=>{
-    const t=GROUP_TIMES[g.id]||"09:00";
-    [{ds:monStr,day:"Dl"},{ds:wedStr,day:"Dc"}].forEach(({ds,day},di)=>{
-      const existing=S.outings.find(o=>o.date===ds&&o.groupId===g.id);
-      if(!existing){
-        const cfg=OUTING_CONFIG[g.id]?.[day]||{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false};
-        S.outings.push({
-          id:base+gi*10+di,
-          groupId:g.id,
-          title:`Sortida setmanal · ${day}`,
-          date:ds,time:t,
-          capacity:cfg.capacity,reserve:cfg.reserve,
-          helmsmen:cfg.helmsmen,helmsmanRequired:cfg.helmsmanRequired,
-          helmsmanSignups:[],isOpen:false,signups:[],waitlist:[],isAuto:true
-        });
-        changed=true;
-      }
-    });
-  });
-  if(changed){save("outings");alert(`Sortides generades: ${monStr} i ${wedStr}`);}
-  else alert(`Ja existeixen sortides per ${monStr} i ${wedStr}`);
+  const info=generateAutoOutingsForNextWeek(new Date());
+  if(info.changed){save("outings");alert(`Sortides revisades/generades: ${info.monStr}, ${info.wedStr} i ${info.friStr}`);}
+  else alert(`Ja existeixen sortides per ${info.monStr}, ${info.wedStr} i ${info.friStr}`);
   render();
 }
 
@@ -1224,7 +1319,8 @@ function signup(oid,asHelm=false){
   normalizeOutingEntries(o);
   if(!o.waitlist)o.waitlist=[];
   if(!o.helmsmanSignups)o.helmsmanSignups=[];
-  const isMyGroup=S.userGroupId===o.groupId;
+  const isGeneral=isGeneralOuting(o);
+  const isMyGroup=!isGeneral&&S.userGroupId===o.groupId;
   const isOpen=shouldBeOpen(o);
   if(!isMyGroup&&!isOpen)return;
   const entry={name:S.userName,gid:S.userGroupId,mid:S.memberId};
@@ -1242,7 +1338,7 @@ function signup(oid,asHelm=false){
     addOutingLog(o,"helm_signup",`${S.userName} s'apunta de timoner a ${outingLabel(o)}.`);
   } else {
     // Vogador: plaça normal o reserva (+1 per al grup)
-    const maxNormal=o.capacity||8;
+    const maxNormal=outingCapacity(o);
     const maxWithReserve=isMyGroup?(maxNormal+(o.reserve||1)):maxNormal;
     if(o.signups.length>=maxNormal){
       if(isMyGroup&&o.signups.length<maxWithReserve){
@@ -1329,7 +1425,7 @@ function openOut(oid){
   if(!o||isPastOuting(o))return;
   normalizeOutingEntries(o);
   const isPatron=S.role==="patron";
-  const isOwnCap=S.role==="cap"&&S.capGroupId===o.groupId;
+  const isOwnCap=!isGeneralOuting(o)&&S.role==="cap"&&S.capGroupId===o.groupId;
   if(!isPatron&&!isOwnCap)return;
   const changed=reconcileOutingWaitlist(o);
   if(!hasOpenGeneralSpots(o)){
@@ -1421,20 +1517,23 @@ function delEvent(id){
 
 // ── Sortides automàtiques i obertura natural ─────────────────────────────────
 const GROUP_TIMES={1:"20:15",2:"19:00",3:"17:45",4:"16:30",5:"09:15",6:"08:00"};
+const FRIDAY_GENERAL_TIMES=["17:30","18:45"];
+const FRIDAY_GENERAL_CONFIG={capacity:12,reserve:0,helmsmen:4,helmsmanRequired:false};
 
 // Les sortides es generen per a la setmana següent a partir de dissabte a les 08:00.
 // Si ningú entra dissabte, també es revisen/generen diumenge quan algú obre l'app.
 const OUTING_OPEN_RULES={
   autoGenHour:"08:00",
   morningCutoffHour:10,
-  morning:{dayOffset:-1,hour:"20:00"},   // sortides abans de les 10:00 → vigília 20:00
-  afternoon:{dayOffset:0,hour:"07:30"}   // sortides de tarda/vespre → mateix dia 07:30
+  morning:{dayOffset:-1,hour:"20:00"},      // sortides abans de les 10:00 → vigília 20:00
+  afternoon:{dayOffset:0,hour:"07:30"},     // sortides de tarda/vespre → mateix dia 07:30
+  fridayGeneral:{dayOffset:-2,hour:"07:30"} // sortides obertes de divendres → dimecres 07:30
 };
 
-// Configuració per grup i dia (dow: 1=Dl, 3=Dc)
+// Configuració per grup i dia (dow: 1=Dl, 3=Dc). Els divendres són sortides generals.
 // capacity: places de vogador base
 // reserve: +1 plaça reserva per al grup
-// helmsmen: places de timoner (0=cap, 1 o 2)
+// helmsmen: places de timoner
 // helmsmanRequired: si cal timoner per sortir
 const OUTING_CONFIG={
   1:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false},
@@ -1451,8 +1550,19 @@ const OUTING_CONFIG={
      Dc:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false}},
 };
 
+function normalizeTimeStr(t){
+  const parts=String(t||"").replace(".",":").split(":");
+  const h=Number(parts[0]||0),m=Number(parts[1]||0);
+  return `${String(Number.isFinite(h)?h:0).padStart(2,"0")}:${String(Number.isFinite(m)?m:0).padStart(2,"0")}`;
+}
+function isGeneralOuting(o){return !!o?.openAllGroups||Number(o?.groupId)===0;}
+function isFridayGeneralOuting(o){
+  const d=parseLocalDate(o?.date);
+  return !!o&&d?.getDay()===5&&isGeneralOuting(o)&&FRIDAY_GENERAL_TIMES.includes(normalizeTimeStr(o.time));
+}
 function getOutingCfg(groupId,dateStr){
   const dow=parseLocalDate(dateStr)?.getDay();
+  if(Number(groupId)===0&&dow===5)return FRIDAY_GENERAL_CONFIG;
   const day=dow===1?"Dl":dow===3?"Dc":null;
   return (day&&OUTING_CONFIG[groupId])?OUTING_CONFIG[groupId][day]:null;
 }
@@ -1463,12 +1573,12 @@ function outingTimeParts(o){
   return {h:Number.isFinite(h)?h:0,m:Number.isFinite(m)?m:0};
 }
 function naturalOpenRule(o){
+  if(isFridayGeneralOuting(o))return OUTING_OPEN_RULES.fridayGeneral;
   const {h}=outingTimeParts(o);
   return h<OUTING_OPEN_RULES.morningCutoffHour?OUTING_OPEN_RULES.morning:OUTING_OPEN_RULES.afternoon;
 }
 function getNaturalOpenDate(o){
-  // Només apliquem obertura natural a sortides regulars de dilluns/dimecres.
-  // Les sortides especials fora d'aquest patró continuen depenent del patró/cap.
+  // Dilluns/dimecres tenen obertura natural per grup; divendres és una sortida general.
   const cfg=getOutingCfg(o.groupId,o.date);
   if(!cfg)return null;
   const outingDate=parseLocalDate(o.date);
@@ -1500,13 +1610,15 @@ function waitEntryGroupId(w){
   return Number(w?.gid||memberFromEntry(w)?.groupId||0);
 }
 function waitEntryBelongsToGroup(w,o){
+  if(isGeneralOuting(o))return false;
   return waitEntryGroupId(w)===Number(o?.groupId||0);
 }
 function hasGroupWaitlist(o){
+  if(isGeneralOuting(o))return false;
   return safeArr(o?.waitlist).some(w=>waitEntryBelongsToGroup(w,o));
 }
 function hasOpenGeneralSpots(o){
-  // Una plaça només es pot obrir al general si queda lloc base i no hi ha ningú del grup esperant.
+  // Sortides generals: només cal que hi hagi plaça. Sortides de grup: primer es respecta la llista del grup.
   return safeArr(o?.signups).length<outingCapacity(o)&&!hasGroupWaitlist(o);
 }
 
@@ -1543,13 +1655,13 @@ function reconcileOutingWaitlist(o){
   if(!o||isPastOuting(o))return false;
   normalizeOutingEntries(o);
   let changed=false;
-  // 1) Sempre que hi hagi plaça base, primer pugen els socis del grup de la sortida.
+  // 1) Sortides de grup: sempre que hi hagi plaça base, primer pugen els socis del grup de la sortida.
   while(safeArr(o.signups).length<outingCapacity(o)&&hasGroupWaitlist(o)){
     if(!promoteFromWaitlist(o,true))break;
     changed=true;
   }
   // 2) La resta de la llista només puja si la sortida ja ha arribat a l'obertura general
-  //    o si el cap/patró l'ha oberta manualment.
+  //    o si el cap/patró l'ha oberta manualment. En divendres general, és ordre d'inscripció.
   while(safeArr(o.signups).length<outingCapacity(o)&&openTriggerReached(o)&&safeArr(o.waitlist).length>0){
     if(!promoteFromWaitlist(o,false))break;
     changed=true;
@@ -1571,14 +1683,108 @@ function parseLocalDate(ds){
   const [y,m,d]=(ds||"").split("-").map(Number);
   return y&&m&&d?new Date(y,m-1,d,12,0,0,0):null;
 }
-function nextWeekMonWed(now){
+function nextWeekRegularDates(now){
   const ref=dateAtLocalNoon(now);
   const dow=ref.getDay();
   let daysToMon=(8-dow)%7;
   if(daysToMon===0)daysToMon=7;
   const mon=new Date(ref); mon.setDate(ref.getDate()+daysToMon);
   const wed=new Date(mon); wed.setDate(mon.getDate()+2);
-  return {mon,wed,monStr:isoDate(mon),wedStr:isoDate(wed)};
+  const fri=new Date(mon); fri.setDate(mon.getDate()+4);
+  return {mon,wed,fri,monStr:isoDate(mon),wedStr:isoDate(wed),friStr:isoDate(fri)};
+}
+function nextWeekMonWed(now){
+  // Compatibilitat amb codi antic: ara també calculem divendres amb nextWeekRegularDates().
+  const {mon,wed,monStr,wedStr}=nextWeekRegularDates(now);
+  return {mon,wed,monStr,wedStr};
+}
+
+function ensureAutoOutingFields(o,cfg){
+  let changed=false;
+  if(!Array.isArray(o.signups)){o.signups=[];changed=true;}
+  if(!Array.isArray(o.waitlist)){o.waitlist=[];changed=true;}
+  if(!Array.isArray(o.helmsmanSignups)){o.helmsmanSignups=[];changed=true;}
+  if(cfg){
+    if(o.capacity!==cfg.capacity){o.capacity=cfg.capacity;changed=true;}
+    if(o.reserve!==cfg.reserve){o.reserve=cfg.reserve;changed=true;}
+    if(o.helmsmen!==cfg.helmsmen){o.helmsmen=cfg.helmsmen;changed=true;}
+    if(o.helmsmanRequired!==cfg.helmsmanRequired){o.helmsmanRequired=cfg.helmsmanRequired;changed=true;}
+  }
+  return changed;
+}
+
+function generateAutoOutingsForNextWeek(now=new Date()){
+  const todayStr=isoDate(now);
+  const {mon,wed,fri,monStr,wedStr,friStr}=nextWeekRegularDates(now);
+  const wanted=[{ds:monStr,day:"Dl",date:mon},{ds:wedStr,day:"Dc",date:wed}];
+  const base=Date.now();
+  let changed=false;
+
+  // Dilluns i dimecres: sortides reservades inicialment al seu grup.
+  S.groups.forEach((g,gi)=>{
+    const t=GROUP_TIMES[g.id]||"09:00";
+    wanted.forEach(({ds,day,date},di)=>{
+      let existing=S.outings.find(o=>o.date===ds&&o.groupId===g.id);
+      if(!existing){
+        const wrong=S.outings.find(o=>
+          o.groupId===g.id&&o.isAuto&&(o.title||"").includes(`· ${day}`)&&
+          parseLocalDate(o.date)&&Math.abs(daysBetweenDates(parseLocalDate(o.date),date))<=2
+        );
+        if(wrong){wrong.date=ds;wrong.time=wrong.time||t;existing=wrong;changed=true;}
+      }
+      const cfg=OUTING_CONFIG[g.id]?.[day]||{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false};
+      if(!existing){
+        S.outings.push({
+          id:base+gi*10+di,
+          groupId:g.id,
+          openAllGroups:false,
+          title:`Sortida setmanal · ${day}`,
+          date:ds, time:t,
+          capacity:cfg.capacity,
+          reserve:cfg.reserve,
+          helmsmen:cfg.helmsmen,
+          helmsmanRequired:cfg.helmsmanRequired,
+          helmsmanSignups:[],
+          isOpen:false, signups:[], waitlist:[], isAuto:true
+        });
+        changed=true;
+      } else {
+        if(ensureAutoOutingFields(existing,cfg))changed=true;
+      }
+    });
+  });
+
+  // Divendres: dues sortides generals, obertes a tots els grups a partir de dimecres 07:30.
+  FRIDAY_GENERAL_TIMES.forEach((time,idx)=>{
+    let existing=S.outings.find(o=>o.date===friStr&&isGeneralOuting(o)&&normalizeTimeStr(o.time)===normalizeTimeStr(time));
+    if(!existing){
+      existing=S.outings.find(o=>o.isAuto&&o.date===friStr&&(o.title||"").includes("Dv")&&normalizeTimeStr(o.time)===normalizeTimeStr(time));
+      if(existing){existing.groupId=0;existing.openAllGroups=true;changed=true;}
+    }
+    if(!existing){
+      S.outings.push({
+        id:base+1000+idx,
+        groupId:0,
+        openAllGroups:true,
+        title:`Sortida oberta · Dv ${time}`,
+        date:friStr,time,
+        capacity:FRIDAY_GENERAL_CONFIG.capacity,
+        reserve:FRIDAY_GENERAL_CONFIG.reserve,
+        helmsmen:FRIDAY_GENERAL_CONFIG.helmsmen,
+        helmsmanRequired:FRIDAY_GENERAL_CONFIG.helmsmanRequired,
+        helmsmanSignups:[],isOpen:false,signups:[],waitlist:[],isAuto:true
+      });
+      changed=true;
+    }else{
+      existing.openAllGroups=true;
+      existing.groupId=0;
+      existing.title=existing.title||`Sortida oberta · Dv ${time}`;
+      if(ensureAutoOutingFields(existing,FRIDAY_GENERAL_CONFIG))changed=true;
+    }
+  });
+
+  store.set("ldm:lastAutoGen",todayStr);
+  return {changed,monStr,wedStr,friStr};
 }
 
 function shouldRunAutoGenOutings(now=new Date()){
@@ -1594,56 +1800,8 @@ function shouldRunAutoGenOutings(now=new Date()){
 function maybeAutoGenOutings(){
   const now=new Date();
   if(!shouldRunAutoGenOutings(now))return;
-
-  const todayStr=isoDate(now);
-  const {mon,wed,monStr,wedStr}=nextWeekMonWed(now);
-  const wanted=[{ds:monStr,day:"Dl",date:mon},{ds:wedStr,day:"Dc",date:wed}];
-  const base=Date.now();
-  let changed=false;
-
-  S.groups.forEach((g,gi)=>{
-    const t=GROUP_TIMES[g.id]||"09:00";
-    wanted.forEach(({ds,day,date},di)=>{
-      let existing=S.outings.find(o=>o.date===ds&&o.groupId===g.id);
-      if(!existing){
-        const wrong=S.outings.find(o=>
-          o.groupId===g.id&&o.isAuto&&(o.title||"").includes(`· ${day}`)&&
-          parseLocalDate(o.date)&&Math.abs(daysBetweenDates(parseLocalDate(o.date),date))<=2
-        );
-        if(wrong){wrong.date=ds;wrong.time=wrong.time||t;existing=wrong;changed=true;}
-      }
-      if(!existing){
-        const cfg=OUTING_CONFIG[g.id]?.[day]||{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false};
-        S.outings.push({
-          id:base+gi*10+di,
-          groupId:g.id,
-          title:`Sortida setmanal · ${day}`,
-          date:ds, time:t,
-          capacity:cfg.capacity,
-          reserve:cfg.reserve,
-          helmsmen:cfg.helmsmen,
-          helmsmanRequired:cfg.helmsmanRequired,
-          helmsmanSignups:[],
-          isOpen:false, signups:[], waitlist:[], isAuto:true
-        });
-        changed=true;
-      } else {
-        // Migra sortides antigues sense els nous camps
-        if(!Array.isArray(existing.signups)){existing.signups=[];changed=true;}
-        if(!Array.isArray(existing.waitlist)){existing.waitlist=[];changed=true;}
-        if(!Array.isArray(existing.helmsmanSignups)){existing.helmsmanSignups=[];changed=true;}
-        const cfg=OUTING_CONFIG[g.id]?.[day];
-        if(cfg){
-          if(existing.helmsmen===undefined){existing.helmsmen=cfg.helmsmen;changed=true;}
-          if(existing.helmsmanRequired===undefined){existing.helmsmanRequired=cfg.helmsmanRequired;changed=true;}
-          if(existing.reserve===undefined){existing.reserve=cfg.reserve;changed=true;}
-        }
-      }
-    });
-  });
-
-  store.set("ldm:lastAutoGen",todayStr);
-  if(changed){save("outings");console.log("✅ Sortides automàtiques revisades/generades ("+monStr+" + "+wedStr+")");}
+  const info=generateAutoOutingsForNextWeek(now);
+  if(info.changed){save("outings");console.log("✅ Sortides automàtiques revisades/generades ("+info.monStr+" + "+info.wedStr+" + "+info.friStr+")");}
 }
 
 // ── Inicialització amb Supabase ───────────────────────────────────────────────

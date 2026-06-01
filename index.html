@@ -299,9 +299,10 @@ function memberIsInOuting(o,name=S.userName,gid=S.userGroupId,mid=S.memberId){
   return safeArr(o.signups).some(s=>entryMatchesPerson(s,name,gid,mid))||safeArr(o.waitlist).some(s=>entryMatchesPerson(s,name,gid,mid));
 }
 function canSeeOuting(o){
+  const isOpen=o.isOpen||shouldBeOpen(o);
   if(S.role==="patron")return true;
-  if(S.role==="cap")return o.groupId===S.capGroupId||o.isOpen;
-  if(S.role==="soci")return o.groupId===S.userGroupId||o.isOpen||memberIsInOuting(o);
+  if(S.role==="cap")return o.groupId===S.capGroupId||isOpen;
+  if(S.role==="soci")return o.groupId===S.userGroupId||isOpen||memberIsInOuting(o);
   return false;
 }
 function visibleOutings(){return S.outings.filter(canSeeOuting);}
@@ -641,21 +642,13 @@ function renderOutingCard(o){
   // Obertura automàtica: auto-marca com a oberta si cal
   if(!o.isOpen&&shouldBeOpen(o)){o.isOpen=true;save("outings");}
 
-  // Compta quan s'obre (per mostrar countdown)
+  // Estat clar: reservada al grup fins a l'obertura general natural
   let openInfo="";
-  if(!isOpen&&!isPast&&cfg){
-    const outingDate=parseLocalDate(o.date);
-    const openDate=new Date(outingDate);
-    openDate.setDate(openDate.getDate()+(cfg.openDayOffset||0));
-    const [hh,mm]=(cfg.openHour||"07:30").split(":").map(Number);
-    openDate.setHours(hh,mm,0,0);
-    const diff=openDate-new Date();
-    if(diff>0){
-      const h=Math.floor(diff/3600000),m2=Math.floor((diff%3600000)/60000);
-      const ddays=Math.floor(diff/86400000);
-      const openStr=ddays>=1?`demà a les ${cfg.openHour}`:`avui a les ${cfg.openHour}`;
-      openInfo=`<div style="font-size:11px;color:#b07a10;background:#fff8ee;border-radius:7px;padding:4px 8px;margin-top:6px;display:inline-block">🔒 S'obre a tothom ${openStr}</div>`;
-    }
+  const openDate=getNaturalOpenDate(o);
+  if(!isOpen&&!isPast){
+    const groupLabel=esc(grp?.name?.split(" · ")[0]||"grup");
+    const openStr=openDate?formatNaturalOpenLabel(o):"quan el cap o el patró l'obrin";
+    openInfo=`<div style="font-size:11px;color:#b07a10;background:#fff8ee;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🔒 Reservada al ${groupLabel}. S'obre a tots ${openStr}</div>`;
   }
 
   const shortGroup=gid=>esc(gname(gid).split(" · ")[0]||"—");
@@ -677,8 +670,8 @@ function renderOutingCard(o){
   }).join("")}</div>`:"";
 
   const badge=isOpen
-    ?`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔓 Oberta</span>`
-    :`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 ${grp?.name?.split(" · ")[0]||""}</span>`;
+    ?`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔓 Oberta a tots</span>`
+    :`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 Reservada ${grp?.name?.split(" · ")[0]||""}</span>`;
 
   const pct=Math.min(100,Math.round((total/capacity)*100));
 
@@ -725,7 +718,7 @@ function renderOutingCard(o){
     if(amWait&&!isPast)
       acts.push(`<div style="flex:1;padding:9px;background:#fff8ee;border:.5px solid #e8a020;border-radius:8px;color:#b07a10;font-size:12px;text-align:center;font-weight:500">⏳ Llista d'espera · pos.${o.waitlist.findIndex(entryMatchesCurrent)+1}<br><button onclick="unsignup(${o.id})" style="background:none;border:none;color:#b07a10;font-size:11px;cursor:pointer;text-decoration:underline;margin-top:2px;padding:0">Sortir</button></div>`);
     if(cantAccess)
-      acts.push(`<div style="flex:1;padding:9px;background:#f8f8f8;border-radius:8px;color:${MUTED};font-size:12px;text-align:center">El cap ha d'obrir la inscripció</div>`);
+      acts.push(`<div style="flex:1;padding:9px;background:#f8f8f8;border-radius:8px;color:${MUTED};font-size:12px;text-align:center">Reservada al ${shortGroup(o.groupId)} fins a l'obertura general</div>`);
   }
   if((isMyCap||isPatron)&&!isPast&&!isOpen&&total<=8)
     acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir</button>`);
@@ -1399,29 +1392,36 @@ function delEvent(id){
   render();
 }
 
-// ── Sortides automàtiques (dissabte → genera Dl+Dc setmana vinent) ────────────
+// ── Sortides automàtiques i obertura natural ─────────────────────────────────
 const GROUP_TIMES={1:"20:15",2:"19:00",3:"17:45",4:"16:30",5:"09:15",6:"08:00"};
+
+// Les sortides es generen per a la setmana següent a partir de dissabte a les 08:00.
+// Si ningú entra dissabte, també es revisen/generen diumenge quan algú obre l'app.
+const OUTING_OPEN_RULES={
+  autoGenHour:"08:00",
+  morningCutoffHour:10,
+  morning:{dayOffset:-1,hour:"20:00"},   // sortides abans de les 10:00 → vigília 20:00
+  afternoon:{dayOffset:0,hour:"07:30"}   // sortides de tarda/vespre → mateix dia 07:30
+};
 
 // Configuració per grup i dia (dow: 1=Dl, 3=Dc)
 // capacity: places de vogador base
 // reserve: +1 plaça reserva per al grup
 // helmsmen: places de timoner (0=cap, 1 o 2)
 // helmsmanRequired: si cal timoner per sortir
-// openHour: hora local a partir de la qual s'obre a externs (HH:MM)
-// openDayOffset: 0=mateix dia, -1=dia anterior
 const OUTING_CONFIG={
-  1:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false,openDayOffset:0,openHour:"07:30"},
-     Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true, openDayOffset:0,openHour:"07:30"}},
-  2:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false,openDayOffset:0,openHour:"07:30"},
-     Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true, openDayOffset:0,openHour:"07:30"}},
-  3:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false,openDayOffset:0,openHour:"07:30"},
-     Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true, openDayOffset:0,openHour:"07:30"}},
-  4:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false,openDayOffset:0,openHour:"07:30"},
-     Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true, openDayOffset:0,openHour:"07:30"}},
-  5:{Dl:{capacity:16,reserve:1,helmsmen:2,helmsmanRequired:true, openDayOffset:-1,openHour:"20:00"},
-     Dc:{capacity:16,reserve:1,helmsmen:1,helmsmanRequired:true, openDayOffset:-1,openHour:"20:00"}},
-  6:{Dl:{capacity:8,reserve:1,helmsmen:1,helmsmanRequired:true, openDayOffset:0,openHour:"07:30"},
-     Dc:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false,openDayOffset:0,openHour:"07:30"}},
+  1:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false},
+     Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true}},
+  2:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false},
+     Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true}},
+  3:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false},
+     Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true}},
+  4:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false},
+     Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true}},
+  5:{Dl:{capacity:16,reserve:1,helmsmen:2,helmsmanRequired:true},
+     Dc:{capacity:16,reserve:1,helmsmen:1,helmsmanRequired:true}},
+  6:{Dl:{capacity:8,reserve:1,helmsmen:1,helmsmanRequired:true},
+     Dc:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false}},
 };
 
 function getOutingCfg(groupId,dateStr){
@@ -1430,18 +1430,46 @@ function getOutingCfg(groupId,dateStr){
   return (day&&OUTING_CONFIG[groupId])?OUTING_CONFIG[groupId][day]:null;
 }
 
+function outingTimeParts(o){
+  const raw=String(o?.time||GROUP_TIMES[o?.groupId]||"00:00").replace(".",":");
+  const [h,m]=(raw||"00:00").split(":").map(Number);
+  return {h:Number.isFinite(h)?h:0,m:Number.isFinite(m)?m:0};
+}
+function naturalOpenRule(o){
+  const {h}=outingTimeParts(o);
+  return h<OUTING_OPEN_RULES.morningCutoffHour?OUTING_OPEN_RULES.morning:OUTING_OPEN_RULES.afternoon;
+}
+function getNaturalOpenDate(o){
+  // Només apliquem obertura natural a sortides regulars de dilluns/dimecres.
+  // Les sortides especials fora d'aquest patró continuen depenent del patró/cap.
+  const cfg=getOutingCfg(o.groupId,o.date);
+  if(!cfg)return null;
+  const outingDate=parseLocalDate(o.date);
+  if(!outingDate)return null;
+  const rule=naturalOpenRule(o);
+  const openDate=new Date(outingDate);
+  openDate.setDate(openDate.getDate()+rule.dayOffset);
+  const [hh,mm]=(rule.hour||"07:30").split(":").map(Number);
+  openDate.setHours(hh,mm,0,0);
+  return openDate;
+}
+function formatHHMM(d){return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}
+function formatNaturalOpenLabel(o){
+  const openDate=getNaturalOpenDate(o);
+  if(!openDate)return "quan el cap o el patró l'obrin";
+  const diff=daysBetweenDates(openDate,new Date());
+  const hora=formatHHMM(openDate);
+  if(diff===0)return `avui a les ${hora}`;
+  if(diff===1)return `demà a les ${hora}`;
+  if(diff===-1)return `ahir a les ${hora}`;
+  return `${openDate.toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"})} a les ${hora}`;
+}
+
 // Calcula si una sortida hauria d'estar oberta ara mateix
 function shouldBeOpen(o){
   if(o.isOpen)return true;
-  const cfg=getOutingCfg(o.groupId,o.date);
-  if(!cfg)return false;
-  const outingDate=parseLocalDate(o.date);
-  if(!outingDate)return false;
-  const openDate=new Date(outingDate);
-  openDate.setDate(openDate.getDate()+cfg.openDayOffset);
-  const [hh,mm]=(cfg.openHour||"07:30").split(":").map(Number);
-  openDate.setHours(hh,mm,0,0);
-  return new Date()>=openDate;
+  const openDate=getNaturalOpenDate(o);
+  return openDate?new Date()>=openDate:false;
 }
 
 // Llista d'espera amb prioritat de grup
@@ -1483,9 +1511,19 @@ function nextWeekMonWed(now){
   return {mon,wed,monStr:isoDate(mon),wedStr:isoDate(wed)};
 }
 
+function shouldRunAutoGenOutings(now=new Date()){
+  const dow=now.getDay();
+  const [hh,mm]=OUTING_OPEN_RULES.autoGenHour.split(":").map(Number);
+  const target=hh*60+mm;
+  const current=now.getHours()*60+now.getMinutes();
+  if(dow===6)return current>=target; // dissabte a partir de les 08:00
+  if(dow===0)return true;             // diumenge, per si ningú ha obert l'app dissabte
+  return false;
+}
+
 function maybeAutoGenOutings(){
   const now=new Date();
-  if(now.getDay()!==6)return; // Només dissabte
+  if(!shouldRunAutoGenOutings(now))return;
 
   const todayStr=isoDate(now);
   const {mon,wed,monStr,wedStr}=nextWeekMonWed(now);

@@ -304,7 +304,24 @@ function markAllAvisRead(){
   render();
 }
 function todayStr(){return isoDate(new Date());}
-function isPastOuting(o){return (o.date||"")<todayStr();}
+function outingStartDateTime(o){
+  const [y,mo,d]=String(o?.date||"").split("-").map(Number);
+  if(!y||!mo||!d)return null;
+  const [hh,mm]=normalizeTimeStr(o?.time||GROUP_TIMES?.[o?.groupId]||"00:00").split(":").map(Number);
+  return new Date(y,mo-1,d,Number.isFinite(hh)?hh:0,Number.isFinite(mm)?mm:0,0,0);
+}
+function outingPastDateTime(o){
+  const start=outingStartDateTime(o);
+  if(!start)return null;
+  const end=new Date(start);
+  end.setMinutes(end.getMinutes()+15);
+  return end;
+}
+function isPastOuting(o){
+  const pastAt=outingPastDateTime(o);
+  if(!pastAt)return (o.date||"")<todayStr();
+  return new Date()>=pastAt;
+}
 function sortOutings(a,b){return (a.date||"").localeCompare(b.date||"")||(a.time||"").localeCompare(b.time||"");}
 function memberIsInOuting(o,name=S.userName,gid=S.userGroupId,mid=S.memberId){
   return safeArr(o.signups).some(s=>entryMatchesPerson(s,name,gid,mid))||safeArr(o.waitlist).some(s=>entryMatchesPerson(s,name,gid,mid))||safeArr(o.helmsmanSignups).some(s=>entryMatchesPerson(s,name,gid,mid));
@@ -890,7 +907,7 @@ function renderOutingCard(o){
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <div style="font-size:14px;font-weight:600;color:#1a1a18">${esc(o.title)}</div>${badge}
       </div>
-      <div style="font-size:12px;color:${MUTED}">📅 ${dateStr} · ${esc(o.time)} h${isPast?` · <span style="background:#f5f3ee;color:${MUTED};font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">Històric</span>`:""}</div>
+      <div style="font-size:12px;color:${MUTED}">📅 ${dateStr} · ${esc(o.time)} h${isPast?` · <span style="background:#f5f3ee;color:${MUTED};font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">Sortida passada</span>`:""}</div>
       ${openInfo}
       <div style="margin-top:10px">
         <div style="display:flex;justify-content:space-between;margin-bottom:4px">
@@ -1520,14 +1537,14 @@ const GROUP_TIMES={1:"20:15",2:"19:00",3:"17:45",4:"16:30",5:"09:15",6:"08:00"};
 const FRIDAY_GENERAL_TIMES=["17:30","18:45"];
 const FRIDAY_GENERAL_CONFIG={capacity:12,reserve:0,helmsmen:4,helmsmanRequired:false};
 
-// Les sortides es generen per a la setmana següent a partir de dissabte a les 08:00.
-// Si ningú entra dissabte, també es revisen/generen diumenge quan algú obre l'app.
+// Les sortides de cada setmana s'obren dissabte a les 08:00 i es mantenen fins que s'acaba aquella setmana.
+// Si durant la setmana falta alguna sortida, la revisió la crea en obrir l'app.
 const OUTING_OPEN_RULES={
   autoGenHour:"08:00",
   morningCutoffHour:10,
   morning:{dayOffset:-1,hour:"20:00"},      // sortides abans de les 10:00 → vigília 20:00
   afternoon:{dayOffset:0,hour:"07:30"},     // sortides de tarda/vespre → mateix dia 07:30
-  fridayGeneral:{dayOffset:-2,hour:"07:30"} // sortides obertes de divendres → dimecres 07:30
+  fridayGeneral:{dayOffset:-4,hour:"07:30"} // sortides obertes de divendres → dilluns 07:30
 };
 
 // Configuració per grup i dia (dow: 1=Dl, 3=Dc). Els divendres són sortides generals.
@@ -1713,121 +1730,168 @@ function ensureAutoOutingFields(o,cfg){
   return changed;
 }
 
-function generateAutoOutingsForHorizon(now=new Date(),horizonDays=14){
-  // Revisió autocorrectiva: cada vegada que algú obre l'app, assegurem les sortides
-  // des d'avui fins als pròxims dies. Així no depèn que algú entri dissabte.
-  const start=dateAtLocalNoon(now);
-  const endDate=new Date(start);
-  endDate.setDate(start.getDate()+horizonDays);
-  const base=Date.now();
-  let counter=0,changed=false;
-  const generated=[];
+function getActiveAutoGenWeek(now=new Date()){
+  // Model setmanal: la setmana de sortides s'obre dissabte a les 08:00
+  // i correspon al dilluns/dimecres/divendres següents. Si durant la setmana
+  // alguna sortida faltava, es crea igualment en obrir l'app.
+  const ref=new Date(now);
+  const dow=ref.getDay(); // 0=Dg, 1=Dl, ..., 6=Ds
+  const minutes=ref.getHours()*60+ref.getMinutes();
+  const [openH,openM]=OUTING_OPEN_RULES.autoGenHour.split(":").map(Number);
+  const saturdayOpenMinutes=(openH||8)*60+(openM||0);
 
-  // Neteja conservadora de divendres antics creats per grup, si no tenen activitat.
-  // Si hi ha algú apuntat o en espera, no es toca per evitar pèrdua de dades.
+  // Dissabte abans de les 08:00: encara no s'obre la setmana següent.
+  if(dow===6&&minutes<saturdayOpenMinutes)return null;
+
+  const noon=dateAtLocalNoon(ref);
+  const mon=new Date(noon);
+  if(dow===6){
+    // Dissabte des de les 08:00: obrim la setmana que comença dilluns.
+    mon.setDate(noon.getDate()+2);
+  }else if(dow===0){
+    // Diumenge: encara estem dins la finestra oberta dissabte per al dilluns següent.
+    mon.setDate(noon.getDate()+1);
+  }else{
+    // Dilluns-divendres: setmana en curs.
+    mon.setDate(noon.getDate()-(dow-1));
+  }
+  const wed=new Date(mon);wed.setDate(mon.getDate()+2);
+  const fri=new Date(mon);fri.setDate(mon.getDate()+4);
+  const start=new Date(mon);start.setDate(mon.getDate()-2);start.setHours(openH||8,openM||0,0,0);
+  const end=new Date(fri);end.setHours(23,59,59,999);
+  return {
+    mon,wed,fri,start,end,
+    monStr:isoDate(mon),wedStr:isoDate(wed),friStr:isoDate(fri),
+    dates:[isoDate(mon),isoDate(wed),isoDate(fri)]
+  };
+}
+
+function autoOutingHasActivity(o){
+  return safeArr(o.signups).length||safeArr(o.waitlist).length||safeArr(o.helmsmanSignups).length;
+}
+
+function pruneAutoOutingsOutsideWeek(week){
+  // Neteja conservadora: només elimina sortides automàtiques buides fora de la setmana activa.
+  // Si hi ha algú apuntat, en espera o com a timoner, es conserva sempre.
+  const validDates=new Set(week?.dates||[]);
   const before=S.outings.length;
   S.outings=S.outings.filter(o=>{
-    const d=parseLocalDate(o.date);
-    const hasPeople=safeArr(o.signups).length||safeArr(o.waitlist).length||safeArr(o.helmsmanSignups).length;
-    if(o.isAuto&&d?.getDay()===5&&!isGeneralOuting(o)&&!hasPeople)return false;
-    return true;
+    if(!o.isAuto)return true;
+    if(autoOutingHasActivity(o))return true;
+    if(validDates.has(o.date))return true;
+    return false;
   });
-  if(S.outings.length!==before)changed=true;
+  return S.outings.length!==before;
+}
 
-  for(let d=new Date(start);d<=endDate;d.setDate(d.getDate()+1)){
-    const dow=d.getDay();
-    const ds=isoDate(d);
+function generateAutoOutingsForWeekCycle(now=new Date()){
+  const week=getActiveAutoGenWeek(now);
+  let changed=false;
+  const generated=[];
 
-    // Dilluns i dimecres: una sortida reservada inicialment per a cada grup.
-    if(dow===1||dow===3){
-      const day=dow===1?"Dl":"Dc";
-      S.groups.forEach((g,gi)=>{
-        const t=GROUP_TIMES[g.id]||"09:00";
-        let existing=S.outings.find(o=>o.date===ds&&Number(o.groupId)===Number(g.id)&&!isGeneralOuting(o));
-        const cfg=OUTING_CONFIG[g.id]?.[day]||{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false};
-        if(!existing){
-          S.outings.push({
-            id:base+(counter++),
-            groupId:g.id,
-            openAllGroups:false,
-            title:`Sortida setmanal · ${day}`,
-            date:ds,time:t,
-            capacity:cfg.capacity,
-            reserve:cfg.reserve,
-            helmsmen:cfg.helmsmen,
-            helmsmanRequired:cfg.helmsmanRequired,
-            helmsmanSignups:[],
-            isOpen:false,signups:[],waitlist:[],isAuto:true
-          });
-          generated.push(`${day} ${ds}`);
-          changed=true;
-        }else if(existing.isAuto){
-          existing.openAllGroups=false;
-          if(!existing.time){existing.time=t;changed=true;}
-          if(ensureAutoOutingFields(existing,cfg))changed=true;
-        }
-      });
-    }
-
-    // Divendres: dues sortides generals, directament per a tots els grups.
-    if(dow===5){
-      FRIDAY_GENERAL_TIMES.forEach(time=>{
-        let existing=S.outings.find(o=>o.date===ds&&isGeneralOuting(o)&&normalizeTimeStr(o.time)===normalizeTimeStr(time));
-        if(!existing){
-          // Compatibilitat amb possibles sortides antigues de divendres ja marcades com automàtiques.
-          existing=S.outings.find(o=>o.isAuto&&o.date===ds&&(o.title||"").includes("Dv")&&normalizeTimeStr(o.time)===normalizeTimeStr(time));
-          if(existing){
-            existing.groupId=0;
-            existing.openAllGroups=true;
-            changed=true;
-          }
-        }
-        if(!existing){
-          S.outings.push({
-            id:base+(counter++),
-            groupId:0,
-            openAllGroups:true,
-            title:`Sortida oberta · Dv ${time}`,
-            date:ds,time,
-            capacity:FRIDAY_GENERAL_CONFIG.capacity,
-            reserve:FRIDAY_GENERAL_CONFIG.reserve,
-            helmsmen:FRIDAY_GENERAL_CONFIG.helmsmen,
-            helmsmanRequired:FRIDAY_GENERAL_CONFIG.helmsmanRequired,
-            helmsmanSignups:[],isOpen:false,signups:[],waitlist:[],isAuto:true
-          });
-          generated.push(`Dv ${ds} ${time}`);
-          changed=true;
-        }else if(existing.isAuto||isGeneralOuting(existing)){
-          existing.groupId=0;
-          existing.openAllGroups=true;
-          existing.title=existing.title||`Sortida oberta · Dv ${time}`;
-          if(ensureAutoOutingFields(existing,FRIDAY_GENERAL_CONFIG))changed=true;
-        }
-      });
-    }
+  if(pruneAutoOutingsOutsideWeek(week))changed=true;
+  if(!week){
+    store.set("ldm:lastAutoGen",isoDate(now));
+    return {changed,generated,week:null};
   }
 
+  const base=Date.now();
+  let counter=0;
+
+  const ensureGroupDay=(ds,day)=>{
+    S.groups.forEach(g=>{
+      const t=GROUP_TIMES[g.id]||"09:00";
+      let existing=S.outings.find(o=>o.date===ds&&Number(o.groupId)===Number(g.id)&&!isGeneralOuting(o));
+      const cfg=OUTING_CONFIG[g.id]?.[day]||{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false};
+      if(!existing){
+        S.outings.push({
+          id:base+(counter++),
+          groupId:g.id,
+          openAllGroups:false,
+          title:`Sortida setmanal · ${day}`,
+          date:ds,time:t,
+          capacity:cfg.capacity,
+          reserve:cfg.reserve,
+          helmsmen:cfg.helmsmen,
+          helmsmanRequired:cfg.helmsmanRequired,
+          helmsmanSignups:[],
+          isOpen:false,signups:[],waitlist:[],isAuto:true
+        });
+        generated.push(`${day} ${ds}`);
+        changed=true;
+      }else if(existing.isAuto){
+        existing.openAllGroups=false;
+        if(!existing.time){existing.time=t;changed=true;}
+        if(ensureAutoOutingFields(existing,cfg))changed=true;
+      }
+    });
+  };
+
+  // Dilluns i dimecres: una sortida reservada inicialment per a cada grup.
+  ensureGroupDay(week.monStr,"Dl");
+  ensureGroupDay(week.wedStr,"Dc");
+
+  // Divendres: dues sortides generals, directament per a tots els grups.
+  FRIDAY_GENERAL_TIMES.forEach(time=>{
+    let existing=S.outings.find(o=>o.date===week.friStr&&isGeneralOuting(o)&&normalizeTimeStr(o.time)===normalizeTimeStr(time));
+    if(!existing){
+      // Compatibilitat amb possibles sortides antigues de divendres ja marcades com automàtiques.
+      existing=S.outings.find(o=>o.isAuto&&o.date===week.friStr&&(o.title||"").includes("Dv")&&normalizeTimeStr(o.time)===normalizeTimeStr(time));
+      if(existing){
+        existing.groupId=0;
+        existing.openAllGroups=true;
+        changed=true;
+      }
+    }
+    if(!existing){
+      S.outings.push({
+        id:base+(counter++),
+        groupId:0,
+        openAllGroups:true,
+        title:`Sortida oberta · Dv ${time}`,
+        date:week.friStr,time,
+        capacity:FRIDAY_GENERAL_CONFIG.capacity,
+        reserve:FRIDAY_GENERAL_CONFIG.reserve,
+        helmsmen:FRIDAY_GENERAL_CONFIG.helmsmen,
+        helmsmanRequired:FRIDAY_GENERAL_CONFIG.helmsmanRequired,
+        helmsmanSignups:[],isOpen:false,signups:[],waitlist:[],isAuto:true
+      });
+      generated.push(`Dv ${week.friStr} ${time}`);
+      changed=true;
+    }else if(existing.isAuto||isGeneralOuting(existing)){
+      existing.groupId=0;
+      existing.openAllGroups=true;
+      existing.title=existing.title||`Sortida oberta · Dv ${time}`;
+      if(ensureAutoOutingFields(existing,FRIDAY_GENERAL_CONFIG))changed=true;
+    }
+  });
+
   store.set("ldm:lastAutoGen",isoDate(now));
-  return {changed,generated,horizonDays};
+  return {changed,generated,week};
+}
+
+function generateAutoOutingsForHorizon(now=new Date(),horizonDays=7){
+  // Compatibilitat amb versions anteriors: ara el sistema és setmanal, no de dies mòbils.
+  return generateAutoOutingsForWeekCycle(now);
 }
 
 function generateAutoOutingsForNextWeek(now=new Date()){
-  // Compatibilitat amb versions anteriors: ahora reutilitza la revisió contínua.
-  return generateAutoOutingsForHorizon(now,14);
+  return generateAutoOutingsForWeekCycle(now);
 }
 
 function shouldRunAutoGenOutings(now=new Date()){
-  // Sempre revisem. Si les sortides ja existeixen, no fa res ni duplica.
+  // Revisem sempre en obrir l'app: si ja existeix la setmana activa, no duplica res.
   return true;
 }
 
 function maybeAutoGenOutings(){
   const now=new Date();
   if(!shouldRunAutoGenOutings(now))return;
-  const info=generateAutoOutingsForHorizon(now,14);
+  const info=generateAutoOutingsForWeekCycle(now);
   if(info.changed){
     save("outings");
-    console.log("✅ Sortides automàtiques revisades/generades per als pròxims "+info.horizonDays+" dies",info.generated);
+    const weekTxt=info.week?`${info.week.monStr}–${info.week.friStr}`:"pendent de dissabte 08:00";
+    console.log("✅ Sortides automàtiques revisades/generades per cicle setmanal",weekTxt,info.generated);
   }
 }
 

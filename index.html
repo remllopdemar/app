@@ -299,13 +299,22 @@ function memberIsInOuting(o,name=S.userName,gid=S.userGroupId,mid=S.memberId){
   return safeArr(o.signups).some(s=>entryMatchesPerson(s,name,gid,mid))||safeArr(o.waitlist).some(s=>entryMatchesPerson(s,name,gid,mid));
 }
 function canSeeOuting(o){
-  const isOpen=o.isOpen||shouldBeOpen(o);
+  const isOpen=shouldBeOpen(o);
   if(S.role==="patron")return true;
   if(S.role==="cap")return o.groupId===S.capGroupId||isOpen;
   if(S.role==="soci")return o.groupId===S.userGroupId||isOpen||memberIsInOuting(o);
   return false;
 }
-function visibleOutings(){return S.outings.filter(canSeeOuting);}
+function reconcileAllOutingWaitlists(){
+  let changed=false;
+  S.outings.forEach(o=>{if(reconcileOutingWaitlist(o))changed=true;});
+  if(changed){save("outings");save("avisos");}
+  return changed;
+}
+function visibleOutings(){
+  reconcileAllOutingWaitlists();
+  return S.outings.filter(canSeeOuting);
+}
 function occupancyPct(o){return o.capacity?Math.round((safeArr(o.signups).length/o.capacity)*100):0;}
 
 
@@ -618,10 +627,13 @@ function renderCalendar(){
 
 function renderOutingCard(o){
   normalizeOutingEntries(o);
+  if(reconcileOutingWaitlist(o)){save("outings");save("avisos");}
   const grp=S.groups.find(g=>g.id===o.groupId);
   if(!o.waitlist)o.waitlist=[];
   if(!o.helmsmanSignups)o.helmsmanSignups=[];
-  const isOpen=o.isOpen||shouldBeOpen(o);
+  const isOpen=shouldBeOpen(o);
+  const openTrigger=openTriggerReached(o);
+  const hasGeneralSpots=hasOpenGeneralSpots(o);
   const cfg=getOutingCfg(o.groupId,o.date);
   const capacity=o.capacity||8;
   const reserve=o.reserve||1;
@@ -639,16 +651,18 @@ function renderOutingCard(o){
   const canAccess=isMyGroup||isOpen;
   const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
 
-  // Obertura automàtica: auto-marca com a oberta si cal
-  if(!o.isOpen&&shouldBeOpen(o)){o.isOpen=true;save("outings");}
-
-  // Estat clar: reservada al grup fins a l'obertura general natural
+  // Estat clar: reservada al grup fins a l'obertura general natural.
+  // L'obertura a tots no és un estat permanent: només és activa si ja toca i hi ha places lliures.
   let openInfo="";
   const openDate=getNaturalOpenDate(o);
   if(!isOpen&&!isPast){
     const groupLabel=esc(grp?.name?.split(" · ")[0]||"grup");
     const openStr=openDate?formatNaturalOpenLabel(o):"quan el cap o el patró l'obrin";
-    openInfo=`<div style="font-size:11px;color:#b07a10;background:#fff8ee;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🔒 Reservada al ${groupLabel}. S'obre a tots ${openStr}</div>`;
+    if(openTrigger&&!hasGeneralSpots){
+      openInfo=`<div style="font-size:11px;color:${RED};background:#fff0f0;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🔒 L'hora d'obertura ja ha passat, però no s'obre a tots perquè no hi ha places lliures.</div>`;
+    }else{
+      openInfo=`<div style="font-size:11px;color:#b07a10;background:#fff8ee;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🔒 Reservada al ${groupLabel}. S'obrirà a tots ${openStr} si hi ha places lliures.</div>`;
+    }
   }
 
   const shortGroup=gid=>esc(gname(gid).split(" · ")[0]||"—");
@@ -671,7 +685,9 @@ function renderOutingCard(o){
 
   const badge=isOpen
     ?`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔓 Oberta a tots</span>`
-    :`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 Reservada ${grp?.name?.split(" · ")[0]||""}</span>`;
+    :(openTrigger&&!hasGeneralSpots
+      ?`<span style="background:#fff0f0;color:${RED};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 Sense places</span>`
+      :`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 Reservada ${grp?.name?.split(" · ")[0]||""}</span>`);
 
   const pct=Math.min(100,Math.round((total/capacity)*100));
 
@@ -720,8 +736,10 @@ function renderOutingCard(o){
     if(cantAccess)
       acts.push(`<div style="flex:1;padding:9px;background:#f8f8f8;border-radius:8px;color:${MUTED};font-size:12px;text-align:center">Reservada al ${shortGroup(o.groupId)} fins a l'obertura general</div>`);
   }
-  if((isMyCap||isPatron)&&!isPast&&!isOpen&&total<=8)
+  if((isMyCap||isPatron)&&!isPast&&!isOpen&&!o.isOpen&&hasGeneralSpots)
     acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir</button>`);
+  else if((isMyCap||isPatron)&&!isPast&&!isOpen&&!hasGeneralSpots)
+    acts.push(`<div style="padding:9px 12px;background:#f8f8f8;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;text-align:center">Sense places per obrir a tothom</div>`);
   if(isPatron&&!isPast)
     acts.push(`<button onclick="go({patronAddOuting:${o.id}})" style="padding:9px 12px;background:#fff;border:.5px solid ${DARK};border-radius:8px;color:${DARK};font-size:12px;font-weight:600;cursor:pointer">+ Afegir soci</button>`);
   if(isPatron)
@@ -856,13 +874,19 @@ function renderHomeAvisos(){
 function renderHomeOutingMini(o){
   if(!o.waitlist)o.waitlist=[];
   normalizeOutingEntries(o);
+  if(reconcileOutingWaitlist(o)){save("outings");save("avisos");}
   const total=safeArr(o.signups).length;
   const isClub=!o.groupId;
   const grp=isClub?"Club":gname(o.groupId).split(" · ")[0];
   const dateStr=new Date((o.date||td())+"T12:00:00").toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
   const chips=safeArr(o.signups).slice(0,6).map(s=>`<span style="display:inline-block;background:${s.gid===o.groupId?DARK:GREEN};border-radius:20px;font-size:11px;padding:3px 8px;margin:2px;color:#fff;font-weight:650">${esc(s.name)}</span>`).join("");
   const more=total>6?`<span style="display:inline-block;background:#f0ede8;border-radius:20px;font-size:11px;padding:3px 8px;margin:2px;color:${MUTED};font-weight:700">+${total-6}</span>`:"";
-  return `<div style="border:.5px solid ${BORDER};border-radius:14px;overflow:hidden;margin-bottom:9px;background:#fff"><div style="padding:11px 12px;border-bottom:.5px solid #f0ede6;display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div style="min-width:0"><div style="font-size:14px;font-weight:750;color:#1a1a18;line-height:1.25">${esc(o.title||"Sortida")}</div><div style="font-size:11px;color:${MUTED};line-height:1.35;margin-top:3px">${dateStr} · ${esc(o.time||"")} h · ${grp} · ${total}/${o.capacity||8} places</div></div><span style="font-size:10px;font-weight:800;border-radius:99px;padding:3px 8px;white-space:nowrap;background:${o.isOpen?"#e6f4ee":"#fff8ee"};color:${o.isOpen?GREEN:"#b07a10"}">${o.isOpen?"🔓 Oberta":"🔒 Grup"}</span></div>${chips||more?`<div style="padding:8px 10px;display:flex;gap:2px;flex-wrap:wrap">${chips}${more}</div>`:""}</div>`;
+  const open=shouldBeOpen(o);
+  const noSpots=openTriggerReached(o)&&!hasOpenGeneralSpots(o);
+  const status=open?"🔓 Oberta":(noSpots?"🔒 Sense places":"🔒 Grup");
+  const statusBg=open?"#e6f4ee":(noSpots?"#fff0f0":"#fff8ee");
+  const statusCol=open?GREEN:(noSpots?RED:"#b07a10");
+  return `<div style="border:.5px solid ${BORDER};border-radius:14px;overflow:hidden;margin-bottom:9px;background:#fff"><div style="padding:11px 12px;border-bottom:.5px solid #f0ede6;display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div style="min-width:0"><div style="font-size:14px;font-weight:750;color:#1a1a18;line-height:1.25">${esc(o.title||"Sortida")}</div><div style="font-size:11px;color:${MUTED};line-height:1.35;margin-top:3px">${dateStr} · ${esc(o.time||"")} h · ${grp} · ${total}/${o.capacity||8} places</div></div><span style="font-size:10px;font-weight:800;border-radius:99px;padding:3px 8px;white-space:nowrap;background:${statusBg};color:${statusCol}">${status}</span></div>${chips||more?`<div style="padding:8px 10px;display:flex;gap:2px;flex-wrap:wrap">${chips}${more}</div>`:""}</div>`;
 }
 function renderHomeSortides(){
   const list=visibleOutings().filter(o=>!isPastOuting(o)).sort(sortOutings).slice(0,2);
@@ -1201,7 +1225,7 @@ function signup(oid,asHelm=false){
   if(!o.waitlist)o.waitlist=[];
   if(!o.helmsmanSignups)o.helmsmanSignups=[];
   const isMyGroup=S.userGroupId===o.groupId;
-  const isOpen=o.isOpen||shouldBeOpen(o);
+  const isOpen=shouldBeOpen(o);
   if(!isMyGroup&&!isOpen)return;
   const entry={name:S.userName,gid:S.userGroupId,mid:S.memberId};
   // No pot ser timoner i vogador alhora
@@ -1252,12 +1276,9 @@ function unsignup(oid){
   if(wasHelm)addOutingLog(o,"helm_unsignup",`${S.userName} es desapunta de timoner de ${outingLabel(o)}.`);
   if(wasIn)addOutingLog(o,"unsignup",`${S.userName} es desapunta de ${outingLabel(o)}.`);
   if(wasWait)addOutingLog(o,"waitlist_leave",`${S.userName} surt de la llista d'espera de ${outingLabel(o)}.`);
-  // Si allibera plaça de vogador, promou el primer de la llista (grup primer)
-  if(wasIn){
-    while(o.signups.length<o.capacity&&o.waitlist.length>0){
-      promoteFromWaitlist(o);
-    }
-  }
+  // Si allibera plaça de vogador, primer es respecta la llista d'espera del grup.
+  // La resta de la llista només puja si la sortida ja està oberta a tothom.
+  if(wasIn){reconcileOutingWaitlist(o);}
   save("outings");save("avisos");render();
 }
 function patronAddMember(oid){
@@ -1298,22 +1319,28 @@ function patronRemoveMember(oid,mid,fromHelm=false){
     const name=m?.name;
     o.signups=o.signups.filter(s=>s.mid!==mid&&s.name!==name);
     addOutingLog(o,"unsignup_patron",`El patró desapunta ${name||mid} de ${outingLabel(o)}.`);
-    // Promou de la llista d'espera si cal
-    while(o.signups.length<o.capacity&&o.waitlist.length>0){
-      promoteFromWaitlist(o);
-    }
+    // Promou de la llista d'espera si cal: primer el grup; la resta només si ja és oberta.
+    reconcileOutingWaitlist(o);
   }
   save("outings");save("avisos");render();
 }
 function openOut(oid){
   const o=S.outings.find(x=>x.id===oid);
   if(!o||isPastOuting(o))return;
+  normalizeOutingEntries(o);
   const isPatron=S.role==="patron";
   const isOwnCap=S.role==="cap"&&S.capGroupId===o.groupId;
-  if(!isPatron&&!(isOwnCap&&o.signups.length<=8))return;
+  if(!isPatron&&!isOwnCap)return;
+  const changed=reconcileOutingWaitlist(o);
+  if(!hasOpenGeneralSpots(o)){
+    if(changed){save("outings");save("avisos");render();}
+    alert(hasGroupWaitlist(o)?"Abans d'obrir a tothom cal respectar la llista d'espera del grup.":"No es pot obrir a tothom perquè no hi ha places lliures.");
+    return;
+  }
   if(!o.isOpen){
     o.isOpen=true;
     addOutingLog(o,"outing_opened",`${actorLabel()} obre a tothom la inscripció de ${outingLabel(o)}.`);
+    reconcileOutingWaitlist(o);
     save("outings");save("avisos");render();
   }
 }
@@ -1465,26 +1492,69 @@ function formatNaturalOpenLabel(o){
   return `${openDate.toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"})} a les ${hora}`;
 }
 
-// Calcula si una sortida hauria d'estar oberta ara mateix
-function shouldBeOpen(o){
-  if(o.isOpen)return true;
+function outingCapacity(o){
+  const cfg=getOutingCfg(o?.groupId,o?.date);
+  return Number(o?.capacity||cfg?.capacity||8);
+}
+function waitEntryGroupId(w){
+  return Number(w?.gid||memberFromEntry(w)?.groupId||0);
+}
+function waitEntryBelongsToGroup(w,o){
+  return waitEntryGroupId(w)===Number(o?.groupId||0);
+}
+function hasGroupWaitlist(o){
+  return safeArr(o?.waitlist).some(w=>waitEntryBelongsToGroup(w,o));
+}
+function hasOpenGeneralSpots(o){
+  // Una plaça només es pot obrir al general si queda lloc base i no hi ha ningú del grup esperant.
+  return safeArr(o?.signups).length<outingCapacity(o)&&!hasGroupWaitlist(o);
+}
+
+function openTriggerReached(o){
+  if(o?.isOpen)return true; // obertura manual del cap/patró
   const openDate=getNaturalOpenDate(o);
   return openDate?new Date()>=openDate:false;
 }
 
-// Llista d'espera amb prioritat de grup
-function promoteFromWaitlist(o){
+// Calcula si una sortida està oberta a tots ara mateix.
+// Regla: només i sempre que ja toqui obrir-la, hi hagi places lliures i no hi hagi llista del grup pendent.
+function shouldBeOpen(o){
+  return openTriggerReached(o)&&hasOpenGeneralSpots(o);
+}
+
+// Llista d'espera amb prioritat de grup. Si groupOnly=true, només puja gent del grup de la sortida.
+function promoteFromWaitlist(o,groupOnly=false){
   if(!o.waitlist||!o.waitlist.length)return false;
-  const spotsLeft=o.capacity-o.signups.length;
+  const spotsLeft=outingCapacity(o)-safeArr(o.signups).length;
   if(spotsLeft<=0)return false;
-  // Ordena: primers els del grup, després la resta per ordre d'inserció
-  const groupFirst=[...o.waitlist.filter(w=>w.gid===o.groupId),...o.waitlist.filter(w=>w.gid!==o.groupId)];
-  const promoted=groupFirst[0];
-  o.waitlist=o.waitlist.filter(w=>!(w.name===promoted.name&&w.gid===promoted.gid));
-  o.signups.push(promoted);
+  const own=safeArr(o.waitlist).filter(w=>waitEntryBelongsToGroup(w,o));
+  const others=safeArr(o.waitlist).filter(w=>!waitEntryBelongsToGroup(w,o));
+  const candidates=groupOnly?own:[...own,...others];
+  const promoted=candidates[0];
+  if(!promoted)return false;
+  o.waitlist=o.waitlist.filter(w=>!entrySamePerson(w,promoted));
+  o.signups.push({...promoted,isReserve:false});
   addPersonalAviso(o,promoted,"waitlist_promoted","Has entrat a la sortida",`S'ha alliberat una plaça i has entrat automàticament a ${outingLabel(o)}.`);
   addOutingLog(o,"waitlist_promoted",`${promoted.name} entra automàticament des de la llista d'espera a ${outingLabel(o)}.`);
   return true;
+}
+
+function reconcileOutingWaitlist(o){
+  if(!o||isPastOuting(o))return false;
+  normalizeOutingEntries(o);
+  let changed=false;
+  // 1) Sempre que hi hagi plaça base, primer pugen els socis del grup de la sortida.
+  while(safeArr(o.signups).length<outingCapacity(o)&&hasGroupWaitlist(o)){
+    if(!promoteFromWaitlist(o,true))break;
+    changed=true;
+  }
+  // 2) La resta de la llista només puja si la sortida ja ha arribat a l'obertura general
+  //    o si el cap/patró l'ha oberta manualment.
+  while(safeArr(o.signups).length<outingCapacity(o)&&openTriggerReached(o)&&safeArr(o.waitlist).length>0){
+    if(!promoteFromWaitlist(o,false))break;
+    changed=true;
+  }
+  return changed;
 }
 
 // Data local YYYY-MM-DD. Evita el desplaçament d'un dia que pot provocar toISOString()

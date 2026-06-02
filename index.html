@@ -114,7 +114,7 @@ let S={
   newPos:1,calMonth:new Date().getMonth(),calYear:new Date().getFullYear(),
   pollQ:"",pollOpts:["",""],pollErr:"",
   meteo:null,marine:null,meteoLoading:true,marineLoading:true,selectedMeteoDate:null,
-  supaLoading:true,
+  supaLoading:true,supaSyncing:false,lastSyncAt:null,syncErr:"",actionBusy:null,
   patronAddOuting:null,
   groups:loadData("groups"),
   membres:loadData("membres"),
@@ -151,8 +151,99 @@ normalizeAllMemberSections();
 function go(u){Object.assign(S,u);render();}
 function save(key){
   store.set("ldm:"+key,S[key]);
-  supa.from("app_data").upsert({key:"ldm:"+key,value:S[key]},{onConflict:"key"})
-    .then(({error})=>{if(error)console.warn("⚠️ Supabase save error ["+key+"]:",error.message);});
+  return supa.from("app_data").upsert({key:"ldm:"+key,value:S[key]},{onConflict:"key"})
+    .then(({error})=>{
+      if(error){
+        S.syncErr=error.message||"Error de sincronització";
+        console.warn("⚠️ Supabase save error ["+key+"]:",error.message);
+      }else{
+        S.lastSyncAt=new Date().toISOString();
+        S.syncErr="";
+      }
+      return {error};
+    }).catch(error=>{
+      S.syncErr=error?.message||"Sense connexió";
+      console.warn("⚠️ Supabase save exception ["+key+"]:",S.syncErr);
+      return {error};
+    });
+}
+async function saveMany(keys){
+  for(const k of keys){await save(k);}
+}
+function applySupabaseRows(data,{renderNow=false}={}){
+  if(!Array.isArray(data)||!data.length)return false;
+  const map={};
+  data.forEach(r=>{map[r.key]=r.value;});
+  let changed=false;
+  SUPA_KEYS.forEach(k=>{
+    if(Object.prototype.hasOwnProperty.call(map,"ldm:"+k)){
+      S[k]=map["ldm:"+k]??DEF[k]??[];
+      store.set("ldm:"+k,S[k]);
+      changed=true;
+    }
+  });
+  if(changed){
+    S.lastSyncAt=new Date().toISOString();
+    S.syncErr="";
+    normalizeAllMemberSections();
+    normalizeAllOutingEntries();
+    if(renderNow)render();
+  }
+  return changed;
+}
+async function refreshKeysFromSupabase(keys=SUPA_KEYS,{renderNow=false,silent=true}={}){
+  if(!silent){S.supaSyncing=true;S.syncErr="";render();}
+  try{
+    const {data,error}=await supa.from("app_data").select("key,value").in("key",keys.map(k=>"ldm:"+k));
+    if(error)throw error;
+    const changed=applySupabaseRows(data,{renderNow:false});
+    if(renderNow||!silent)render();
+    return changed;
+  }catch(e){
+    S.syncErr=e?.message||"No s'ha pogut sincronitzar";
+    console.warn("⚠️ Error sincronitzant Supabase:",S.syncErr);
+    if(!silent||renderNow)render();
+    return false;
+  }finally{
+    if(!silent){S.supaSyncing=false;render();}
+  }
+}
+async function refreshFromSupabase(opts={}){
+  return refreshKeysFromSupabase(SUPA_KEYS,opts);
+}
+async function refreshOutingsBeforeAction(){
+  // Redueix conflictes: abans d'apuntar/desapuntar rellegim sortides i avisos.
+  await refreshKeysFromSupabase(["outings","avisos"],{renderNow:false,silent:true});
+}
+async function syncNow(){
+  await refreshFromSupabase({renderNow:true,silent:false});
+}
+function syncAgeLabel(){
+  if(S.supaSyncing)return "Sincronitzant…";
+  if(S.syncErr)return "Error sync";
+  if(!S.lastSyncAt)return "Pendent de sync";
+  const sec=Math.max(0,Math.round((Date.now()-new Date(S.lastSyncAt).getTime())/1000));
+  if(sec<10)return "Sincronitzat ara";
+  if(sec<60)return `Sincronitzat fa ${sec}s`;
+  const min=Math.round(sec/60);
+  return `Sincronitzat fa ${min} min`;
+}
+function renderSyncStatus(){
+  if(!S.role)return "";
+  const col=S.syncErr?RED:(S.supaSyncing?DARK:MUTED);
+  const bg=S.syncErr?"#fff0f0":"#fff";
+  return `<div style="margin:8px 14px 0;background:${bg};border:.5px solid ${S.syncErr?RED:BORDER};border-radius:10px;padding:7px 10px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+    <div style="font-size:11px;color:${col};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${S.supaSyncing?"🔄":"✅"} ${syncAgeLabel()}${S.syncErr?` · ${esc(S.syncErr)}`:""}</div>
+    <button onclick="syncNow()" ${S.supaSyncing?"disabled":""} style="background:${S.supaSyncing?BORDER:DARK};border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;padding:5px 9px;cursor:${S.supaSyncing?"default":"pointer"}">Actualitzar</button>
+  </div>`;
+}
+function isActionBusy(key=null){return !!S.actionBusy&&(!key||S.actionBusy===key);}
+async function withActionLock(key,fn){
+  if(S.actionBusy)return;
+  S.actionBusy=key;
+  render();
+  try{return await fn();}
+  finally{S.actionBusy=null;render();}
 }
 
 function doLogout(force=false){
@@ -851,6 +942,7 @@ function renderOutingCard(o){
 
   // Botons d'acció
   const acts=[];
+  const busy=!!S.actionBusy;
   if(S.role==="soci"&&!isPast){
     const canJoinHelm=maxHelm>0&&!amHelm&&!amIn&&!amWait&&canAccess&&o.helmsmanSignups.length<maxHelm;
     const canJoinRow=!amIn&&!amWait&&!amHelm&&canAccess;
@@ -1315,7 +1407,7 @@ function render(){
   const btnC=hasC?`<button onclick="go({section:'competicio',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="competicio"?DARK:"transparent"};color:${S.section==="competicio"?"#fff":MUTED}">🏆 Competició</button>`:"";
   const btnS=hasS?`<button onclick="go({section:'social',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="social"?DARK:"transparent"};color:${S.section==="social"?"#fff":MUTED}">⚓ Social</button>`:"";
   const st=hasBoth&&S.screen!=="inici"&&S.screen!=="vots"&&S.screen!=="estadistiques"&&S.screen!=="membres"&&S.screen!=="avisos"?`<div style="display:flex;margin:12px 14px 0;background:#e2dfd6;border-radius:10px;padding:3px">${btnC}${btnS}</div>`:"";
-  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:11px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${userSub}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`:`go({screen:'${k}',showForm:false,showAvisForm:false,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`;return`<button onclick="${clk}" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${S.showLogoutConfirm?renderLogoutModal():""}${S.showMemberAdded?renderMemberAddedModal():""}`;
+  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:11px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${userSub}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}${renderSyncStatus()}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`:`go({screen:'${k}',showForm:false,showAvisForm:false,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`;return`<button onclick="${clk}" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${S.showLogoutConfirm?renderLogoutModal():""}${S.showMemberAdded?renderMemberAddedModal():""}`;
   }catch(err){
     console.error("❌ Error en render():",err);
     root.innerHTML=`<div style="min-height:100vh;background:linear-gradient(160deg,${DARK} 60%,#122860);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:2rem;text-align:center"><div style="color:#fff;font-size:18px;font-weight:700">Error inesperat</div><div style="color:rgba(255,255,255,.5);font-size:13px">${err.message||"Refresca la pàgina"}</div><button onclick="location.reload()" style="background:${RED};border:none;border-radius:12px;color:#fff;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px">↻ Refresca</button></div>`;
@@ -1330,69 +1422,73 @@ function cancelEditMembre(){go({editMemberId:null,editMemberSections:["social"]}
 function togEditSec(sec){const s=S.editMemberSections.includes(sec)?S.editMemberSections.filter(x=>x!==sec):[...S.editMemberSections,sec];go({editMemberSections:normalizeSections(s)});}
 function saveEditMembre(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id&&!x.pending);if(!m)return;const nom=(document.getElementById("edit-nom-"+id)?.value||"").trim();const gid=parseInt(document.getElementById("edit-grup-"+id)?.value)||m.groupId;const sections=normalizeSections(S.editMemberSections);if(!confirm(`Desar canvis per a "${nom||m.name}"?`))return;if(nom)m.name=nom;m.groupId=gid;m.sections=sections;save("membres");go({editMemberId:null,editMemberSections:["social"]});}
 function delMembre(id){if(S.role!=="patron")return;if(!confirm("Eliminar el soci?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
-function signup(oid,asHelm=false){
-  const o=S.outings.find(x=>x.id===oid);
-  if(!o||S.role!=="soci"||isPastOuting(o))return;
-  normalizeOutingEntries(o);
-  if(!o.waitlist)o.waitlist=[];
-  if(!o.helmsmanSignups)o.helmsmanSignups=[];
-  const isGeneral=isGeneralOuting(o);
-  const isMyGroup=!isGeneral&&S.userGroupId===o.groupId;
-  const isOpen=shouldBeOpen(o);
-  if(!isMyGroup&&!isOpen)return;
-  const entry={name:S.userName,gid:S.userGroupId,mid:S.memberId};
-  // No pot ser timoner i vogador alhora
-  const amHelm=o.helmsmanSignups.some(entryMatchesCurrent);
-  const amRower=o.signups.some(entryMatchesCurrent);
-  const amWait=o.waitlist.some(entryMatchesCurrent);
-  if(amHelm||amRower||amWait)return;
-  if(asHelm){
-    // Timoner: qualsevol del grup (o tothom si oberta)
-    const maxHelm=o.helmsmen||0;
-    if(!maxHelm)return;
-    if(o.helmsmanSignups.length>=maxHelm)return;
-    o.helmsmanSignups.push(entry);
-    addOutingLog(o,"helm_signup",`${S.userName} s'apunta de timoner a ${outingLabel(o)}.`);
-  } else {
-    // Vogador: plaça normal o reserva (+1 per al grup)
-    const maxNormal=outingCapacity(o);
-    const maxWithReserve=isMyGroup?(maxNormal+(o.reserve||1)):maxNormal;
-    if(o.signups.length>=maxNormal){
-      if(isMyGroup&&o.signups.length<maxWithReserve){
-        // Plaça de reserva del grup
-        o.signups.push({...entry,isReserve:true});
-        addOutingLog(o,"signup_reserve",`${S.userName} ocupa la plaça de reserva de ${outingLabel(o)}.`);
-      } else {
-        // Llista d'espera (prioritat grup)
-        o.waitlist.push(entry);
-        addOutingLog(o,"waitlist_join",`${S.userName} entra a la llista d'espera de ${outingLabel(o)}.`);
-      }
+async function signup(oid,asHelm=false){
+  const lock=`signup:${oid}:${S.memberId||"anon"}`;
+  return withActionLock(lock,async()=>{
+    await refreshOutingsBeforeAction();
+    const o=S.outings.find(x=>x.id===oid);
+    if(!o||S.role!=="soci"||isPastOuting(o))return;
+    normalizeOutingEntries(o);
+    if(!o.waitlist)o.waitlist=[];
+    if(!o.helmsmanSignups)o.helmsmanSignups=[];
+    const isGeneral=isGeneralOuting(o);
+    const isMyGroup=!isGeneral&&S.userGroupId===o.groupId;
+    const isOpen=shouldBeOpen(o);
+    if(!isMyGroup&&!isOpen)return;
+    const entry={name:S.userName,gid:S.userGroupId,mid:S.memberId,ts:nowIso()};
+    // No pot ser timoner i vogador alhora, ni duplicar inscripció.
+    const amHelm=o.helmsmanSignups.some(entryMatchesCurrent);
+    const amRower=o.signups.some(entryMatchesCurrent);
+    const amWait=o.waitlist.some(entryMatchesCurrent);
+    if(amHelm||amRower||amWait)return;
+    if(asHelm){
+      const maxHelm=o.helmsmen||0;
+      if(!maxHelm)return;
+      if(o.helmsmanSignups.length>=maxHelm)return alert("Ja hi ha el màxim de timonels");
+      o.helmsmanSignups.push(entry);
+      addOutingLog(o,"helm_signup",`${S.userName} s'apunta de timoner a ${outingLabel(o)}.`);
     } else {
-      o.signups.push(entry);
-      addOutingLog(o,"signup",`${S.userName} s'apunta a ${outingLabel(o)}.`);
+      const maxNormal=outingCapacity(o);
+      const maxWithReserve=isMyGroup?(maxNormal+(o.reserve||1)):maxNormal;
+      if(o.signups.length>=maxNormal){
+        if(isMyGroup&&o.signups.length<maxWithReserve){
+          o.signups.push({...entry,isReserve:true});
+          addOutingLog(o,"signup_reserve",`${S.userName} ocupa la plaça de reserva de ${outingLabel(o)}.`);
+        } else {
+          o.waitlist.push(entry);
+          addOutingLog(o,"waitlist_join",`${S.userName} entra a la llista d'espera de ${outingLabel(o)}.`);
+        }
+      } else {
+        o.signups.push(entry);
+        addOutingLog(o,"signup",`${S.userName} s'apunta a ${outingLabel(o)}.`);
+      }
     }
-  }
-  save("outings");save("avisos");render();
+    await saveMany(["outings","avisos"]);
+  });
 }
-function unsignup(oid){
-  const o=S.outings.find(x=>x.id===oid);
-  if(!o||S.role!=="soci"||isPastOuting(o))return;
-  normalizeOutingEntries(o);
-  if(!o.waitlist)o.waitlist=[];
-  if(!o.helmsmanSignups)o.helmsmanSignups=[];
-  const wasHelm=o.helmsmanSignups.some(entryMatchesCurrent);
-  const wasIn=o.signups.some(entryMatchesCurrent);
-  const wasWait=o.waitlist.some(entryMatchesCurrent);
-  o.helmsmanSignups=o.helmsmanSignups.filter(s=>!entryMatchesCurrent(s));
-  o.signups=o.signups.filter(s=>!entryMatchesCurrent(s));
-  o.waitlist=o.waitlist.filter(s=>!entryMatchesCurrent(s));
-  if(wasHelm)addOutingLog(o,"helm_unsignup",`${S.userName} es desapunta de timoner de ${outingLabel(o)}.`);
-  if(wasIn)addOutingLog(o,"unsignup",`${S.userName} es desapunta de ${outingLabel(o)}.`);
-  if(wasWait)addOutingLog(o,"waitlist_leave",`${S.userName} surt de la llista d'espera de ${outingLabel(o)}.`);
-  // Si allibera plaça de vogador, primer es respecta la llista d'espera del grup.
-  // La resta de la llista només puja si la sortida ja està oberta a tothom.
-  if(wasIn){reconcileOutingWaitlist(o);}
-  save("outings");save("avisos");render();
+async function unsignup(oid){
+  const lock=`unsignup:${oid}:${S.memberId||"anon"}`;
+  return withActionLock(lock,async()=>{
+    await refreshOutingsBeforeAction();
+    const o=S.outings.find(x=>x.id===oid);
+    if(!o||S.role!=="soci"||isPastOuting(o))return;
+    normalizeOutingEntries(o);
+    if(!o.waitlist)o.waitlist=[];
+    if(!o.helmsmanSignups)o.helmsmanSignups=[];
+    const wasHelm=o.helmsmanSignups.some(entryMatchesCurrent);
+    const wasIn=o.signups.some(entryMatchesCurrent);
+    const wasWait=o.waitlist.some(entryMatchesCurrent);
+    o.helmsmanSignups=o.helmsmanSignups.filter(s=>!entryMatchesCurrent(s));
+    o.signups=o.signups.filter(s=>!entryMatchesCurrent(s));
+    o.waitlist=o.waitlist.filter(s=>!entryMatchesCurrent(s));
+    if(wasHelm)addOutingLog(o,"helm_unsignup",`${S.userName} es desapunta de timoner de ${outingLabel(o)}.`);
+    if(wasIn)addOutingLog(o,"unsignup",`${S.userName} es desapunta de ${outingLabel(o)}.`);
+    if(wasWait)addOutingLog(o,"waitlist_leave",`${S.userName} surt de la llista d'espera de ${outingLabel(o)}.`);
+    // Si allibera plaça de vogador, primer es respecta la llista d'espera del grup.
+    // La resta de la llista només puja si la sortida ja està oberta a tothom.
+    if(wasIn){reconcileOutingWaitlist(o);}
+    await saveMany(["outings","avisos"]);
+  });
 }
 function patronAddMember(oid){
   if(S.role!=="patron")return;
@@ -1437,25 +1533,29 @@ function patronRemoveMember(oid,mid,fromHelm=false){
   }
   save("outings");save("avisos");render();
 }
-function openOut(oid){
-  const o=S.outings.find(x=>x.id===oid);
-  if(!o||isPastOuting(o))return;
-  normalizeOutingEntries(o);
-  const isPatron=S.role==="patron";
-  const isOwnCap=!isGeneralOuting(o)&&S.role==="cap"&&S.capGroupId===o.groupId;
-  if(!isPatron&&!isOwnCap)return;
-  const changed=reconcileOutingWaitlist(o);
-  if(!hasOpenGeneralSpots(o)){
-    if(changed){save("outings");save("avisos");render();}
-    alert(hasGroupWaitlist(o)?"Abans d'obrir a tothom cal respectar la llista d'espera del grup.":"No es pot obrir a tothom perquè no hi ha places lliures.");
-    return;
-  }
-  if(!o.isOpen){
-    o.isOpen=true;
-    addOutingLog(o,"outing_opened",`${actorLabel()} obre a tothom la inscripció de ${outingLabel(o)}.`);
-    reconcileOutingWaitlist(o);
-    save("outings");save("avisos");render();
-  }
+async function openOut(oid){
+  const lock=`open:${oid}`;
+  return withActionLock(lock,async()=>{
+    await refreshOutingsBeforeAction();
+    const o=S.outings.find(x=>x.id===oid);
+    if(!o||isPastOuting(o))return;
+    normalizeOutingEntries(o);
+    const isPatron=S.role==="patron";
+    const isOwnCap=!isGeneralOuting(o)&&S.role==="cap"&&S.capGroupId===o.groupId;
+    if(!isPatron&&!isOwnCap)return;
+    const changed=reconcileOutingWaitlist(o);
+    if(!hasOpenGeneralSpots(o)){
+      if(changed){await saveMany(["outings","avisos"]);}
+      alert(hasGroupWaitlist(o)?"Abans d'obrir a tothom cal respectar la llista d'espera del grup.":"No es pot obrir a tothom perquè no hi ha places lliures.");
+      return;
+    }
+    if(!o.isOpen){
+      o.isOpen=true;
+      addOutingLog(o,"outing_opened",`${actorLabel()} obre a tothom la inscripció de ${outingLabel(o)}.`);
+      reconcileOutingWaitlist(o);
+      await saveMany(["outings","avisos"]);
+    }
+  });
 }
 function delOut(oid){
   if(S.role!=="patron")return;
@@ -1931,13 +2031,7 @@ async function initApp(){
       .in("key",SUPA_KEYS.map(k=>"ldm:"+k));
 
     if(!error&&data&&data.length){
-      const map={};
-      data.forEach(r=>{map[r.key]=r.value;});
-      let changed=false;
-      const keys=["groups","membres","avisos","outings","sessions","results","polls"];
-      keys.forEach(k=>{
-        if(map["ldm:"+k]){S[k]=map["ldm:"+k];store.set("ldm:"+k,S[k]);changed=true;}
-      });
+      let changed=applySupabaseRows(data,{renderNow:false});
       console.log("✅ Supabase sincronitzat ("+data.length+" claus)");
 
       // Migracions lleugeres (ara que tenim les dades fresques)
@@ -1985,20 +2079,59 @@ async function initApp(){
     S.supaLoading=false;render();
   }
 
-  // ── Refresc automàtic cada 60s ────────────────────────────────────────────
-  setInterval(async()=>{
-    try{
-      const {data,error}=await supa.from("app_data").select("key,value").in("key",SUPA_KEYS.map(k=>"ldm:"+k));
-      if(!error&&data&&data.length){
-        const map={};data.forEach(r=>{map[r.key]=r.value;});
-        let changed=false;
-        ["groups","membres","avisos","outings","sessions","results","polls"].forEach(k=>{
-          if(map["ldm:"+k]){S[k]=map["ldm:"+k];store.set("ldm:"+k,S[k]);changed=true;}
-        });
-        if(changed)render();
-      }
-    }catch(e){/* silenciós en offline */}
-  },60000);
+  setupRealtimeSync();
+  setupForegroundRefresh();
+
+  // ── Refresc automàtic cada 60s com a xarxa de seguretat ───────────────────
+  setInterval(()=>refreshFromSupabase({renderNow:true,silent:true}),60000);
+}
+
+let realtimeChannel=null;
+function setupRealtimeSync(){
+  try{
+    if(realtimeChannel)return;
+    realtimeChannel=supa.channel("ldm-app-data")
+      .on("postgres_changes",{event:"*",schema:"public",table:"app_data"},payload=>{
+        const row=payload.new||payload.old||{};
+        const key=String(row.key||"");
+        if(!key.startsWith("ldm:"))return;
+        const short=key.replace("ldm:","");
+        if(!SUPA_KEYS.includes(short))return;
+        if(payload.eventType==="DELETE"){
+          S[short]=DEF[short]||[];
+        }else{
+          S[short]=row.value??DEF[short]??[];
+        }
+        store.set(key,S[short]);
+        S.lastSyncAt=new Date().toISOString();
+        S.syncErr="";
+        normalizeAllMemberSections();
+        normalizeAllOutingEntries();
+        render();
+      })
+      .subscribe(status=>{
+        if(status==="SUBSCRIBED"){
+          S.lastSyncAt=new Date().toISOString();
+          S.syncErr="";
+          render();
+        }
+      });
+  }catch(e){
+    console.warn("⚠️ Realtime no disponible:",e?.message||e);
+  }
+}
+let lastForegroundRefreshAt=0;
+function setupForegroundRefresh(){
+  const maybe=()=>{
+    if(document.hidden)return;
+    const now=Date.now();
+    if(now-lastForegroundRefreshAt<10000)return;
+    lastForegroundRefreshAt=now;
+    refreshFromSupabase({renderNow:true,silent:true});
+  };
+  document.addEventListener("visibilitychange",maybe);
+  window.addEventListener("focus",maybe);
+  window.addEventListener("online",()=>refreshFromSupabase({renderNow:true,silent:false}));
 }
 
 initApp();

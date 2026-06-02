@@ -988,24 +988,27 @@ function renderOutingCard(o){
     acts.push(`<button onclick="delOut(${o.id})" style="padding:9px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button>`);
 
   // Modal d'afegir soci (patró)
+  const patronAddChoice=(S.patronAddChoice&&S.patronAddChoice[o.id])||{};
+  const patronAddMid=patronAddChoice.mid||"";
+  const patronAddRole=patronAddChoice.role||"rower";
   const addMemberModal=isPatron&&S.patronAddOuting===o.id?`<div style="padding:10px 14px;border-top:.5px solid #f5f3ee;background:#f8f6f0">
     <div style="font-size:11px;font-weight:700;color:${DARK};text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Afegir soci a la sortida</div>
-    <select id="patron-add-role-${o.id}" style="width:100%;padding:8px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:12px;background:#fff;outline:none;margin-bottom:8px">
-      <option value="rower">Vogador</option>
-      ${(o.helmsmen||0)>0?`<option value="helm">Timoner</option>`:""}
+    <select id="patron-add-role-${o.id}" onchange="setPatronAddRole(${o.id},this.value)" style="width:100%;padding:8px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:12px;background:#fff;outline:none;margin-bottom:8px">
+      <option value="rower" ${patronAddRole==="rower"?"selected":""}>Vogador</option>
+      ${(o.helmsmen||0)>0?`<option value="helm" ${patronAddRole==="helm"?"selected":""}>Timoner</option>`:""}
     </select>
-    <select id="patron-add-mid-${o.id}" style="width:100%;padding:8px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:12px;background:#fff;outline:none;margin-bottom:8px">
-      <option value="">— Selecciona soci —</option>
+    <select id="patron-add-mid-${o.id}" onchange="setPatronAddMid(${o.id},this.value)" style="width:100%;padding:8px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:12px;background:#fff;outline:none;margin-bottom:8px">
+      <option value="" ${patronAddMid?"":"selected"}>— Selecciona soci —</option>
       ${S.membres.filter(m=>!m.pending).sort((a,b)=>a.name.localeCompare(b.name)).map(m=>{
         const inOut=o.signups.some(s=>s.mid===m.id||s.name===m.name);
         const inHelm=o.helmsmanSignups.some(s=>s.mid===m.id||s.name===m.name);
         const inWait=o.waitlist.some(s=>s.mid===m.id||s.name===m.name);
         const taken=inOut||inHelm||inWait;
-        return`<option value="${m.id}" ${taken?"disabled":""} style="color:${taken?MUTED:"#1a1a18"}">${esc(m.name)} · ${gname(m.groupId).split(" · ")[0]}${taken?" ✓":""}</option>`;
+        return`<option value="${m.id}" ${String(patronAddMid)===String(m.id)?"selected":""} ${taken?"disabled":""} style="color:${taken?MUTED:"#1a1a18"}">${esc(m.name)} · ${gname(m.groupId).split(" · ")[0]}${taken?" ✓":""}</option>`;
       }).join("")}
     </select>
     <div style="display:flex;gap:8px">
-      <button onclick="patronAddMember(${o.id})" style="flex:1;padding:8px;background:${DARK};border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer">Afegir</button>
+      <button onmousedown="rememberPatronAddForm(${o.id})" ontouchstart="rememberPatronAddForm(${o.id})" onclick="patronAddMember(${o.id})" style="flex:1;padding:8px;background:${DARK};border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer">Afegir</button>
       <button onclick="go({patronAddOuting:null})" style="padding:8px 12px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">Cancel·lar</button>
     </div>
   </div>`:"";
@@ -1523,17 +1526,38 @@ async function unsignup(oid){
     await saveMany(["outings","avisos"]);
   });
 }
+function ensurePatronAddChoice(){
+  if(!S.patronAddChoice)S.patronAddChoice={};
+  return S.patronAddChoice;
+}
+function setPatronAddMid(oid,val){
+  const box=ensurePatronAddChoice();
+  box[oid]={...(box[oid]||{}),mid:String(val||"")};
+}
+function setPatronAddRole(oid,val){
+  const box=ensurePatronAddChoice();
+  box[oid]={...(box[oid]||{}),role:String(val||"rower")};
+}
+function rememberPatronAddForm(oid){
+  const mid=document.getElementById(`patron-add-mid-${oid}`)?.value||"";
+  const role=document.getElementById(`patron-add-role-${oid}`)?.value||"rower";
+  if(mid)setPatronAddMid(oid,mid);
+  setPatronAddRole(oid,role);
+}
 async function patronAddMember(oid){
   if(S.role!=="patron")return;
-  const lock=`patron-add:${oid}`;
-  return withActionLock(lock,async()=>{
-    // Llegim primer els valors del formulari. Si refresquem Supabase abans,
-    // en alguns mòbils/re-renders es pot perdre la selecció i semblar que no s'ha afegit ningú.
-    const midRaw=document.getElementById(`patron-add-mid-${oid}`)?.value||"";
-    const role=document.getElementById(`patron-add-role-${oid}`)?.value||"rower";
-    const mid=parseInt(midRaw,10);
-    if(!mid)return alert("Selecciona un soci.");
+  // IMPORTANT: guardem la selecció en estat. En alguns mòbils o amb Realtime,
+  // un render pot reconstruir el desplegable entre seleccionar i prémer Afegir.
+  // Així evitem falsos avisos de "Selecciona un soci".
+  rememberPatronAddForm(oid);
+  const choice=(S.patronAddChoice&&S.patronAddChoice[oid])||{};
+  const midRaw=choice.mid||document.getElementById(`patron-add-mid-${oid}`)?.value||"";
+  const role=choice.role||document.getElementById(`patron-add-role-${oid}`)?.value||"rower";
+  const mid=parseInt(midRaw,10);
+  if(!mid)return alert("Selecciona un soci.");
 
+  const lock=`patron-add:${oid}:${mid}:${role}`;
+  return withActionLock(lock,async()=>{
     await refreshOutingsBeforeAction();
     const o=S.outings.find(x=>String(x.id)===String(oid));
     if(!o)return alert("No s'ha trobat aquesta sortida. Actualitza i torna-ho a provar.");
@@ -1584,6 +1608,7 @@ async function patronAddMember(oid){
     }
 
     await saveMany(["outings","avisos"]);
+    if(S.patronAddChoice)delete S.patronAddChoice[oid];
     go({patronAddOuting:null});
   });
 }

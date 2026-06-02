@@ -826,17 +826,25 @@ function renderClubCalendar(){
   for(let d=1;d<=dim;d++){
     const ds=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
     const evs=byDate[ds]||[],isToday=ds===tod,isSel=ds===S.selectedCalDate;
+    const firstCfg=evs.length?eventCfg(evs[0].type):null;
+    const eventBg=firstCfg?.bg||"#fff";
+    const eventColor=firstCfg?.color||BORDER;
     const dots=evs.slice(0,4).map(e=>`<span style="width:5px;height:5px;border-radius:50%;background:${eventCfg(e.type).color};display:inline-block"></span>`).join("");
-    const common=`aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:9px;color:${isSel?"#fff":(ds<tod?"#b9b3a9":"#1a1a18")};font-size:12px;font-weight:${evs.length||isToday?700:400};border:${isToday&&!isSel?`2px solid ${RED}`:`.5px solid ${evs.length?BORDER:"transparent"}`};position:relative`;
+    const border=isSel?`.5px solid ${DARK}`:(isToday?`2px solid ${RED}`:(evs.length?`1.5px solid ${eventColor}`:`.5px solid transparent`));
+    const shadow=evs.length&&!isSel?`box-shadow:inset 0 0 0 1px rgba(255,255,255,.65);`:(isSel?`box-shadow:0 2px 8px rgba(27,58,122,.22);`:"");
+    const bg=isSel?DARK:(evs.length?eventBg:"transparent");
+    const col=isSel?"#fff":(evs.length?"#1a1a18":(ds<tod?"#b9b3a9":"#1a1a18"));
+    const common=`aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:10px;color:${col};font-size:12px;font-weight:${evs.length||isToday?800:400};border:${border};position:relative;${shadow}`;
     if(evs.length){
-      cells+=`<button onclick="go({selectedCalDate:'${ds}',showEventForm:false,editEventId:null,eventErr:''})" style="${common};background:${isSel?DARK:"#fff"};cursor:pointer"><span>${d}</span><span style="display:flex;gap:2px;min-height:6px;margin-top:2px">${dots}</span></button>`;
+      const label=evs.length===1?eventCfg(evs[0].type).short:`${evs.length} events`;
+      cells+=`<button title="${esc(label)}" onclick="go({selectedCalDate:'${ds}',showEventForm:false,editEventId:null,eventErr:''})" style="${common};background:${bg};cursor:pointer"><span>${d}</span><span style="display:flex;gap:2px;min-height:6px;margin-top:2px">${dots}</span></button>`;
     }else{
-      cells+=`<div style="${common};background:transparent;cursor:default"><span>${d}</span><span style="display:flex;gap:2px;min-height:6px;margin-top:2px"></span></div>`;
+      cells+=`<div style="${common};background:${bg};cursor:default"><span>${d}</span><span style="display:flex;gap:2px;min-height:6px;margin-top:2px"></span></div>`;
     }
   }
   const prev=mo===0?{m:11,y:y-1}:{m:mo-1,y:y},next=mo===11?{m:0,y:y+1}:{m:mo+1,y:y};
-  const legend=Object.entries(EVENT_TYPES).map(([k,c])=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${c.color}"></span>${c.short}</span>`).join("");
-  return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><button onclick="go({calMonth:${prev.m},calYear:${prev.y},selectedCalDate:null,showEventForm:false,editEventId:null})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">‹</button><div style="font-size:14px;font-weight:700;color:#1a1a18">${MONTHS[mo]} ${y}</div><button onclick="go({calMonth:${next.m},calYear:${next.y},selectedCalDate:null,showEventForm:false,editEventId:null})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">›</button></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${hdr}${cells}</div><div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;padding-top:10px;border-top:.5px solid #f0ede6">${legend}</div><div style="font-size:11px;color:${MUTED};line-height:1.4;margin-top:9px">Només mostra regates i esdeveniments del club. Les sortides tenen secció pròpia.</div>`);
+  const legend=Object.entries(EVENT_TYPES).map(([k,c])=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:12px;height:12px;border-radius:4px;background:${c.bg};border:1.5px solid ${c.color}"></span>${c.short}</span>`).join("");
+  return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><button onclick="go({calMonth:${prev.m},calYear:${prev.y},selectedCalDate:null,showEventForm:false,editEventId:null})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">‹</button><div style="font-size:14px;font-weight:700;color:#1a1a18">${MONTHS[mo]} ${y}</div><button onclick="go({calMonth:${next.m},calYear:${next.y},selectedCalDate:null,showEventForm:false,editEventId:null})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">›</button></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${hdr}${cells}</div><div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;padding-top:10px;border-top:.5px solid #f0ede6">${legend}</div><div style="font-size:11px;color:${MUTED};line-height:1.4;margin-top:9px">Els dies il·luminats tenen esdeveniments del club. Les sortides tenen secció pròpia.</div>`);
 }
 function renderClubAgenda(){
   const selectedDate=S.selectedCalDate;

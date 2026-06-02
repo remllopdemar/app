@@ -1527,23 +1527,39 @@ async function patronAddMember(oid){
   if(S.role!=="patron")return;
   const lock=`patron-add:${oid}`;
   return withActionLock(lock,async()=>{
+    // Llegim primer els valors del formulari. Si refresquem Supabase abans,
+    // en alguns mòbils/re-renders es pot perdre la selecció i semblar que no s'ha afegit ningú.
+    const midRaw=document.getElementById(`patron-add-mid-${oid}`)?.value||"";
+    const role=document.getElementById(`patron-add-role-${oid}`)?.value||"rower";
+    const mid=parseInt(midRaw,10);
+    if(!mid)return alert("Selecciona un soci.");
+
     await refreshOutingsBeforeAction();
-    const o=S.outings.find(x=>x.id===oid);
-    if(!o||isPastOuting(o))return;
+    const o=S.outings.find(x=>String(x.id)===String(oid));
+    if(!o)return alert("No s'ha trobat aquesta sortida. Actualitza i torna-ho a provar.");
+    if(isPastOuting(o))return alert("Aquesta sortida ja és passada.");
+
     normalizeOutingEntries(o);
     if(!o.waitlist)o.waitlist=[];
     if(!o.helmsmanSignups)o.helmsmanSignups=[];
-    const mid=parseInt(document.getElementById(`patron-add-mid-${oid}`)?.value);
-    const role=document.getElementById(`patron-add-role-${oid}`)?.value||"rower";
-    if(!mid)return;
-    const m=S.membres.find(x=>x.id===mid);
-    if(!m)return;
+
+    const m=S.membres.find(x=>Number(x.id)===Number(mid));
+    if(!m)return alert("No s'ha trobat aquest soci.");
+
     const entry={name:m.name,gid:m.groupId,mid:m.id,ts:nowIso()};
-    const same=e=>Number(e.mid)===Number(m.id)||e.name===m.name;
+    const same=e=>Number(e.mid)===Number(m.id)||String(e.name||"")===String(m.name||"");
     const alreadyIn=o.signups.some(same);
     const alreadyHelm=o.helmsmanSignups.some(same);
     const alreadyWait=o.waitlist.some(same);
-    if(alreadyIn||alreadyHelm||alreadyWait)return;
+    if(alreadyIn||alreadyHelm||alreadyWait){
+      const lloc=alreadyIn?"apuntat":alreadyHelm?"apuntat com a timoner":"a la llista d'espera";
+      return alert(`${m.name} ja consta ${lloc} en aquesta sortida.`);
+    }
+
+    // Abans que el patró afegeixi algú manualment, respectem possibles esperes pendents.
+    // Això evita que el patró ocupi una plaça lliure si abans hi havia un soci amb prioritat.
+    reconcileOutingWaitlist(o);
+
     if(role==="helm"){
       const maxHelm=o.helmsmen||getOutingCfg(o.groupId,o.date)?.helmsmen||0;
       if(!maxHelm)return alert("Aquesta sortida no admet timonels.");
@@ -1566,7 +1582,7 @@ async function patronAddMember(oid){
         addOutingLog(o,"waitlist_join_patron",`El patró posa ${m.name} a la llista d'espera de ${outingLabel(o)}.`);
       }
     }
-    reconcileOutingWaitlist(o);
+
     await saveMany(["outings","avisos"]);
     go({patronAddOuting:null});
   });

@@ -361,6 +361,7 @@ function normalizeOutingEntries(o){
   });
   if(signups.length!==o.signups.length||waitlist.length!==o.waitlist.length)changed=true;
   o.signups=signups;o.waitlist=waitlist;
+  if(normalizeReserveSlots(o))changed=true;
   return changed;
 }
 function normalizeAllOutingEntries(){
@@ -1496,7 +1497,7 @@ async function signup(oid,asHelm=false){
       addOutingLog(o,"helm_signup",`${S.userName} s'apunta de timoner a ${outingLabel(o)}.`);
     } else {
       const maxNormal=outingCapacity(o);
-      const maxWithReserve=isMyGroup?(maxNormal+(o.reserve||1)):maxNormal;
+      const maxWithReserve=isMyGroup?(maxNormal+outingReserve(o)):maxNormal;
       if(o.signups.length>=maxNormal){
         if(isMyGroup&&o.signups.length<maxWithReserve){
           o.signups.push({...entry,isReserve:true});
@@ -1605,7 +1606,7 @@ async function patronAddMember(oid){
       const cap=outingCapacity(o);
       const isGeneral=isGeneralOuting(o);
       const isOwnGroup=!isGeneral&&Number(m.groupId)===Number(o.groupId);
-      const reserve=isOwnGroup?Number(o.reserve||getOutingCfg(o.groupId,o.date)?.reserve||1):0;
+      const reserve=isOwnGroup?outingReserve(o):0;
       if(o.signups.length<cap){
         o.signups.push(entry);
         addOutingLog(o,"signup_patron",`El patró apunta ${m.name} a ${outingLabel(o)}.`);
@@ -1967,6 +1968,12 @@ function formatNaturalOpenLabel(o){
 
 function outingCapacity(o){
   const cfg=getOutingCfg(o?.groupId,o?.date);
+  // En sortides de grup amb reserva, la capacitat base és la configurada del grup
+  // (8 o 16 vogadors normals). Algunes dades antigues podien tenir guardada
+  // una capacity que incloïa la reserva; per evitar que el 9è deixi de ser reserva,
+  // fem prevaldre la configuració quan existeix. En sortides generals/divendres,
+  // la capacity guardada sí és la capacitat total de vogadors.
+  if(cfg&&!isGeneralOuting(o))return Number(cfg.capacity||8);
   return Number(o?.capacity||cfg?.capacity||8);
 }
 function waitEntryGroupId(w){
@@ -2000,38 +2007,148 @@ function shouldBeOpen(o){
   return openTriggerReached(o)&&hasOpenGeneralSpots(o);
 }
 
-// Llista d'espera amb prioritat de grup. Si groupOnly=true, només puja gent del grup de la sortida.
-function promoteFromWaitlist(o,groupOnly=false){
-  if(!o.waitlist||!o.waitlist.length)return false;
-  const spotsLeft=outingCapacity(o)-safeArr(o.signups).length;
-  if(spotsLeft<=0)return false;
-  const own=safeArr(o.waitlist).filter(w=>waitEntryBelongsToGroup(w,o));
-  const others=safeArr(o.waitlist).filter(w=>!waitEntryBelongsToGroup(w,o));
-  const candidates=groupOnly?own:[...own,...others];
-  const promoted=candidates[0];
-  if(!promoted)return false;
-  o.waitlist=o.waitlist.filter(w=>!entrySamePerson(w,promoted));
-  o.signups.push({...promoted,isReserve:false});
-  addPersonalAviso(o,promoted,"waitlist_promoted","Has entrat a la sortida",`S'ha alliberat una plaça i has entrat automàticament a ${outingLabel(o)}.`);
-  addOutingLog(o,"waitlist_promoted",`${promoted.name} entra automàticament des de la llista d'espera a ${outingLabel(o)}.`);
+function outingReserve(o){
+  if(!o||isGeneralOuting(o))return 0;
+  const cfg=getOutingCfg(o.groupId,o.date);
+  return Number(o.reserve ?? cfg?.reserve ?? 0)||0;
+}
+function normalRowerCount(o){
+  return safeArr(o?.signups).filter(s=>!s.isReserve).length;
+}
+function reserveRowerCount(o){
+  return safeArr(o?.signups).filter(s=>!!s.isReserve).length;
+}
+function hasReserveModel(o){
+  return outingReserve(o)>0;
+}
+
+// Manté les marques de reserva coherents amb l'ordre de la llista.
+// En sortides amb reserva: primer van les places normals i després la reserva.
+// Si un vogador normal marxa, el primer reserva passa automàticament a plaça normal.
+function normalizeReserveSlots(o){
+  if(!o||!Array.isArray(o.signups))return false;
+  let changed=false;
+  const cap=outingCapacity(o);
+  const reserve=outingReserve(o);
+  if(reserve<=0){
+    o.signups=o.signups.map(s=>{
+      if(s&&s.isReserve){changed=true;const n={...s};delete n.isReserve;return n;}
+      return s;
+    });
+    return changed;
+  }
+
+  // Separem primer vogadors normals i reserves explícites. Això fa que,
+  // quan marxa un vogador normal, la reserva existent avanci a plaça normal
+  // abans de mirar la llista d'espera.
+  const normals=o.signups.filter(s=>s&&!s.isReserve);
+  const reserves=o.signups.filter(s=>s&&s.isReserve);
+  const ordered=[...normals,...reserves];
+  if(ordered.length!==o.signups.length||ordered.some((s,i)=>s!==o.signups[i]))changed=true;
+
+  o.signups=ordered.map((s,i)=>{
+    const shouldReserve=i>=cap && i<cap+reserve;
+    if(Boolean(s.isReserve)!==shouldReserve){
+      changed=true;
+      const n={...s};
+      if(shouldReserve)n.isReserve=true;
+      else delete n.isReserve;
+      return n;
+    }
+    return s;
+  });
+  return changed;
+}
+
+function nextWaitlistCandidate(o,groupOnly=false,allowOthers=false){
+  const wait=safeArr(o?.waitlist);
+  if(!wait.length)return null;
+  const own=wait.find(w=>waitEntryBelongsToGroup(w,o));
+  if(groupOnly)return own||null;
+  if(own)return own;
+  return allowOthers?wait[0]:null;
+}
+
+function removeFromWaitlist(o,entry){
+  if(!entry)return false;
+  const before=safeArr(o.waitlist).length;
+  o.waitlist=safeArr(o.waitlist).filter(w=>!entrySamePerson(w,entry));
+  return o.waitlist.length!==before;
+}
+
+function promoteWaitlistEntry(o,entry,asReserve=false){
+  if(!entry)return false;
+  if(!removeFromWaitlist(o,entry))return false;
+  const promoted={...entry};
+  if(asReserve)promoted.isReserve=true;
+  else delete promoted.isReserve;
+  o.signups.push(promoted);
+  addPersonalAviso(o,promoted,"waitlist_promoted","Has entrat a la sortida",`S'ha alliberat una plaça i has entrat automàticament a ${outingLabel(o)}${asReserve?" com a reserva":""}.`);
+  addOutingLog(o,"waitlist_promoted",`${promoted.name} entra automàticament des de la llista d'espera a ${outingLabel(o)}${asReserve?" com a reserva":""}.`);
   return true;
+}
+
+// Llista d'espera amb prioritat de grup. Si groupOnly=true, només puja gent del grup de la sortida.
+function promoteFromWaitlist(o,groupOnly=false,asReserve=false){
+  if(!o.waitlist||!o.waitlist.length)return false;
+  const cap=outingCapacity(o);
+  const reserve=outingReserve(o);
+  normalizeReserveSlots(o);
+  if(asReserve){
+    if(reserve<=0||safeArr(o.signups).length>=cap+reserve)return false;
+  }else{
+    if(normalRowerCount(o)>=cap)return false;
+  }
+  // Per cobrir una plaça de reserva, si algú ja és a la llista d'espera,
+  // pot pujar a reserva encara que la sortida no estigui oberta a tothom.
+  const promoted=nextWaitlistCandidate(o,groupOnly,asReserve?true:(!groupOnly&&openTriggerReached(o)));
+  return promoteWaitlistEntry(o,promoted,asReserve);
 }
 
 function reconcileOutingWaitlist(o){
   if(!o||isPastOuting(o))return false;
-  normalizeOutingEntries(o);
-  let changed=false;
-  // 1) Sortides de grup: sempre que hi hagi plaça base, primer pugen els socis del grup de la sortida.
-  while(safeArr(o.signups).length<outingCapacity(o)&&hasGroupWaitlist(o)){
-    if(!promoteFromWaitlist(o,true))break;
-    changed=true;
+  let changed=normalizeOutingEntries(o);
+  if(normalizeReserveSlots(o))changed=true;
+
+  const cap=outingCapacity(o);
+  const reserve=outingReserve(o);
+  const allowOthers=openTriggerReached(o);
+
+  // Sortides sense reserva, inclosos els divendres generals: es manté la lògica anterior.
+  if(reserve<=0){
+    while(normalRowerCount(o)<cap&&safeArr(o.waitlist).length>0){
+      const cand=nextWaitlistCandidate(o,false,allowOthers);
+      if(!cand)break;
+      if(!promoteWaitlistEntry(o,cand,false))break;
+      changed=true;
+    }
+    return changed;
   }
-  // 2) La resta de la llista només puja si la sortida ja ha arribat a l'obertura general
-  //    o si el cap/patró l'ha oberta manualment. En divendres general, és ordre d'inscripció.
-  while(safeArr(o.signups).length<outingCapacity(o)&&openTriggerReached(o)&&safeArr(o.waitlist).length>0){
-    if(!promoteFromWaitlist(o,false))break;
+
+  // 1) Primer omplim places normals.
+  // Si hi havia una reserva i marxa un vogador normal, normalizeReserveSlots() ja l'ha passat a normal.
+  // Si encara falta una plaça normal, puja algú de la llista: grup primer; altres només si ja és oberta.
+  while(normalRowerCount(o)<cap&&safeArr(o.waitlist).length>0){
+    const cand=nextWaitlistCandidate(o,false,allowOthers);
+    if(!cand)break;
+    if(!promoteWaitlistEntry(o,cand,false))break;
     changed=true;
+    if(normalizeReserveSlots(o))changed=true;
   }
+
+  // 2) Després mantenim coberta la plaça de reserva si hi ha llista d'espera.
+  // Si marxa un normal: reserva -> normal; primer/a de llista -> reserva.
+  // Si marxa directament la reserva: primer/a de llista -> reserva.
+  while(normalRowerCount(o)>=cap && reserveRowerCount(o)<reserve && safeArr(o.waitlist).length>0){
+    // Si hi ha una plaça de reserva lliure i algú ja és a la llista d'espera,
+    // el primer candidat ha de passar a reserva. No depèn de l'obertura general.
+    const cand=nextWaitlistCandidate(o,false,true);
+    if(!cand)break;
+    if(!promoteWaitlistEntry(o,cand,true))break;
+    changed=true;
+    if(normalizeReserveSlots(o))changed=true;
+  }
+
   return changed;
 }
 

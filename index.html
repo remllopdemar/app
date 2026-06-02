@@ -246,6 +246,16 @@ async function withActionLock(key,fn){
   finally{S.actionBusy=null;render();}
 }
 
+// Clics delegats: evita problemes d'onclick inline en alguns mòbils/previews
+// i fa més fiable que el patró pugui treure vogadors, timonels i llista d'espera.
+document.addEventListener("click",e=>{
+  const btn=e.target.closest("[data-action='patron-remove-person']");
+  if(!btn)return;
+  e.preventDefault();
+  e.stopPropagation();
+  patronRemovePerson(btn.dataset.oid,btn.dataset.list,btn.dataset.idx,btn.dataset.mid,btn.dataset.name);
+});
+
 function doLogout(force=false){
   if(!force&&S.role){go({showLogoutConfirm:true});return;}
   store.set("ldm:session",null);
@@ -905,7 +915,7 @@ function renderOutingCard(o){
   }
 
   const shortGroup=gid=>esc(gname(gid).split(" · ")[0]||"—");
-  const personChips=(arr,mode="signups")=>arr.length?`<div style="display:flex;flex-wrap:wrap;gap:6px">${arr.map(s=>{
+  const personChips=(arr,mode="signups")=>arr.length?`<div style="display:flex;flex-wrap:wrap;gap:6px">${arr.map((s,idx)=>{
     const gid=s.gid||memberFromEntry(s)?.groupId;
     const isOwner=!isGeneral&&Number(gid)===Number(o.groupId);
     const isWait=mode==="wait";
@@ -915,7 +925,8 @@ function renderOutingCard(o){
     const groupTxt=shortGroup(gid);
     const title=isWait?"Llista d'espera":isHelm?"Timoner":isReserve?"Plaça de reserva":(isGeneral?`Grup ${groupTxt}`:(isOwner?"Del grup":"D'un altre grup"));
     const mid=s.mid||memberFromEntry(s)?.id;
-    const removeBtn=isPatron&&!isPast&&!isWait?` <button onclick="event.stopPropagation();patronRemoveMember(${o.id},${mid},${isHelm})" style="background:rgba(255,255,255,.25);border:none;border-radius:50%;width:14px;height:14px;color:#fff;font-size:10px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:1;padding:0;flex-shrink:0">×</button>`:"";
+    const listName=isWait?"waitlist":(isHelm?"helmsmanSignups":"signups");
+    const removeBtn=isPatron&&!isPast?` <button type="button" data-action="patron-remove-person" data-oid="${esc(o.id)}" data-list="${listName}" data-idx="${idx}" data-mid="${esc(mid||"")}" data-name="${esc(s.name)}" style="background:rgba(255,255,255,.25);border:none;border-radius:50%;width:18px;height:18px;color:#fff;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:1;padding:0;flex-shrink:0">×</button>`:"";
     return`<span title="${title}" style="display:inline-flex;align-items:center;gap:4px;background:${bg};border-radius:999px;padding:5px 9px;color:#fff;font-size:12px;font-weight:600;line-height:1.15">
       <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">${esc(s.name)}</span>
       <span style="font-size:10px;opacity:.78;background:rgba(255,255,255,.18);border-radius:999px;padding:1px 6px;white-space:nowrap">${isHelm?"Tim":isReserve?"R":groupTxt}</span>${removeBtn}
@@ -1613,22 +1624,112 @@ async function patronAddMember(oid){
   });
 }
 
-function patronRemoveMember(oid,mid,fromHelm=false){
+async function patronRemovePerson(oid,listName,idx=null,mid="",nameArg=""){
   if(S.role!=="patron")return;
-  const o=S.outings.find(x=>x.id===oid);
-  if(!o)return;
-  if(fromHelm){
-    o.helmsmanSignups=o.helmsmanSignups.filter(s=>s.mid!==mid&&s.name!==S.membres.find(x=>x.id===mid)?.name);
-    addOutingLog(o,"helm_unsignup_patron",`El patró desapunta el timoner (id:${mid}) de ${outingLabel(o)}.`);
-  } else {
-    const m=S.membres.find(x=>x.id===mid);
-    const name=m?.name;
-    o.signups=o.signups.filter(s=>s.mid!==mid&&s.name!==name);
-    addOutingLog(o,"unsignup_patron",`El patró desapunta ${name||mid} de ${outingLabel(o)}.`);
-    // Promou de la llista d'espera si cal: primer el grup; la resta només si ja és oberta.
-    reconcileOutingWaitlist(o);
-  }
-  save("outings");save("avisos");render();
+  const allowed={signups:"signups",helmsmanSignups:"helmsmanSignups",waitlist:"waitlist"};
+  const list=allowed[listName];
+  if(!list)return alert("No s'ha pogut identificar la llista.");
+  const lock=`patron-remove-person:${oid}:${list}:${mid||idx||nameArg||"x"}`;
+  return withActionLock(lock,async()=>{
+    await refreshOutingsBeforeAction();
+    const o=S.outings.find(x=>String(x.id)===String(oid));
+    if(!o)return alert("No s'ha trobat aquesta sortida. Actualitza i torna-ho a provar.");
+    if(isPastOuting(o))return alert("Aquesta sortida ja és passada.");
+    normalizeOutingEntries(o);
+    const arr=safeArr(o[list]);
+    const midStr=String(mid||"");
+    const nameStr=String(nameArg||"");
+    let pos=-1;
+    if(midStr){
+      pos=arr.findIndex(s=>String(s.mid||memberFromEntry(s)?.id||"")===midStr);
+    }
+    if(pos<0&&nameStr){
+      pos=arr.findIndex(s=>String(s.name||"")===nameStr);
+    }
+    const idxNum=Number(idx);
+    if(pos<0&&Number.isInteger(idxNum)&&idxNum>=0&&idxNum<arr.length){
+      pos=idxNum;
+    }
+    if(pos<0)return alert("No s'ha trobat aquest soci. Actualitza i torna-ho a provar.");
+
+    const [removed]=arr.splice(pos,1);
+    o[list]=arr;
+    const name=removed?.name||nameStr||"un soci";
+    if(list==="helmsmanSignups"){
+      addOutingLog(o,"helm_unsignup_patron",`El patró desapunta ${name} de timoner a ${outingLabel(o)}.`);
+    }else if(list==="waitlist"){
+      addOutingLog(o,"waitlist_leave_patron",`El patró treu ${name} de la llista d'espera de ${outingLabel(o)}.`);
+    }else{
+      addOutingLog(o,"unsignup_patron",`El patró desapunta ${name} de ${outingLabel(o)}.`);
+      reconcileOutingWaitlist(o);
+    }
+    await saveMany(["outings","avisos"]);
+  });
+}
+
+async function patronRemoveWaitMember(oid,idx,mid=null,nameArg=""){
+  if(S.role!=="patron")return;
+  const lock=`patron-remove-wait:${oid}:${mid||idx}:${nameArg||""}`;
+  return withActionLock(lock,async()=>{
+    await refreshOutingsBeforeAction();
+    const o=S.outings.find(x=>String(x.id)===String(oid));
+    if(!o)return alert("No s'ha trobat aquesta sortida. Actualitza i torna-ho a provar.");
+    if(isPastOuting(o))return alert("Aquesta sortida ja és passada.");
+    normalizeOutingEntries(o);
+    const before=safeArr(o.waitlist).length;
+    const same=s=>(mid&&Number(s.mid)===Number(mid))||(nameArg&&String(s.name||"")===String(nameArg));
+    let removed=null;
+    if(mid||nameArg){
+      removed=safeArr(o.waitlist).find(same)||null;
+      o.waitlist=safeArr(o.waitlist).filter(s=>!same(s));
+    }
+    // Si per algun motiu no hi havia mid/nom o la coincidència falla, fem servir la posició visible.
+    if(o.waitlist.length===before && Number.isInteger(Number(idx)) && o.waitlist[Number(idx)]){
+      removed=o.waitlist[Number(idx)];
+      o.waitlist.splice(Number(idx),1);
+    }
+    if(o.waitlist.length!==before){
+      const name=removed?.name||nameArg||"un soci";
+      addOutingLog(o,"waitlist_leave_patron",`El patró treu ${name} de la llista d'espera de ${outingLabel(o)}.`);
+      await saveMany(["outings","avisos"]);
+    }else{
+      alert("No s'ha trobat aquest soci a la llista d'espera. Actualitza i torna-ho a provar.");
+    }
+  });
+}
+
+async function patronRemoveMember(oid,mid,fromHelm=false,fromWait=false,nameArg=""){
+  if(S.role!=="patron")return;
+  const lock=`patron-remove:${oid}:${mid}:${fromHelm?"helm":(fromWait?"wait":"row")}`;
+  return withActionLock(lock,async()=>{
+    await refreshOutingsBeforeAction();
+    const o=S.outings.find(x=>String(x.id)===String(oid));
+    if(!o)return alert("No s'ha trobat aquesta sortida. Actualitza i torna-ho a provar.");
+    if(isPastOuting(o))return alert("Aquesta sortida ja és passada.");
+    normalizeOutingEntries(o);
+    const m=mid?S.membres.find(x=>Number(x.id)===Number(mid)):null;
+    const name=m?.name||nameArg||mid;
+    const same=s=>(mid&&Number(s.mid)===Number(mid))||(nameArg&&String(s.name||"")===String(nameArg))||(m?.name&&String(s.name||"")===String(m.name));
+    if(fromHelm){
+      const before=safeArr(o.helmsmanSignups).length;
+      o.helmsmanSignups=safeArr(o.helmsmanSignups).filter(s=>!same(s));
+      if(o.helmsmanSignups.length!==before)addOutingLog(o,"helm_unsignup_patron",`El patró desapunta ${name||"un timoner"} de timoner a ${outingLabel(o)}.`);
+    }else if(fromWait){
+      const before=safeArr(o.waitlist).length;
+      o.waitlist=safeArr(o.waitlist).filter(s=>!same(s));
+      if(o.waitlist.length!==before)addOutingLog(o,"waitlist_leave_patron",`El patró treu ${name||"un soci"} de la llista d'espera de ${outingLabel(o)}.`);
+    }else{
+      const before=safeArr(o.signups).length;
+      o.signups=safeArr(o.signups).filter(s=>!same(s));
+      if(o.signups.length!==before){
+        addOutingLog(o,"unsignup_patron",`El patró desapunta ${name||mid} de ${outingLabel(o)}.`);
+        // Promou de la llista d'espera si cal: primer el grup; la resta només si ja és oberta.
+        reconcileOutingWaitlist(o);
+      }
+    }
+    await saveMany(["outings","avisos"]);
+    render();
+  });
 }
 async function openOut(oid){
   const lock=`open:${oid}`;

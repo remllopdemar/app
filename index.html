@@ -37,7 +37,6 @@ const PTS={1:35,2:28,3:22,4:18,5:15};
 const POS={1:"1r",2:"2n",3:"3r",4:"4t",5:"è"};
 const PCOL={1:"#c8a44a",2:"#888780",3:"#8b6c3c"};
 function wDir(d){return["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSO","SO","OSO","O","ONO","NO","NNO"][Math.round(d/22.5)%16];}
-function wDesc(c){if(c===0)return"Cel clar";if(c<=3)return"Parcialment ennuvolat";if(c<=65)return"Pluja";if(c<=82)return"Ruixats";return"Tempesta";}
 function wIcon(c){if(c===0)return"☀️";if(c<=3)return"⛅";if(c<=65)return"🌧️";if(c<=82)return"🌦️";return"⛈️";}
 
 // Cache local (ràpid) + Supabase (compartit entre usuaris)
@@ -276,7 +275,6 @@ function renderSyncStatus(){
     <button onclick="syncNow()" ${S.supaSyncing?"disabled":""} style="background:${S.supaSyncing?BORDER:DARK};border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;padding:5px 9px;cursor:${S.supaSyncing?"default":"pointer"}">Actualitzar</button>
   </div>`;
 }
-function isActionBusy(key=null){return !!S.actionBusy&&(!key||S.actionBusy===key);}
 async function withActionLock(key,fn){
   if(S.actionBusy)return;
   S.actionBusy=key;
@@ -410,9 +408,17 @@ function normalizeAllOutingEntries(){
 }
 function outingDisplayTitle(o){
   if(!o)return "Sortida";
+  if(isGeneralOuting(o)){
+    // Evita duplicar l'hora quan una sortida oberta antiga la tenia dins del títol
+    // i la targeta ja la mostra a la primera línia.
+    let title=String(o.title||"Sortida oberta").trim();
+    title=title.replace(/\s*·\s*Dv\s*\d{1,2}[:.]\d{2}\s*$/i,"");
+    title=title.replace(/\s*·\s*\d{1,2}[:.]\d{2}\s*h?\s*$/i,"");
+    return title||"Sortida oberta";
+  }
   // Les sortides setmanals per grup es mostren amb el nom del grup (Grup A, Grup C...),
   // no amb el títol tècnic "Sortida setmanal".
-  if(!isGeneralOuting(o)&&o.groupId){
+  if(o.groupId){
     const gn=gname(o.groupId).split(" · ")[0];
     if(gn&&gn!=="—")return gn;
   }
@@ -448,32 +454,111 @@ function ensureAttendance(o){
   if(!o.attendance.status)o.attendance.status={};
   return o.attendance;
 }
+function canManageAttendance(o){return (S.role==="patron"||(S.role==="cap"&&Number(S.capGroupId)===Number(o.groupId)))&&isPastOuting(o)&&attendancePeople(o).length>0;}
 function attendanceStatusLabel(st){return st==="absent"?"No presentat":st==="excused"?"Baixa / justificat":"Ha vingut";}
-function renderAttendancePanel(o){
-  const can=(S.role==="patron"||(S.role==="cap"&&Number(S.capGroupId)===Number(o.groupId)))&&isPastOuting(o);
-  if(!can)return "";
-  const people=attendancePeople(o),att=ensureAttendance(o);
-  if(!people.length)return "";
-  const rows=people.map(p=>{
-    const st=att.status[p.attKey]||"present";
-    const btn=(val,label)=>`<button onclick="markAttendance(${o.id},${jsArg(p.attKey)},'${val}')" style="padding:5px 7px;border-radius:7px;border:.5px solid ${st===val?DARK:BORDER};background:${st===val?DARK:'#fff'};color:${st===val?'#fff':MUTED};font-size:10px;font-weight:700;cursor:pointer">${label}</button>`;
-    return `<div style="padding:8px 0;border-top:.5px solid #f0ede6"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><div style="font-size:13px;font-weight:650;color:#1a1a18">${esc(p.name)}</div><div style="font-size:10px;color:${MUTED}">${esc(p.attRole)} · ${esc(gname(p.gid||memberFromEntry(p)?.groupId).split(" · ")[0]||"")}</div></div><div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">${btn("present","Ha vingut")}${btn("absent","No")}${btn("excused","Baixa")}</div></div></div>`;
-  }).join("");
-  return `<details style="border-top:.5px solid #f5f3ee;background:#f8fbf8"><summary style="list-style:none;cursor:pointer;padding:10px 14px;display:flex;justify-content:space-between;gap:10px;align-items:center"><div><div style="font-size:12px;font-weight:700;color:${GREEN}">Confirmar assistència</div><div style="font-size:11px;color:${MUTED}">${att.closed?`Tancada · ${esc(att.closedAt||"").slice(0,10)}`:"Pendent de tancar"}</div></div><div style="font-size:18px;color:${MUTED}">▾</div></summary><div style="padding:0 14px 12px"><div style="font-size:11px;color:${MUTED};line-height:1.4;margin:2px 0 8px">Per defecte comptem tothom com a “Ha vingut”. Canvia només absències o baixes abans de tancar.</div>${rows}<button onclick="closeAttendance(${o.id})" style="margin-top:10px;width:100%;padding:9px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:800;cursor:pointer">${att.closed?"Actualitzar assistència":"Tancar assistència"}</button></div></details>`;
+function attendanceStatusStyle(st){
+  if(st==="absent")return {bg:"#fff0f0",col:RED,ico:"❌"};
+  if(st==="excused")return {bg:"#fff8ee",col:"#b07a10",ico:"➖"};
+  return {bg:"#e6f4ee",col:GREEN,ico:"✅"};
+}
+function attendanceCounts(o){
+  const att=ensureAttendance(o),people=attendancePeople(o);
+  const c={present:0,absent:0,excused:0,total:people.length,closed:!!att.closed};
+  people.forEach(p=>{const st=att.status?.[p.attKey]||"present";if(st==="absent")c.absent++;else if(st==="excused")c.excused++;else c.present++;});
+  return c;
+}
+function setAllAttendance(oid,status){
+  if(!canWriteNow())return;
+  const o=S.outings.find(x=>String(x.id)===String(oid));if(!o||!canManageAttendance(o))return;
+  const att=ensureAttendance(o);attendancePeople(o).forEach(p=>{att.status[p.attKey]=status;});
+  att.updatedAt=nowIso();att.by=actorLabel();
+  save("outings");showToast("ok",`Assistència actualitzada: ${attendanceStatusLabel(status)}.`);
 }
 function markAttendance(oid,key,status){
   if(!canWriteNow())return;
-  const o=S.outings.find(x=>String(x.id)===String(oid));if(!o)return;
-  const att=ensureAttendance(o);att.status[key]=status;att.updatedAt=nowIso();
+  const o=S.outings.find(x=>String(x.id)===String(oid));if(!o||!canManageAttendance(o))return;
+  const att=ensureAttendance(o);att.status[key]=status;att.updatedAt=nowIso();att.by=actorLabel();
   save("outings");showToast("ok",`Assistència marcada: ${attendanceStatusLabel(status)}.`);
 }
 function closeAttendance(oid){
   if(!canWriteNow())return;
-  const o=S.outings.find(x=>String(x.id)===String(oid));if(!o)return;
+  const o=S.outings.find(x=>String(x.id)===String(oid));if(!o||!canManageAttendance(o))return;
   const att=ensureAttendance(o);attendancePeople(o).forEach(p=>{if(!att.status[p.attKey])att.status[p.attKey]="present";});
-  att.closed=true;att.closedAt=nowIso();att.by=actorLabel();
+  att.closed=true;att.closedAt=nowIso();att.updatedAt=nowIso();att.by=actorLabel();
   addOutingLog(o,"attendance_closed",`${actorLabel()} tanca l'assistència de ${outingLabel(o)}.`);
   saveMany(["outings","avisos"]);showToast("ok","Assistència tancada correctament.");
+}
+function reopenAttendance(oid){
+  if(!canWriteNow())return;
+  const o=S.outings.find(x=>String(x.id)===String(oid));if(!o||!canManageAttendance(o))return;
+  const att=ensureAttendance(o);att.closed=false;att.updatedAt=nowIso();att.by=actorLabel();
+  addOutingLog(o,"attendance_reopened",`${actorLabel()} reobre l'assistència de ${outingLabel(o)}.`);
+  saveMany(["outings","avisos"]);showToast("ok","Assistència reoberta.");
+}
+function renderAttendancePanel(o,opts={}){
+  if(!canManageAttendance(o))return "";
+  const people=attendancePeople(o),att=ensureAttendance(o),counts=attendanceCounts(o);
+  if(!people.length)return "";
+  const openAttr=opts.open?" open":"";
+  const standalone=!!opts.standalone;
+  const title=opts.title||"Confirmar assistència";
+  const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
+  const summary=att.closed
+    ?`Tancada · ${counts.present} ha vingut · ${counts.absent} no · ${counts.excused} baixa`
+    :`Pendent de tancar · ${people.length} persones`;
+  const rows=people.map(p=>{
+    const st=att.status[p.attKey]||"present";
+    const ss=attendanceStatusStyle(st);
+    const btn=(val,label)=>`<button onclick="markAttendance(${o.id},${jsArg(p.attKey)},'${val}')" style="padding:6px 8px;border-radius:8px;border:.5px solid ${st===val?attendanceStatusStyle(val).col:BORDER};background:${st===val?attendanceStatusStyle(val).bg:'#fff'};color:${st===val?attendanceStatusStyle(val).col:MUTED};font-size:10px;font-weight:800;cursor:pointer;white-space:nowrap">${label}</button>`;
+    return `<div style="padding:9px 0;border-top:.5px solid #f0ede6">
+      <div style="display:flex;justify-content:space-between;gap:9px;align-items:flex-start">
+        <div style="min-width:0;flex:1">
+          <div style="font-size:13px;font-weight:700;color:#1a1a18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</div>
+          <div style="font-size:10px;color:${MUTED};margin-top:2px">${esc(p.attRole)} · ${esc(gname(p.gid||memberFromEntry(p)?.groupId).split(" · ")[0]||"")}</div>
+          <div style="display:inline-flex;align-items:center;gap:4px;background:${ss.bg};color:${ss.col};border-radius:99px;padding:2px 7px;font-size:10px;font-weight:800;margin-top:5px">${ss.ico} ${attendanceStatusLabel(st)}</div>
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:160px">${btn("present","Ha vingut")}${btn("absent","No")}${btn("excused","Baixa")}</div>
+      </div>
+    </div>`;
+  }).join("");
+  const controls=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px">
+    <button onclick="setAllAttendance(${o.id},'present')" style="flex:1;padding:8px;background:#fff;border:.5px solid ${GREEN};border-radius:8px;color:${GREEN};font-size:11px;font-weight:800;cursor:pointer">Tots han vingut</button>
+    <button onclick="setAllAttendance(${o.id},'absent')" style="flex:1;padding:8px;background:#fff;border:.5px solid ${RED};border-radius:8px;color:${RED};font-size:11px;font-weight:800;cursor:pointer">Tots no</button>
+  </div>`;
+  const closeBtn=att.closed
+    ?`<div style="display:flex;gap:8px;margin-top:10px"><button onclick="closeAttendance(${o.id})" style="flex:1;padding:9px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:850;cursor:pointer">Actualitzar assistència</button><button onclick="reopenAttendance(${o.id})" style="padding:9px 11px;background:#fff;border:.5px solid ${BORDER};border-radius:8px;color:${DARK};font-size:12px;font-weight:800;cursor:pointer">Reobrir</button></div>`
+    :`<button onclick="closeAttendance(${o.id})" style="margin-top:10px;width:100%;padding:10px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:850;cursor:pointer">Tancar assistència</button>`;
+  const body=`<div style="font-size:11px;color:${MUTED};line-height:1.45;margin:2px 0 8px">Marca l'assistència real després de la sortida. Per defecte compta com a “Ha vingut”; canvia només absències o baixes justificades.</div>${controls}<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 8px"><span style="background:#e6f4ee;color:${GREEN};border-radius:99px;padding:4px 8px;font-size:10px;font-weight:850">✅ ${counts.present}</span><span style="background:#fff0f0;color:${RED};border-radius:99px;padding:4px 8px;font-size:10px;font-weight:850">❌ ${counts.absent}</span><span style="background:#fff8ee;color:#b07a10;border-radius:99px;padding:4px 8px;font-size:10px;font-weight:850">➖ ${counts.excused}</span></div>${rows}${closeBtn}`;
+  if(standalone){
+    return `<div style="background:#fff;border:.5px solid ${att.closed?BORDER:GREEN};border-radius:14px;margin:10px 14px 0;overflow:hidden">
+      <div style="padding:11px 14px;background:${att.closed?'#fbfaf6':'#f8fbf8'};border-bottom:.5px solid #f0ede6;display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+        <div style="min-width:0"><div style="font-size:14px;font-weight:800;color:#1a1a18;line-height:1.25">${esc(outingDisplayTitle(o))} · ${esc(o.time||"")} h</div><div style="font-size:11px;color:${MUTED};margin-top:3px">📅 ${dateStr} · ${summary}</div></div>
+        <span style="font-size:10px;font-weight:850;border-radius:99px;padding:3px 8px;white-space:nowrap;background:${att.closed?'#e6f4ee':'#fff8ee'};color:${att.closed?GREEN:'#b07a10'}">${att.closed?'Tancada':'Pendent'}</span>
+      </div><div style="padding:0 14px 12px">${body}</div>
+    </div>`;
+  }
+  return `<details${openAttr} style="border-top:.5px solid #f5f3ee;background:#f8fbf8"><summary style="list-style:none;cursor:pointer;padding:10px 14px;display:flex;justify-content:space-between;gap:10px;align-items:center"><div><div style="font-size:12px;font-weight:700;color:${GREEN}">${esc(title)}</div><div style="font-size:11px;color:${MUTED}">${summary}</div></div><div style="font-size:18px;color:${MUTED}">▾</div></summary><div style="padding:0 14px 12px">${body}</div></details>`;
+}
+function manageableAttendanceOutings(){
+  return S.outings.filter(o=>canManageAttendance(o)).sort((a,b)=>sortOutings(b,a));
+}
+function renderAttendanceManager(limit=4){
+  if(!(S.role==="patron"||S.role==="cap"))return "";
+  const all=manageableAttendanceOutings();
+  if(!all.length)return cc(`${lbl("Assistència real")}<div style="font-size:13px;color:${MUTED};line-height:1.45">Quan hi hagi sortides passades amb apuntats, aquí podràs marcar qui ha vingut, qui no s'ha presentat i les baixes justificades.</div>`);
+  const pending=all.filter(o=>!o.attendance?.closed);
+  const closed=all.filter(o=>o.attendance?.closed).slice(0,2);
+  let html=`<div style="margin:12px 14px 4px">${lbl("Assistència pendent")}</div>`;
+  if(pending.length){
+    html+=pending.slice(0,limit).map(o=>renderAttendancePanel(o,{standalone:true})).join("");
+    if(pending.length>limit)html+=cc(`<div style="font-size:12px;color:${MUTED};text-align:center">Hi ha ${pending.length-limit} assistència${pending.length-limit!==1?'s':''} pendent${pending.length-limit!==1?'s':''} més. Obre l'històric de Sortides per revisar-les.</div>`);
+  }else{
+    html+=cc(`<div style="font-size:13px;color:${GREEN};font-weight:700;text-align:center;padding:.6rem 0">✅ No hi ha assistències pendents de tancar</div>`);
+  }
+  if(closed.length){
+    html+=`<div style="margin:14px 14px 4px">${lbl("Últimes assistències tancades")}</div>`+closed.map(o=>renderAttendancePanel(o,{standalone:true})).join("");
+  }
+  return html;
 }
 const BETA_CHECKS=[
   ["Sortides",["Crear sortida","Apuntar soci","Desapuntar soci","Promoció reserva/espera","Afegir soci com a patró","Divendres generals"]],
@@ -487,7 +572,7 @@ function betaCheckKey(group,item){return normalizeNameKey(group+":"+item).replac
 function betaChecklist(){return store.get("ldm:betaChecklist")||{};}
 function setBetaCheck(k,val){const d=betaChecklist();d[k]=val;store.set("ldm:betaChecklist",d);showToast("ok","Checklist actualitzada.");}
 function exportBackup(){
-  const data={exportedAt:nowIso(),version:"fix18",keys:{}};
+  const data={exportedAt:nowIso(),version:"fix19",keys:{}};
   SUPA_KEYS.forEach(k=>data.keys[k]=S[k]);
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);const a=document.createElement("a");
@@ -532,13 +617,6 @@ function unreadAvisosCount(){
   if(!S.memberId)return 0;
   return S.avisos.filter(a=>a.kind==="personal"&&!a.read&&canSeeAvis(a)).length;
 }
-function markAvisRead(id){const a=S.avisos.find(x=>x.id===id);if(a&&a.kind==="personal"&&canSeeAvis(a)){a.read=true;save("avisos");render();}}
-function markAllAvisRead(){
-  let changed=false;
-  S.avisos.forEach(a=>{if(a.kind==="personal"&&!a.read&&canSeeAvis(a)){a.read=true;changed=true;}});
-  if(changed)save("avisos");
-  render();
-}
 function todayStr(){return isoDate(new Date());}
 function outingStartDateTime(o){
   const [y,mo,d]=String(o?.date||"").split("-").map(Number);
@@ -580,9 +658,6 @@ function visibleOutings(){
   reconcileAllOutingWaitlists();
   return S.outings.filter(canSeeOuting);
 }
-function occupancyPct(o){return o.capacity?Math.round((safeArr(o.signups).length/o.capacity)*100):0;}
-
-
 // ── Login ─────────────────────────────────────────────────────────────────────
 function renderLogin(){
   const logo=`<div style="text-align:center;margin-bottom:1.5rem"><div style="display:inline-flex;align-items:center;justify-content:center;background:#fff;border-radius:50%;width:80px;height:80px;margin-bottom:12px;border:3px solid ${RED}">${emblema}</div><div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:.04em">LLOP DE MAR</div><div style="color:rgba(255,255,255,.5);font-size:11px;margin-top:3px;text-transform:uppercase;letter-spacing:.1em">Club de Rem · Sant Feliu de Guíxols</div></div>`;
@@ -754,22 +829,6 @@ function rejectPending(id){if(S.role!=="patron")return;if(!confirm("Rebutjar la 
 function resetMemberPin(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m&&confirm("Reset de clau de "+m.name+"?\nHaurà de crear una nova clau al proper accés.")){m.pin=null;save("membres");render();}}
 function toggleIsCap(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m){m.isCap=!m.isCap;save("membres");render();}}
 
-function fetchMeteo(){
-  const meteoUrl="https://api.open-meteo.com/v1/forecast?latitude=41.7833&longitude=3.0167&current=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code,precipitation&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_sum&timezone=Europe%2FMadrid&forecast_days=7";
-  const marineUrl="https://marine-api.open-meteo.com/v1/marine?latitude=41.7833&longitude=3.0167&hourly=wave_height,wave_direction,wave_period,wind_wave_height,wind_wave_direction,swell_wave_height,swell_wave_direction,swell_wave_period&timezone=Europe%2FMadrid&forecast_days=7&cell_selection=sea";
-  S.meteoLoading=true;S.marineLoading=true;
-  Promise.allSettled([
-    fetch(meteoUrl).then(r=>{if(!r.ok)throw new Error("meteo");return r.json();}),
-    fetch(marineUrl).then(r=>{if(!r.ok)throw new Error("marine");return r.json();})
-  ]).then(([meteo,marine])=>{
-    if(meteo.status==="fulfilled")S.meteo=meteo.value;
-    if(marine.status==="fulfilled")S.marine=marine.value;
-    S.meteoLoading=false;S.marineLoading=false;
-    if(!S.selectedMeteoDate&&S.meteo?.daily?.time?.length)S.selectedMeteoDate=firstRegularOutingDate(S.meteo.daily.time);
-    render();
-  }).catch(()=>{S.meteoLoading=false;S.marineLoading=false;render();});
-}
-
 // ── Helpers de UI ─────────────────────────────────────────────────────────────
 function num(v,d=1){return Number.isFinite(Number(v))?Number(v).toFixed(d).replace(".0",""):"—";}
 function firstVal(...vals){for(const v of vals){if(v!==undefined&&v!==null&&!Number.isNaN(Number(v)))return v;}return null;}
@@ -789,10 +848,6 @@ function meteoHourlyIndex(data,date,time){
     if(diff<bestDiff){best=i;bestDiff=diff;}
   });
   return best;
-}
-function meteoSlotLabel(time){
-  const pairs=Object.entries(GROUP_TIMES||{}).map(([gid,t])=>({gid:Number(gid),time:t,name:gname(Number(gid)).split(" · ")[0]}));
-  return pairs.filter(x=>x.time===time).map(x=>x.name).join(" / ")||"Sortida";
 }
 function seaStateLabel(h){
   const v=Number(h);
@@ -934,20 +989,6 @@ function eventsByDate(){
   return out;
 }
 function selectedDayEvents(date=S.selectedCalDate){return allCalendarEvents().filter(e=>e.date===date);}
-function nextCalendarEvents(limit=4){return allCalendarEvents().filter(e=>(e.date||"")>=todayStr()).slice(0,limit);}
-function ensureAgendaSelectedDate(){
-  const current=S.selectedCalDate||td();
-  const hasCurrent=selectedDayEvents(current).length>0;
-  if(hasCurrent)return current;
-  const next=nextCalendarEvents(1)[0];
-  if(next&&(!S.selectedCalDate||S.selectedCalDate===td())){
-    S.selectedCalDate=next.date;
-    S.calMonth=Number(String(next.date).slice(5,7))-1;
-    S.calYear=Number(String(next.date).slice(0,4));
-    return next.date;
-  }
-  return current;
-}
 function eventTypeOptions(selected="altres"){
   return Object.entries(EVENT_TYPES).map(([k,c])=>`<option value="${k}" ${k===selected?"selected":""}>${c.ico} ${c.label}</option>`).join("");
 }
@@ -1021,25 +1062,6 @@ function renderClubAgenda(){
     selectedBlock=cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:.6rem 0">Clica un dia amb punt de color per veure'n el detall.</div>`);
   }
   return renderClubCalendar()+addBtn+form+selectedBlock;
-}
-
-function renderCalendar(){
-  const y=S.calYear,mo=S.calMonth,dim=new Date(y,mo+1,0).getDate();
-  let sdow=new Date(y,mo,1).getDay();sdow=sdow===0?6:sdow-1;
-  const sessDates=new Set(S.sessions.map(s=>s.date)),tod=td();
-  const hdr=["Dl","Dt","Dc","Dj","Dv","Ds","Dg"].map(d=>`<div style="font-size:10px;color:${MUTED};text-align:center;padding:3px 0">${d}</div>`).join("");
-  let cells="";for(let i=0;i<sdow;i++)cells+=`<div></div>`;
-  for(let d=1;d<=dim;d++){
-    const dt=new Date(y,mo,d),dow=dt.getDay(),isWC=dow===1||dow===3||dow===5;
-    const ds=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-    const hasSess=sessDates.has(ds),isToday=ds===tod,isPast=ds<tod;
-    let bg="transparent",col=isPast?"#c5c0b8":"#1a1a18",fw=400,brd="none";
-    if(isWC){bg=hasSess?DARK:(isPast?"#dde5f5":"#e8edf8");col=hasSess?"#fff":(isPast?MUTED:DARK);fw=600;}
-    if(isToday)brd=`2px solid ${RED}`;
-    cells+=`<div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:8px;background:${bg};color:${col};font-size:12px;font-weight:${fw};border:${brd}">${d}</div>`;
-  }
-  const prev=mo===0?{m:11,y:y-1}:{m:mo-1,y:y},next=mo===11?{m:0,y:y+1}:{m:mo+1,y:y};
-  return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><button onclick="go({calMonth:${prev.m},calYear:${prev.y}})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">‹</button><div style="font-size:14px;font-weight:600;color:#1a1a18">${MONTHS[mo]} ${y}</div><button onclick="go({calMonth:${next.m},calYear:${next.y}})" style="background:none;border:none;color:${MUTED};font-size:22px;cursor:pointer;padding:0 8px">›</button></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">${hdr}${cells}</div><div style="display:flex;gap:12px;margin-top:10px;padding-top:10px;border-top:.5px solid #f0ede6"><div style="display:flex;align-items:center;gap:4px"><div style="width:10px;height:10px;border-radius:3px;background:#e8edf8"></div><span style="font-size:10px;color:${MUTED}">Entreno Dl/Dc/Dv</span></div><div style="display:flex;align-items:center;gap:4px"><div style="width:10px;height:10px;border-radius:3px;background:${DARK}"></div><span style="font-size:10px;color:${MUTED}">Registrat</span></div></div>`);
 }
 
 function renderOutingCard(o){
@@ -1387,7 +1409,7 @@ function renderEntrena(){
   const all=visibleOutings().sort(sortOutings);
   const properes=all.filter(o=>!isPastOuting(o));
   const passades=all.filter(o=>isPastOuting(o)).sort((a,b)=>sortOutings(b,a));
-  const form=S.showForm&&canCreate?cc(`${lbl("Nova sortida")}<input id="o-title" placeholder="Títol *" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px"><div style="display:flex;gap:8px;margin-bottom:8px"><input id="o-date" type="date" value="${td()}" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"><input id="o-time" type="time" value="09:00" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"></div><select id="o-group" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;margin-bottom:8px">${S.groups.map(g=>`<option value="${g.id}">${g.name}</option>`).join("")}</select><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:13px;color:${MUTED}">Places:</span><input id="o-cap" type="number" value="8" min="1" max="12" style="width:70px;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"></div><div style="display:flex;gap:8px"><button onclick="addOut()" style="flex:1;padding:10px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:14px;cursor:pointer">Crear</button><button onclick="go({showForm:false})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
+  const form=S.showForm&&canCreate?cc(`${lbl("Nova sortida")}<input id="o-title" placeholder="Títol, ex. Sortida oberta" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px"><div style="display:flex;gap:8px;margin-bottom:8px"><input id="o-date" type="date" value="${td()}" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"><input id="o-time" type="time" value="09:00" style="flex:1;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"></div><select id="o-group" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;margin-bottom:8px"><option value="0">Oberta a tots els grups</option>${S.groups.map(g=>`<option value="${g.id}">${g.name}</option>`).join("")}</select><div style="font-size:11px;color:${MUTED};line-height:1.4;margin:-2px 0 8px">Si tries “Oberta a tots els grups”, la sortida no queda reservada a cap grup concret.</div><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:13px;color:${MUTED}">Places:</span><input id="o-cap" type="number" value="12" min="1" max="20" style="width:70px;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none"></div><div style="display:flex;gap:8px"><button onclick="addOut()" style="flex:1;padding:10px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:14px;cursor:pointer">Crear</button><button onclick="go({showForm:false})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`):"";
   const createBtn=canCreate&&!S.showForm?`<div style="margin:12px 14px 0"><button onclick="go({showForm:true})" style="width:100%;padding:11px;background:${DARK};border:none;border-radius:10px;color:#fff;font-weight:600;font-size:14px;cursor:pointer">+ Nova sortida</button></div>`:"";
   const properesBlock=properes.length?properes.map(o=>renderOutingCard(o)).join(""):cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Cap sortida programada</div>`);
   const histBtn=passades.length?`<div style="margin:12px 14px 0"><button onclick="go({showOutingHistory:${!S.showOutingHistory},outingHistoryPage:0})" style="width:100%;padding:10px;background:${S.showOutingHistory?"#fff":"#f5f3ee"};border:.5px solid ${BORDER};border-radius:10px;color:${DARK};font-weight:600;font-size:13px;cursor:pointer">${S.showOutingHistory?"Amagar històric":"Veure històric"} · ${passades.length}</button></div>`:"";
@@ -1470,6 +1492,7 @@ function renderEstadistiques(){
   });
   let html=strow([[scope.length,"sortides"],[future.length,"properes"],[past.length,"històric"]]);
   html+=strow([[signups,"apuntats"],[waits,"espera"],[confirmed,"assistència real"]]);
+  if(S.role==="patron"||S.role==="cap")html+=renderAttendanceManager(5);
   html+=cc(`${lbl("Criteri de dades")}<div style="font-size:13px;color:#1a1a18;line-height:1.55"><strong>Apuntat no vol dir assistència.</strong> Les estadístiques fiables es basen en sortides amb <strong>assistència tancada</strong>. Ara hi ha ${closed} sortida${closed!==1?"s":""} tancada${closed!==1?"s":""}.</div>`);
   html+=strow([[closed,"tancades"],[absent,"no presentats"],[excused,"baixa/justificat"]]);
   if(S.role==="soci"){
@@ -1914,70 +1937,6 @@ async function patronRemovePerson(oid,listName,idx=null,mid="",nameArg=""){
   });
 }
 
-async function patronRemoveWaitMember(oid,idx,mid=null,nameArg=""){
-  if(S.role!=="patron")return;
-  const lock=`patron-remove-wait:${oid}:${mid||idx}:${nameArg||""}`;
-  return withActionLock(lock,async()=>{
-    await refreshOutingsBeforeAction();
-    const o=S.outings.find(x=>String(x.id)===String(oid));
-    if(!o)return alert("No s'ha trobat aquesta sortida. Actualitza i torna-ho a provar.");
-    if(isPastOuting(o))return alert("Aquesta sortida ja és passada.");
-    normalizeOutingEntries(o);
-    const before=safeArr(o.waitlist).length;
-    const same=s=>(mid&&Number(s.mid)===Number(mid))||(nameArg&&String(s.name||"")===String(nameArg));
-    let removed=null;
-    if(mid||nameArg){
-      removed=safeArr(o.waitlist).find(same)||null;
-      o.waitlist=safeArr(o.waitlist).filter(s=>!same(s));
-    }
-    // Si per algun motiu no hi havia mid/nom o la coincidència falla, fem servir la posició visible.
-    if(o.waitlist.length===before && Number.isInteger(Number(idx)) && o.waitlist[Number(idx)]){
-      removed=o.waitlist[Number(idx)];
-      o.waitlist.splice(Number(idx),1);
-    }
-    if(o.waitlist.length!==before){
-      const name=removed?.name||nameArg||"un soci";
-      addOutingLog(o,"waitlist_leave_patron",`El patró treu ${name} de la llista d'espera de ${outingLabel(o)}.`);
-      await saveMany(["outings","avisos"]);
-    }else{
-      alert("No s'ha trobat aquest soci a la llista d'espera. Actualitza i torna-ho a provar.");
-    }
-  });
-}
-
-async function patronRemoveMember(oid,mid,fromHelm=false,fromWait=false,nameArg=""){
-  if(S.role!=="patron")return;
-  const lock=`patron-remove:${oid}:${mid}:${fromHelm?"helm":(fromWait?"wait":"row")}`;
-  return withActionLock(lock,async()=>{
-    await refreshOutingsBeforeAction();
-    const o=S.outings.find(x=>String(x.id)===String(oid));
-    if(!o)return alert("No s'ha trobat aquesta sortida. Actualitza i torna-ho a provar.");
-    if(isPastOuting(o))return alert("Aquesta sortida ja és passada.");
-    normalizeOutingEntries(o);
-    const m=mid?S.membres.find(x=>Number(x.id)===Number(mid)):null;
-    const name=m?.name||nameArg||mid;
-    const same=s=>(mid&&Number(s.mid)===Number(mid))||(nameArg&&String(s.name||"")===String(nameArg))||(m?.name&&String(s.name||"")===String(m.name));
-    if(fromHelm){
-      const before=safeArr(o.helmsmanSignups).length;
-      o.helmsmanSignups=safeArr(o.helmsmanSignups).filter(s=>!same(s));
-      if(o.helmsmanSignups.length!==before)addOutingLog(o,"helm_unsignup_patron",`El patró desapunta ${name||"un timoner"} de timoner a ${outingLabel(o)}.`);
-    }else if(fromWait){
-      const before=safeArr(o.waitlist).length;
-      o.waitlist=safeArr(o.waitlist).filter(s=>!same(s));
-      if(o.waitlist.length!==before)addOutingLog(o,"waitlist_leave_patron",`El patró treu ${name||"un soci"} de la llista d'espera de ${outingLabel(o)}.`);
-    }else{
-      const before=safeArr(o.signups).length;
-      o.signups=safeArr(o.signups).filter(s=>!same(s));
-      if(o.signups.length!==before){
-        addOutingLog(o,"unsignup_patron",`El patró desapunta ${name||mid} de ${outingLabel(o)}.`);
-        // Promou de la llista d'espera si cal: primer el grup; la resta només si ja és oberta.
-        reconcileOutingWaitlist(o);
-      }
-    }
-    await saveMany(["outings","avisos"]);
-    render();
-  });
-}
 async function openOut(oid){
   if(!canWriteNow())return;
   const lock=`open:${oid}`;
@@ -2034,15 +1993,17 @@ function delOut(oid){
 function addOut(){
   if(S.role!=="patron")return;
   if(!canWriteNow())return;
-  const t=document.getElementById("o-title")?.value?.trim();if(!t)return;
   const d=document.getElementById("o-date")?.value||td();
   const tm=document.getElementById("o-time")?.value||"09:00";
-  const gid=parseInt(document.getElementById("o-group")?.value||S.groups[0]?.id);
-  const cap=parseInt(document.getElementById("o-cap")?.value)||8;
-  const o={id:Date.now(),groupId:gid,title:t,date:d,time:tm,capacity:cap,isOpen:false,signups:[],waitlist:[]};
+  const gid=parseInt(document.getElementById("o-group")?.value??"0");
+  const isOpenAll=Number(gid)===0;
+  let t=document.getElementById("o-title")?.value?.trim();
+  if(!t)t=isOpenAll?"Sortida oberta":(gname(gid).split(" · ")[0]||"Sortida");
+  const cap=parseInt(document.getElementById("o-cap")?.value)||(isOpenAll?12:8);
+  const o={id:Date.now(),groupId:isOpenAll?0:gid,openAllGroups:isOpenAll,title:t,date:d,time:tm,capacity:cap,isOpen:isOpenAll,openedAt:isOpenAll?nowIso():null,reserve:0,helmsmen:0,helmsmanRequired:false,helmsmanSignups:[],signups:[],waitlist:[]};
   S.outings.push(o);
-  addOutingLog(o,"outing_created",`El patró crea ${outingLabel(o)}.`);
-  save("outings");save("avisos");showToast("ok","Sortida creada.");go({showForm:false});
+  addOutingLog(o,"outing_created",`El patró crea ${outingLabel(o)}${isOpenAll?" oberta a tots els grups":""}.`);
+  save("outings");save("avisos");showToast("ok",isOpenAll?"Sortida oberta creada.":"Sortida creada.");go({showForm:false});
 }
 function addSess(){if(!(S.role==="patron"||(S.role==="cap"&&S.userSections.includes("competicio"))))return;const t=document.getElementById("f-type")?.value||"";if(!t)return;S.sessions.unshift({id:Date.now(),type:t,date:document.getElementById("f-date")?.value||"",duration:parseInt(document.getElementById("f-dur")?.value)||0,km:parseFloat(document.getElementById("f-km")?.value)||0,section:"competicio",note:""});save("sessions");go({showForm:false});}
 function delSess(id){S.sessions=S.sessions.filter(s=>s.id!==id);save("sessions");render();}
@@ -2270,7 +2231,6 @@ function hasPriorityGroupWaitlist(o){
   return safeArr(o?.waitlist).some(w=>waitEntryHasGroupPriority(w,o));
 }
 // Compatibilitat amb codi anterior: ara "llista del grup" vol dir només la prioritària.
-function hasGroupWaitlist(o){return hasPriorityGroupWaitlist(o);}
 function hasOpenGeneralSpots(o){
   // Hi ha plaça directa per a gent del general només si no hi ha espera prioritària del grup.
   return normalRowerCount(o)<outingCapacity(o)&&!hasPriorityGroupWaitlist(o);
@@ -2321,10 +2281,6 @@ function normalRowerCount(o){
 function reserveRowerCount(o){
   return safeArr(o?.signups).filter(s=>!!s.isReserve).length;
 }
-function hasReserveModel(o){
-  return outingReserve(o)>0;
-}
-
 // Manté les marques de reserva coherents amb l'ordre de la llista.
 // En sortides amb reserva: primer van les places normals i després la reserva.
 // Si un vogador normal marxa, el primer reserva passa automàticament a plaça normal.
@@ -2392,22 +2348,6 @@ function promoteWaitlistEntry(o,entry,asReserve=false){
 }
 
 // Llista d'espera amb prioritat de grup. Si groupOnly=true, només puja gent del grup de la sortida.
-function promoteFromWaitlist(o,groupOnly=false,asReserve=false){
-  if(!o.waitlist||!o.waitlist.length)return false;
-  const cap=outingCapacity(o);
-  const reserve=outingReserve(o);
-  normalizeReserveSlots(o);
-  if(asReserve){
-    if(reserve<=0||safeArr(o.signups).length>=cap+reserve)return false;
-  }else{
-    if(normalRowerCount(o)>=cap)return false;
-  }
-  // Per cobrir una plaça de reserva, si algú ja és a la llista d'espera,
-  // pot pujar a reserva encara que la sortida no estigui oberta a tothom.
-  const promoted=nextWaitlistCandidate(o,groupOnly,asReserve?true:(!groupOnly&&openTriggerReached(o)));
-  return promoteWaitlistEntry(o,promoted,asReserve);
-}
-
 function reconcileOutingWaitlist(o){
   if(!o||isPastOuting(o))return false;
   let changed=normalizeOutingEntries(o);
@@ -2469,22 +2409,6 @@ function parseLocalDate(ds){
   const [y,m,d]=(ds||"").split("-").map(Number);
   return y&&m&&d?new Date(y,m-1,d,12,0,0,0):null;
 }
-function nextWeekRegularDates(now){
-  const ref=dateAtLocalNoon(now);
-  const dow=ref.getDay();
-  let daysToMon=(8-dow)%7;
-  if(daysToMon===0)daysToMon=7;
-  const mon=new Date(ref); mon.setDate(ref.getDate()+daysToMon);
-  const wed=new Date(mon); wed.setDate(mon.getDate()+2);
-  const fri=new Date(mon); fri.setDate(mon.getDate()+4);
-  return {mon,wed,fri,monStr:isoDate(mon),wedStr:isoDate(wed),friStr:isoDate(fri)};
-}
-function nextWeekMonWed(now){
-  // Compatibilitat amb codi antic: ara també calculem divendres amb nextWeekRegularDates().
-  const {mon,wed,monStr,wedStr}=nextWeekRegularDates(now);
-  return {mon,wed,monStr,wedStr};
-}
-
 function ensureAutoOutingFields(o,cfg){
   let changed=false;
   if(!Array.isArray(o.signups)){o.signups=[];changed=true;}
@@ -2617,7 +2541,7 @@ function generateAutoOutingsForWeekCycle(now=new Date()){
         id:base+(counter++),
         groupId:0,
         openAllGroups:true,
-        title:`Sortida oberta · Dv ${time}`,
+        title:"Sortida oberta",
         date:week.friStr,time,
         capacity:FRIDAY_GENERAL_CONFIG.capacity,
         reserve:FRIDAY_GENERAL_CONFIG.reserve,
@@ -2630,18 +2554,13 @@ function generateAutoOutingsForWeekCycle(now=new Date()){
     }else if(existing.isAuto||isGeneralOuting(existing)){
       existing.groupId=0;
       existing.openAllGroups=true;
-      existing.title=existing.title||`Sortida oberta · Dv ${time}`;
+      existing.title=existing.title||"Sortida oberta";
       if(ensureAutoOutingFields(existing,FRIDAY_GENERAL_CONFIG))changed=true;
     }
   });
 
   store.set("ldm:lastAutoGen",isoDate(now));
   return {changed,generated,week};
-}
-
-function generateAutoOutingsForHorizon(now=new Date(),horizonDays=7){
-  // Compatibilitat amb versions anteriors: ara el sistema és setmanal, no de dies mòbils.
-  return generateAutoOutingsForWeekCycle(now);
 }
 
 function generateAutoOutingsForNextWeek(now=new Date()){

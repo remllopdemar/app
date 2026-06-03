@@ -113,6 +113,7 @@ let S={
   membreSections:["social"],
   newPos:1,calMonth:new Date().getMonth(),calYear:new Date().getFullYear(),
   pollQ:"",pollOpts:["",""],pollErr:"",
+  toast:null,
   meteo:null,marine:null,meteoLoading:true,marineLoading:true,selectedMeteoDate:null,meteoHoursOpen:false,
   supaLoading:true,supaSyncing:false,lastSyncAt:null,syncErr:"",actionBusy:null,
   patronAddOuting:null,
@@ -136,11 +137,49 @@ function normalizeSections(secs){
   return out.length?out:["social"];
 }
 
+function normalizeNameKey(v){return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();}
+function isNachoMember(m){return normalizeNameKey(m?.name)==="nacho garcia";}
+function currentMember(){return S.memberId?S.membres.find(m=>Number(m.id)===Number(S.memberId)):null;}
+function memberCanViewStats(m){return !!(m?.canViewStats||m?.isWebmaster||isNachoMember(m));}
+function memberIsWebmaster(m){return !!(m?.isWebmaster||isNachoMember(m));}
+function userCanViewStats(){return S.role==="patron"||S.role==="cap"||memberCanViewStats(currentMember());}
+function userIsWebmaster(){return S.role==="patron"||memberIsWebmaster(currentMember());}
+function readOnlyMode(){return !!S.syncErr;}
+function showToast(type,text){
+  S.toast={type:type||"info",text:String(text||""),ts:Date.now()};
+  render();
+  const ts=S.toast.ts;
+  setTimeout(()=>{if(S.toast?.ts===ts){S.toast=null;render();}},3200);
+}
+function canWriteNow(msg=true){
+  if(readOnlyMode()){
+    if(msg)showToast("error","Sense connexió: estàs veient dades guardades. No es poden fer canvis fins que torni la sincronització.");
+    return false;
+  }
+  return true;
+}
+function renderToast(){
+  if(!S.toast?.text)return "";
+  const isErr=S.toast.type==="error",isOk=S.toast.type==="ok";
+  const bg=isErr?"#fff0f0":isOk?"#e6f4ee":"#eef0fa";
+  const col=isErr?RED:isOk?GREEN:DARK;
+  const ico=isErr?"⚠️":isOk?"✅":"ℹ️";
+  return `<div style="position:fixed;left:50%;transform:translateX(-50%);bottom:76px;z-index:300;width:calc(100% - 28px);max-width:452px;background:${bg};border:1px solid ${col};border-radius:12px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,.16);display:flex;align-items:flex-start;gap:8px"><span>${ico}</span><div style="font-size:13px;color:${col};line-height:1.35;font-weight:650">${esc(S.toast.text)}</div></div>`;
+}
+function renderReadOnlyBanner(){
+  if(!readOnlyMode()||!S.role)return "";
+  return `<div style="margin:8px 14px 0;background:#fff0f0;border:.5px solid ${RED};border-radius:10px;padding:9px 11px;font-size:12px;color:${RED};line-height:1.35"><strong>Mode només lectura.</strong> Estàs veient dades guardades. Les accions es bloquegen fins que torni la sincronització.</div>`;
+}
+
 function normalizeAllMemberSections(){
   let changed=false;
   S.membres.forEach(m=>{
     const norm=normalizeSections(m.sections);
     if(JSON.stringify(m.sections||[])!==JSON.stringify(norm)){m.sections=norm;changed=true;}
+    if(isNachoMember(m)){
+      if(!m.canViewStats){m.canViewStats=true;changed=true;}
+      if(!m.isWebmaster){m.isWebmaster=true;changed=true;}
+    }
   });
   const me=S.memberId?S.membres.find(m=>m.id===S.memberId):null;
   if(me){S.userSections=normalizeSections(me.sections);}
@@ -388,6 +427,77 @@ function addOutingLog(o,type,text,extra={}){
 function addPersonalAviso(o,entry,type,title,message){
   const m=memberFromEntry(entry)||{};
   pushAviso({kind:"personal",type,outingId:o.id,groupId:o.groupId,toMemberId:m.id||entry.mid||null,toName:entry.name,toGid:entry.gid,title,text:message,message,read:false});
+}
+
+function outingLogs(o){return safeArr(S.avisos).filter(a=>a.kind==="log"&&String(a.outingId)===String(o.id)).sort((a,b)=>(b.createdAt||b.date||"").localeCompare(a.createdAt||a.date||""));}
+function renderOutingLogs(o){
+  const can=S.role==="patron"||(S.role==="cap"&&Number(S.capGroupId)===Number(o.groupId));
+  if(!can)return "";
+  const logs=outingLogs(o).slice(0,10);
+  return `<details style="border-top:.5px solid #f5f3ee;background:#fbfaf6"><summary style="list-style:none;cursor:pointer;padding:10px 14px;display:flex;justify-content:space-between;gap:10px;align-items:center"><div><div style="font-size:12px;font-weight:700;color:${DARK}">Historial de canvis</div><div style="font-size:11px;color:${MUTED}">${logs.length?logs.length+" últims moviments":"Sense moviments registrats"}</div></div><div style="font-size:18px;color:${MUTED}">▾</div></summary><div style="padding:0 14px 12px">${logs.length?logs.map(l=>`<div style="padding:8px 0;border-top:.5px solid #f0ede6"><div style="font-size:12px;color:#1a1a18;line-height:1.35">${esc(l.text||"")}</div><div style="font-size:10px;color:${MUTED};margin-top:3px">${esc(l.byName||l.byRole||"")} · ${esc((l.createdAt||l.date||"").slice(0,16).replace("T"," "))}</div></div>`).join(""):`<div style="font-size:12px;color:${MUTED};font-style:italic">Encara no hi ha historial.</div>`}</div></details>`;
+}
+function attendanceKey(e){const m=memberFromEntry(e);return (e?.mid||m?.id)?`id:${e.mid||m.id}`:`name:${String(e?.name||"").trim().toLowerCase()}`;}
+function attendancePeople(o){
+  const seen=new Set(),out=[];
+  safeArr(o.signups).forEach(e=>{const k=attendanceKey(e);if(!seen.has(k)){seen.add(k);out.push({...e,attRole:e.isReserve?"Reserva":"Vogador",attKey:k});}});
+  safeArr(o.helmsmanSignups).forEach(e=>{const k=attendanceKey(e);if(!seen.has(k)){seen.add(k);out.push({...e,attRole:"Timoner",attKey:k});}});
+  return out;
+}
+function ensureAttendance(o){
+  if(!o.attendance)o.attendance={closed:false,status:{},updatedAt:null,closedAt:null,by:null};
+  if(!o.attendance.status)o.attendance.status={};
+  return o.attendance;
+}
+function attendanceStatusLabel(st){return st==="absent"?"No presentat":st==="excused"?"Baixa / justificat":"Ha vingut";}
+function renderAttendancePanel(o){
+  const can=(S.role==="patron"||(S.role==="cap"&&Number(S.capGroupId)===Number(o.groupId)))&&isPastOuting(o);
+  if(!can)return "";
+  const people=attendancePeople(o),att=ensureAttendance(o);
+  if(!people.length)return "";
+  const rows=people.map(p=>{
+    const st=att.status[p.attKey]||"present";
+    const btn=(val,label)=>`<button onclick="markAttendance(${o.id},${jsArg(p.attKey)},'${val}')" style="padding:5px 7px;border-radius:7px;border:.5px solid ${st===val?DARK:BORDER};background:${st===val?DARK:'#fff'};color:${st===val?'#fff':MUTED};font-size:10px;font-weight:700;cursor:pointer">${label}</button>`;
+    return `<div style="padding:8px 0;border-top:.5px solid #f0ede6"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><div style="font-size:13px;font-weight:650;color:#1a1a18">${esc(p.name)}</div><div style="font-size:10px;color:${MUTED}">${esc(p.attRole)} · ${esc(gname(p.gid||memberFromEntry(p)?.groupId).split(" · ")[0]||"")}</div></div><div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">${btn("present","Ha vingut")}${btn("absent","No")}${btn("excused","Baixa")}</div></div></div>`;
+  }).join("");
+  return `<details style="border-top:.5px solid #f5f3ee;background:#f8fbf8"><summary style="list-style:none;cursor:pointer;padding:10px 14px;display:flex;justify-content:space-between;gap:10px;align-items:center"><div><div style="font-size:12px;font-weight:700;color:${GREEN}">Confirmar assistència</div><div style="font-size:11px;color:${MUTED}">${att.closed?`Tancada · ${esc(att.closedAt||"").slice(0,10)}`:"Pendent de tancar"}</div></div><div style="font-size:18px;color:${MUTED}">▾</div></summary><div style="padding:0 14px 12px"><div style="font-size:11px;color:${MUTED};line-height:1.4;margin:2px 0 8px">Per defecte comptem tothom com a “Ha vingut”. Canvia només absències o baixes abans de tancar.</div>${rows}<button onclick="closeAttendance(${o.id})" style="margin-top:10px;width:100%;padding:9px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:800;cursor:pointer">${att.closed?"Actualitzar assistència":"Tancar assistència"}</button></div></details>`;
+}
+function markAttendance(oid,key,status){
+  if(!canWriteNow())return;
+  const o=S.outings.find(x=>String(x.id)===String(oid));if(!o)return;
+  const att=ensureAttendance(o);att.status[key]=status;att.updatedAt=nowIso();
+  save("outings");showToast("ok",`Assistència marcada: ${attendanceStatusLabel(status)}.`);
+}
+function closeAttendance(oid){
+  if(!canWriteNow())return;
+  const o=S.outings.find(x=>String(x.id)===String(oid));if(!o)return;
+  const att=ensureAttendance(o);attendancePeople(o).forEach(p=>{if(!att.status[p.attKey])att.status[p.attKey]="present";});
+  att.closed=true;att.closedAt=nowIso();att.by=actorLabel();
+  addOutingLog(o,"attendance_closed",`${actorLabel()} tanca l'assistència de ${outingLabel(o)}.`);
+  saveMany(["outings","avisos"]);showToast("ok","Assistència tancada correctament.");
+}
+const BETA_CHECKS=[
+  ["Sortides",["Crear sortida","Apuntar soci","Desapuntar soci","Promoció reserva/espera","Afegir soci com a patró","Divendres generals"]],
+  ["Avisos",["Crear avís general","Crear avís de grup","Editar avís"]],
+  ["Enquestes",["Crear enquesta","Votar","Tancar i reobrir"]],
+  ["Calendari",["Crear esdeveniment","Editar esdeveniment","Dia il·luminat"]],
+  ["Permisos",["Login patró","Login soci","Login cap","Nacho: Estadístiques","Nacho: Admin tècnic"]],
+  ["Sincronització",["Realtime","Dos mòbils alhora","Mode només lectura"]]
+];
+function betaCheckKey(group,item){return normalizeNameKey(group+":"+item).replace(/[^a-z0-9]+/g,"-");}
+function betaChecklist(){return store.get("ldm:betaChecklist")||{};}
+function setBetaCheck(k,val){const d=betaChecklist();d[k]=val;store.set("ldm:betaChecklist",d);showToast("ok","Checklist actualitzada.");}
+function exportBackup(){
+  const data={exportedAt:nowIso(),version:"fix18",keys:{}};
+  SUPA_KEYS.forEach(k=>data.keys[k]=S[k]);
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);const a=document.createElement("a");
+  a.href=url;a.download=`llop-de-mar-backup-${td()}.json`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  showToast("ok","Còpia de seguretat exportada.");
+}
+async function copyDiagnostics(){
+  const info={time:nowIso(),sync:syncAgeLabel(),syncErr:S.syncErr||null,role:S.role,member:S.userName||null,membres:S.membres.length,outings:S.outings.length,avisos:S.avisos.length,polls:S.polls.length,events:S.events.length,userAgent:navigator.userAgent};
+  try{await navigator.clipboard.writeText(JSON.stringify(info,null,2));showToast("ok","Diagnòstic copiat.");}
+  catch{showToast("error","No s'ha pogut copiar el diagnòstic.");}
 }
 function avisoAudience(a){return a.audience||a.scope||"general";}
 function audienceLabel(a){
@@ -958,7 +1068,15 @@ function renderOutingCard(o){
   const amIn=o.signups.some(entryMatchesCurrent);
   const amWait=o.waitlist.some(entryMatchesCurrent);
   const canAccess=isGeneral?publicWaitlistOpen:(isMyGroup||isOpen||publicWaitlistOpen);
+  const writeBlocked=readOnlyMode();
   const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
+  const mySignup=o.signups.find(entryMatchesCurrent);
+  const myWaitIdx=o.waitlist.findIndex(entryMatchesCurrent);
+  const myStatus=amHelm?"Estàs apuntat com a timoner":mySignup?.isReserve?"Estàs en reserva":amIn?"Estàs apuntat com a vogador":amWait?`Estàs en llista d'espera · posició ${myWaitIdx+1}`:"No estàs apuntat";
+  const myStatusBg=amHelm||amIn?"#e6f4ee":amWait?"#fff8ee":"#f5f3ee";
+  const myStatusCol=amHelm||amIn?GREEN:amWait?"#b07a10":MUTED;
+  const myStatusIcon=amHelm?"⛵":amIn?"✅":amWait?"⏳":"ℹ️";
+  const personalStatus=(S.role==="soci"||S.role==="cap")?`<div style="font-size:12px;color:${myStatusCol};background:${myStatusBg};border-radius:9px;padding:7px 9px;margin-top:8px;font-weight:750;line-height:1.3">${myStatusIcon} ${myStatus}</div>`:"";
 
   // Estat clar: abans de l'obertura queda reservada; quan arriba l'hora, s'obre al general
   // encara que no hi hagi places lliures, permetent apuntar-se a la llista d'espera.
@@ -1047,7 +1165,7 @@ function renderOutingCard(o){
   // Botons d'acció
   const acts=[];
   const busy=!!S.actionBusy;
-  if((S.role==="soci"||S.role==="cap")&&!isPast){
+  if((S.role==="soci"||S.role==="cap")&&!isPast&&!writeBlocked){
     const canJoinHelm=maxHelm>0&&!amHelm&&!amIn&&!amWait&&canAccess&&o.helmsmanSignups.length<maxHelm;
     const canJoinRow=!amIn&&!amWait&&!amHelm&&canAccess;
     const myEntry={name:S.userName,gid:S.userGroupId,mid:S.memberId,ts:nowIso()};
@@ -1067,14 +1185,16 @@ function renderOutingCard(o){
     if(cantAccess)
       acts.push(`<div style="flex:1;padding:9px;background:#f8f8f8;border-radius:8px;color:${MUTED};font-size:12px;text-align:center">${isGeneral?`S'obrirà a tots ${formatNaturalOpenLabel(o)}`:`Reservada al ${shortGroup(o.groupId)} fins a l'obertura general`}</div>`);
   }
-  if((isMyCap||isPatron)&&!isPast&&!openTrigger&&!o.isOpen)
+  if((isMyCap||isPatron)&&!isPast&&!openTrigger&&!o.isOpen&&!writeBlocked)
     acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir</button>`);
-  if(isPatron&&!isPast&&o.isOpen&&!autoOpenReached(o))
+  if(isPatron&&!isPast&&o.isOpen&&!autoOpenReached(o)&&!writeBlocked)
     acts.push(`<button onclick="closeOut(${o.id})" style="padding:9px 12px;background:#fff;border:.5px solid ${RED};border-radius:8px;color:${RED};font-size:12px;font-weight:700;cursor:pointer">🔒 Tancar a tots</button>`);
-  if(isPatron&&!isPast)
+  if(isPatron&&!isPast&&!writeBlocked)
     acts.push(`<button onclick="go({patronAddOuting:${o.id}})" style="padding:9px 12px;background:#fff;border:.5px solid ${DARK};border-radius:8px;color:${DARK};font-size:12px;font-weight:600;cursor:pointer">+ Afegir soci</button>`);
-  if(isPatron)
+  if(isPatron&&!writeBlocked)
     acts.push(`<button onclick="delOut(${o.id})" style="padding:9px 10px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;cursor:pointer">🗑</button>`);
+
+  if(writeBlocked&&!isPast)acts.push(`<div style="flex:1;padding:9px;background:#fff0f0;border:.5px solid ${RED};border-radius:8px;color:${RED};font-size:12px;text-align:center;font-weight:650">Mode només lectura</div>`);
 
   // Modal d'afegir soci (patró)
   const patronAddChoice=(S.patronAddChoice&&S.patronAddChoice[o.id])||{};
@@ -1108,6 +1228,7 @@ function renderOutingCard(o){
         <div style="font-size:15px;font-weight:750;color:#1a1a18;line-height:1.2;min-width:0">${esc(outingDisplayTitle(o))} · ${esc(o.time)} h</div>${badge}
       </div>
       <div style="font-size:12px;color:${MUTED}">📅 ${dateStr}${isPast?` · <span style="background:#f5f3ee;color:${MUTED};font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">Sortida passada</span>`:""}</div>
+      ${personalStatus}
       ${openInfo}
       <div style="margin-top:10px">
         <div style="display:flex;justify-content:space-between;margin-bottom:4px">
@@ -1118,7 +1239,7 @@ function renderOutingCard(o){
       </div>
       ${compactStats}
     </div>
-    ${peopleDropdown}${addMemberModal}
+    ${peopleDropdown}${renderAttendancePanel(o)}${renderOutingLogs(o)}${addMemberModal}
     ${acts.length?`<div style="padding:10px 14px;display:flex;gap:8px;flex-wrap:wrap">${acts.join("")}</div>`:""}
   </div>`;
 }
@@ -1327,38 +1448,62 @@ function renderAvisos(){
 }
 
 function renderEstadistiques(){
+  if(!userCanViewStats())return cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Accés restringit</div>`);
   const scope=S.role==="patron"?S.outings:S.role==="cap"?S.outings.filter(o=>o.groupId===S.capGroupId):S.outings.filter(o=>memberIsInOuting(o));
   const past=scope.filter(isPastOuting);
   const future=scope.filter(o=>!isPastOuting(o));
   const signups=scope.reduce((a,o)=>a+safeArr(o.signups).length,0);
   const waits=scope.reduce((a,o)=>a+safeArr(o.waitlist).length,0);
-  const capTotal=scope.reduce((a,o)=>a+(o.capacity||0),0);
-  const occ=capTotal?Math.round((signups/capTotal)*100):0;
-  const mine=S.role==="soci"?scope.filter(o=>safeArr(o.signups).some(s=>s.name===S.userName&&s.gid===S.userGroupId)):[];
+  let confirmed=0,absent=0,excused=0,closed=0;
+  const peopleCount={};
+  past.forEach(o=>{
+    const att=o.attendance;
+    if(att?.closed){
+      closed++;
+      attendancePeople(o).forEach(p=>{
+        const st=att.status?.[p.attKey]||"present";
+        if(st==="present"){confirmed++;peopleCount[p.name]=(peopleCount[p.name]||0)+1;}
+        else if(st==="absent")absent++;
+        else excused++;
+      });
+    }
+  });
   let html=strow([[scope.length,"sortides"],[future.length,"properes"],[past.length,"històric"]]);
-  html+=strow([[signups,"apuntats"],[waits,"espera"],[occ+"%","ocupació"]]);
+  html+=strow([[signups,"apuntats"],[waits,"espera"],[confirmed,"assistència real"]]);
+  html+=cc(`${lbl("Criteri de dades")}<div style="font-size:13px;color:#1a1a18;line-height:1.55"><strong>Apuntat no vol dir assistència.</strong> Les estadístiques fiables es basen en sortides amb <strong>assistència tancada</strong>. Ara hi ha ${closed} sortida${closed!==1?"s":""} tancada${closed!==1?"s":""}.</div>`);
+  html+=strow([[closed,"tancades"],[absent,"no presentats"],[excused,"baixa/justificat"]]);
   if(S.role==="soci"){
-    html+=cc(`${lbl("La meva activitat")}<div style="font-size:14px;color:#1a1a18;line-height:1.6">Has estat apuntat/da a <strong>${mine.length}</strong> sortida${mine.length!==1?"s":""}. ${scope.length-mine.length>0?`Tens <strong>${scope.length-mine.length}</strong> sortida${scope.length-mine.length!==1?"s":""} on has estat o estàs en llista d'espera.`:""}</div>`);
+    const mineConfirmed=past.filter(o=>o.attendance?.closed&&attendancePeople(o).some(p=>entryMatchesCurrent(p)&&(o.attendance.status?.[p.attKey]||"present")==="present")).length;
+    const mineWait=scope.filter(o=>safeArr(o.waitlist).some(entryMatchesCurrent)).length;
+    html+=cc(`${lbl("La meva activitat")}<div style="font-size:14px;color:#1a1a18;line-height:1.6">Assistència confirmada: <strong>${mineConfirmed}</strong>. Sortides on has estat en llista d'espera: <strong>${mineWait}</strong>.</div>`);
   }
   if(S.role==="patron"||S.role==="cap"){
     const groups=(S.role==="patron"?S.groups:S.groups.filter(g=>g.id===S.capGroupId)).map(g=>{
       const os=S.outings.filter(o=>o.groupId===g.id);
       const s=os.reduce((a,o)=>a+safeArr(o.signups).length,0);
-      const c=os.reduce((a,o)=>a+(o.capacity||0),0);
       const w=os.reduce((a,o)=>a+safeArr(o.waitlist).length,0);
-      const avg=c?Math.round((s/c)*100):0;
-      return {g,os,s,c,w,avg};
+      const done=os.filter(o=>o.attendance?.closed).length;
+      return {g,os,s,w,done};
     });
-    const rows=groups.map(x=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:.5px solid #f0ede6"><div><div style="font-size:13px;font-weight:600;color:#1a1a18">${x.g.name}</div><div style="font-size:11px;color:${MUTED}">${x.os.length} sortides · ${x.s}/${x.c||0} places · ${x.w} espera</div></div><div style="font-size:18px;font-weight:700;color:${x.avg>=80?RED:DARK}">${x.avg}%</div></div>`).join("");
-    html+=cc(`${lbl(S.role==="patron"?"Ocupació per grup":"Ocupació del meu grup")}${rows||`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Encara no hi ha dades</div>`}`);
-    const count={};
-    scope.forEach(o=>safeArr(o.signups).forEach(s=>{count[s.name]=(count[s.name]||0)+1;}));
-    const top=Object.entries(count).sort((a,b)=>b[1]-a[1]).slice(0,8);
-    if(top.length){
-      html+=cc(`${lbl("Socis amb més assistència")} ${top.map(([n,c],i)=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:${i<top.length-1?'.5px solid #f0ede6':'none'}"><span style="font-size:13px;color:#1a1a18">${n}</span><strong style="font-size:13px;color:${DARK}">${c}</strong></div>`).join("")}`);
-    }
+    const rows=groups.map(x=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:.5px solid #f0ede6"><div><div style="font-size:13px;font-weight:650;color:#1a1a18">${x.g.name}</div><div style="font-size:11px;color:${MUTED}">${x.os.length} sortides · ${x.s} apuntats · ${x.w} espera · ${x.done} assistències tancades</div></div></div>`).join("");
+    html+=cc(`${lbl(S.role==="patron"?"Resum per grup":"Resum del meu grup")}${rows||`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Encara no hi ha dades</div>`}`);
+    const top=Object.entries(peopleCount).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    if(top.length){html+=cc(`${lbl("Assistència confirmada")} ${top.map(([n,c],i)=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:${i<top.length-1?'.5px solid #f0ede6':'none'}"><span style="font-size:13px;color:#1a1a18">${esc(n)}</span><strong style="font-size:13px;color:${DARK}">${c}</strong></div>`).join("")}`);}
   }
   return html+`<div style="height:14px"></div>`;
+}
+
+
+function renderAdminTecnic(){
+  if(!userIsWebmaster())return cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Accés restringit a Admin tècnic</div>`);
+  const future=S.outings.filter(o=>!isPastOuting(o)).length;
+  const pendingAtt=S.outings.filter(o=>isPastOuting(o)&&attendancePeople(o).length&&!o.attendance?.closed).length;
+  const checks=betaChecklist();
+  const checkHtml=BETA_CHECKS.map(([group,items])=>`<div style="margin-top:10px"><div style="font-size:11px;font-weight:800;color:${DARK};text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">${esc(group)}</div>${items.map(item=>{const k=betaCheckKey(group,item),v=checks[k]||"pending";const bg=v==="ok"?"#e6f4ee":v==="review"?"#fff8ee":"#f5f3ee";const col=v==="ok"?GREEN:v==="review"?"#b07a10":MUTED;const next=v==="pending"?"ok":v==="ok"?"review":"pending";const ico=v==="ok"?"✅":v==="review"?"⚠️":"⬜";return `<button onclick="setBetaCheck('${k}','${next}')" style="width:100%;display:flex;justify-content:space-between;gap:8px;align-items:center;border:.5px solid ${BORDER};background:${bg};border-radius:9px;padding:8px 10px;margin-bottom:5px;cursor:pointer"><span style="font-size:12px;color:#1a1a18;text-align:left">${esc(item)}</span><strong style="font-size:12px;color:${col}">${ico}</strong></button>`;}).join("")}</div>`).join("");
+  return strow([[S.membres.filter(m=>!m.pending).length,"socis"],[future,"sortides futures"],[pendingAtt,"assistències pendents"]])+
+    cc(`${lbl("Estat de l'app")}<div style="font-size:13px;color:#1a1a18;line-height:1.65"><strong>Sincronització:</strong> ${esc(syncAgeLabel())}<br><strong>Error:</strong> ${S.syncErr?esc(S.syncErr):"cap"}<br><strong>Última sync:</strong> ${S.lastSyncAt?esc(S.lastSyncAt.slice(0,19).replace("T"," ")):"pendent"}</div>`)+
+    cc(`${lbl("Eines")}<div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="exportBackup()" style="flex:1;padding:10px;background:${DARK};border:none;border-radius:9px;color:#fff;font-size:13px;font-weight:800;cursor:pointer">Exportar còpia</button><button onclick="copyDiagnostics()" style="flex:1;padding:10px;background:#fff;border:.5px solid ${BORDER};border-radius:9px;color:${DARK};font-size:13px;font-weight:800;cursor:pointer">Copiar diagnòstic</button></div>`)+
+    cc(`${lbl("Checklist beta")}<div style="font-size:12px;color:${MUTED};line-height:1.45;margin-bottom:8px">Toca cada element per alternar: pendent → funciona → revisar.</div>${checkHtml}`)+`<div style="height:14px"></div>`;
 }
 
 function renderMembres(){
@@ -1533,18 +1678,21 @@ function render(){
   if(hasS)nav.push(["entrena","⛵","Sortides","social"]);
   nav.push(["calendari","📅","Calendari",null]);
   nav.push(["vots","📊","Enquestes",null]);
-  nav.push(["estadistiques","📈","Stats",null]);
+  if(userCanViewStats())nav.push(["estadistiques","📈","Stats",null]);
+  if(userIsWebmaster())nav.push(["admin","🛠","Admin",null]);
   if(S.role==="patron")nav.push(["membres","👥","Membres",null]);
   nav.push(["avisos","📢","Avisos",null]);
-  const screens={inici:renderInici,entrena:renderEntrena,resultats:hasC?renderResultats:renderInici,calendari:()=>renderClubAgenda()+`<div style="height:14px"></div>`,vots:renderVots,estadistiques:renderEstadistiques,membres:renderMembres,avisos:renderAvisos};
-  const titles={inici:"Inici",entrena:S.section==="social"?"Sortides":"Entrenaments",resultats:"Resultats",calendari:"Calendari",vots:"Votacions",estadistiques:"Estadístiques",membres:"Membres",avisos:"Avisos"};
+  if(S.screen==="estadistiques"&&!userCanViewStats())S.screen="inici";
+  if(S.screen==="admin"&&!userIsWebmaster())S.screen="inici";
+  const screens={inici:renderInici,entrena:renderEntrena,resultats:hasC?renderResultats:renderInici,calendari:()=>renderClubAgenda()+`<div style="height:14px"></div>`,vots:renderVots,estadistiques:renderEstadistiques,admin:renderAdminTecnic,membres:renderMembres,avisos:renderAvisos};
+  const titles={inici:"Inici",entrena:S.section==="social"?"Sortides":"Entrenaments",resultats:"Resultats",calendari:"Calendari",vots:"Votacions",estadistiques:"Estadístiques",admin:"Admin tècnic",membres:"Membres",avisos:"Avisos"};
   const userLabel=S.role==="patron"?"Patró":(S.userName||"");
   const userSub=S.role==="cap"?`${userLabel} · Cap ${gname(S.capGroupId).split(" · ")[0]}`:userLabel;
   const rb=S.role==="patron"?`<span style="background:${RED};color:#fff;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700">PATRÓ</span>`:S.role==="cap"?`<span style="background:rgba(255,255,255,.15);color:#fff;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">Cap</span>`:myGid?`<span style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.8);font-size:10px;padding:2px 8px;border-radius:20px">${gname(myGid).split(" · ")[0]}</span>`:"";
   const btnC=hasC?`<button onclick="go({section:'competicio',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="competicio"?DARK:"transparent"};color:${S.section==="competicio"?"#fff":MUTED}">🏆 Competició</button>`:"";
   const btnS=hasS?`<button onclick="go({section:'social',showForm:false})" style="flex:1;padding:7px;font-size:13px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="social"?DARK:"transparent"};color:${S.section==="social"?"#fff":MUTED}">⚓ Social</button>`:"";
-  const st=hasBoth&&S.screen!=="inici"&&S.screen!=="vots"&&S.screen!=="estadistiques"&&S.screen!=="membres"&&S.screen!=="avisos"?`<div style="display:flex;margin:12px 14px 0;background:#e2dfd6;border-radius:10px;padding:3px">${btnC}${btnS}</div>`:"";
-  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:11px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${userSub}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}${renderSyncStatus()}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,editAvisId:null,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`:`go({screen:'${k}',showForm:false,showAvisForm:false,editAvisId:null,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`;return`<button onclick="${clk}" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${S.showLogoutConfirm?renderLogoutModal():""}${S.showMemberAdded?renderMemberAddedModal():""}`;
+  const st=hasBoth&&S.screen!=="inici"&&S.screen!=="vots"&&S.screen!=="estadistiques"&&S.screen!=="admin"&&S.screen!=="membres"&&S.screen!=="avisos"?`<div style="display:flex;margin:12px 14px 0;background:#e2dfd6;border-radius:10px;padding:3px">${btnC}${btnS}</div>`:"";
+  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:11px;opacity:.5;letter-spacing:.05em">LLOP DE MAR</div><div style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:11px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${userSub}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:12px;cursor:pointer">Sortir</button></div></div>${st}${renderSyncStatus()}${renderReadOnlyBanner()}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,editAvisId:null,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`:`go({screen:'${k}',showForm:false,showAvisForm:false,editAvisId:null,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`;return`<button onclick="${clk}" style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:9px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:20px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${renderToast()}${S.showLogoutConfirm?renderLogoutModal():""}${S.showMemberAdded?renderMemberAddedModal():""}`;
   }catch(err){
     console.error("❌ Error en render():",err);
     root.innerHTML=`<div style="min-height:100vh;background:linear-gradient(160deg,${DARK} 60%,#122860);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:2rem;text-align:center"><div style="color:#fff;font-size:18px;font-weight:700">Error inesperat</div><div style="color:rgba(255,255,255,.5);font-size:13px">${err.message||"Refresca la pàgina"}</div><button onclick="location.reload()" style="background:${RED};border:none;border-radius:12px;color:#fff;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px">↻ Refresca</button></div>`;
@@ -1560,6 +1708,7 @@ function togEditSec(sec){const s=S.editMemberSections.includes(sec)?S.editMember
 function saveEditMembre(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id&&!x.pending);if(!m)return;const nom=(document.getElementById("edit-nom-"+id)?.value||"").trim();const gid=parseInt(document.getElementById("edit-grup-"+id)?.value)||m.groupId;const sections=normalizeSections(S.editMemberSections);if(!confirm(`Desar canvis per a "${nom||m.name}"?`))return;if(nom)m.name=nom;m.groupId=gid;m.sections=sections;save("membres");go({editMemberId:null,editMemberSections:["social"]});}
 function delMembre(id){if(S.role!=="patron")return;if(!confirm("Eliminar el soci?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
 async function signup(oid,asHelm=false){
+  if(!canWriteNow())return;
   const lock=`signup:${oid}:${S.memberId||"anon"}`;
   return withActionLock(lock,async()=>{
     await refreshOutingsBeforeAction();
@@ -1587,23 +1736,28 @@ async function signup(oid,asHelm=false){
       if(o.helmsmanSignups.length>=maxHelm)return alert("Ja hi ha el màxim de timonels");
       o.helmsmanSignups.push(entry);
       addOutingLog(o,"helm_signup",`${S.userName} s'apunta de timoner a ${outingLabel(o)}.`);
+      showToast("ok","T'has apuntat com a timoner.");
     } else {
       if(canTakeRowerSpot(o,entry)){
         o.signups.push(entry);
         addOutingLog(o,"signup",`${S.userName} s'apunta a ${outingLabel(o)}.`);
+        showToast("ok","T'has apuntat correctament.");
       }else if(canTakeReserveSpot(o,entry)){
         o.signups.push({...entry,isReserve:true});
         addOutingLog(o,"signup_reserve",`${S.userName} ocupa la plaça de reserva de ${outingLabel(o)}.`);
+        showToast("ok","Has entrat com a reserva.");
       }else{
         markWaitlistPriority(entry,o);
         o.waitlist.push(entry);
         addOutingLog(o,"waitlist_join",`${S.userName} entra a la llista d'espera de ${outingLabel(o)}${entry.groupPriority?" amb prioritat de grup":""}.`);
+        showToast("ok","Has entrat a la llista d'espera.");
       }
     }
     await saveMany(["outings","avisos"]);
   });
 }
 async function unsignup(oid){
+  if(!canWriteNow())return;
   const lock=`unsignup:${oid}:${S.memberId||"anon"}`;
   return withActionLock(lock,async()=>{
     await refreshOutingsBeforeAction();
@@ -1625,6 +1779,7 @@ async function unsignup(oid){
     // La resta de la llista només puja si la sortida ja està oberta a tothom.
     if(wasIn){reconcileOutingWaitlist(o);}
     await saveMany(["outings","avisos"]);
+    if(wasHelm||wasIn||wasWait)showToast("ok","T'has desapuntat correctament.");
   });
 }
 function ensurePatronAddChoice(){
@@ -1647,6 +1802,7 @@ function rememberPatronAddForm(oid){
 }
 async function patronAddMember(oid){
   if(S.role!=="patron")return;
+  if(!canWriteNow())return;
   // IMPORTANT: guardem la selecció en estat. En alguns mòbils o amb Realtime,
   // un render pot reconstruir el desplegable entre seleccionar i prémer Afegir.
   // Així evitem falsos avisos de "Selecciona un soci".
@@ -1707,6 +1863,7 @@ async function patronAddMember(oid){
     }
 
     await saveMany(["outings","avisos"]);
+    showToast("ok","Soci afegit a la sortida.");
     if(S.patronAddChoice)delete S.patronAddChoice[oid];
     go({patronAddOuting:null});
   });
@@ -1714,6 +1871,7 @@ async function patronAddMember(oid){
 
 async function patronRemovePerson(oid,listName,idx=null,mid="",nameArg=""){
   if(S.role!=="patron")return;
+  if(!canWriteNow())return;
   const allowed={signups:"signups",helmsmanSignups:"helmsmanSignups",waitlist:"waitlist"};
   const list=allowed[listName];
   if(!list)return alert("No s'ha pogut identificar la llista.");
@@ -1752,6 +1910,7 @@ async function patronRemovePerson(oid,listName,idx=null,mid="",nameArg=""){
       reconcileOutingWaitlist(o);
     }
     await saveMany(["outings","avisos"]);
+    showToast("ok","Soci retirat de la sortida.");
   });
 }
 
@@ -1820,6 +1979,7 @@ async function patronRemoveMember(oid,mid,fromHelm=false,fromWait=false,nameArg=
   });
 }
 async function openOut(oid){
+  if(!canWriteNow())return;
   const lock=`open:${oid}`;
   return withActionLock(lock,async()=>{
     await refreshOutingsBeforeAction();
@@ -1836,6 +1996,7 @@ async function openOut(oid){
       addOutingLog(o,"outing_opened",`${actorLabel()} obre a tothom la inscripció de ${outingLabel(o)}.`);
       reconcileOutingWaitlist(o);
       await saveMany(["outings","avisos"]);
+      showToast("ok","Sortida oberta a tothom.");
     }else if(changed){
       await saveMany(["outings","avisos"]);
     }
@@ -1843,6 +2004,7 @@ async function openOut(oid){
 }
 async function closeOut(oid){
   if(S.role!=="patron")return;
+  if(!canWriteNow())return;
   const lock=`close:${oid}`;
   return withActionLock(lock,async()=>{
     await refreshOutingsBeforeAction();
@@ -1856,11 +2018,13 @@ async function closeOut(oid){
     delete o.openedAt;
     addOutingLog(o,"outing_closed_manual",`El patró tanca a tothom la inscripció de ${outingLabel(o)}. Torna a quedar reservada fins a l'obertura automàtica.`);
     await saveMany(["outings","avisos"]);
+    showToast("ok","Obertura manual tancada.");
   });
 }
 
 function delOut(oid){
   if(S.role!=="patron")return;
+  if(!canWriteNow())return;
   if(!confirm("Cancel·lar la sortida?"))return;
   const o=S.outings.find(x=>x.id===oid);
   if(o)addOutingLog(o,"outing_deleted",`El patró cancel·la ${outingLabel(o)}.`);
@@ -1869,6 +2033,7 @@ function delOut(oid){
 }
 function addOut(){
   if(S.role!=="patron")return;
+  if(!canWriteNow())return;
   const t=document.getElementById("o-title")?.value?.trim();if(!t)return;
   const d=document.getElementById("o-date")?.value||td();
   const tm=document.getElementById("o-time")?.value||"09:00";
@@ -1877,7 +2042,7 @@ function addOut(){
   const o={id:Date.now(),groupId:gid,title:t,date:d,time:tm,capacity:cap,isOpen:false,signups:[],waitlist:[]};
   S.outings.push(o);
   addOutingLog(o,"outing_created",`El patró crea ${outingLabel(o)}.`);
-  save("outings");save("avisos");go({showForm:false});
+  save("outings");save("avisos");showToast("ok","Sortida creada.");go({showForm:false});
 }
 function addSess(){if(!(S.role==="patron"||(S.role==="cap"&&S.userSections.includes("competicio"))))return;const t=document.getElementById("f-type")?.value||"";if(!t)return;S.sessions.unshift({id:Date.now(),type:t,date:document.getElementById("f-date")?.value||"",duration:parseInt(document.getElementById("f-dur")?.value)||0,km:parseFloat(document.getElementById("f-km")?.value)||0,section:"competicio",note:""});save("sessions");go({showForm:false});}
 function delSess(id){S.sessions=S.sessions.filter(s=>s.id!==id);save("sessions");render();}
@@ -1885,6 +2050,7 @@ function addRes(){const r=document.getElementById("r-race")?.value||"";if(!r)ret
 function delRes(id){S.results=S.results.filter(r=>r.id!==id);save("results");render();}
 function createAvis(){
   if(!(S.role==="patron"||S.role==="cap"))return;
+  if(!canWriteNow())return;
   const t=document.getElementById("avis-text")?.value?.trim()||"";
   if(!t)return;
   const pin=document.getElementById("avis-pin")?.checked||false;
@@ -1920,8 +2086,8 @@ function addOpt(){go({pollOpts:[...S.pollOpts,""]});}
 function rmOpt(i){go({pollOpts:S.pollOpts.filter((_,j)=>j!==i)});}
 function togglePollVoters(pid,opt){const key=pollKey(pid,opt);const open=Object.assign({},S.pollVotersOpen||{});open[key]=!open[key];go({pollVotersOpen:open});}
 function togglePollVotersByIndex(pid,idx){const p=S.polls.find(x=>x.id===pid);const opt=p?.options?.[idx];if(opt==null)return;togglePollVoters(pid,opt);}
-function createPoll(){const q=document.getElementById("poll-q")?.value?.trim()||"";if(!q)return;const opts=S.pollOpts.map((_,i)=>document.getElementById(`opt-${i}`)?.value?.trim()||"").filter(Boolean);if(opts.length<2)return;const votes={};opts.forEach(o=>votes[o]=[]);S.polls.unshift({id:Date.now(),question:q,options:opts,votes,closed:false,date:td()});save("polls");go({showForm:false,pollQ:"",pollOpts:["",""],pollErr:""});}
-function castVote(pid,opt,name){const p=S.polls.find(x=>x.id===pid);name=name||S.userName;if(!p||p.closed||!name)return;p.votes=p.votes||{};(p.options||[]).forEach(o=>{if(!Array.isArray(p.votes[o]))p.votes[o]=[];p.votes[o]=p.votes[o].filter(n=>n!==name);});if(!p.votes[opt])p.votes[opt]=[];if(!p.votes[opt].includes(name))p.votes[opt].push(name);save("polls");render();}
+function createPoll(){if(!canWriteNow())return;const q=document.getElementById("poll-q")?.value?.trim()||"";if(!q)return;const opts=S.pollOpts.map((_,i)=>document.getElementById(`opt-${i}`)?.value?.trim()||"").filter(Boolean);if(opts.length<2)return;const votes={};opts.forEach(o=>votes[o]=[]);S.polls.unshift({id:Date.now(),question:q,options:opts,votes,closed:false,date:td()});save("polls");go({showForm:false,pollQ:"",pollOpts:["",""],pollErr:""});}
+function castVote(pid,opt,name){if(!canWriteNow())return;const p=S.polls.find(x=>x.id===pid);name=name||S.userName;if(!p||p.closed||!name)return;p.votes=p.votes||{};(p.options||[]).forEach(o=>{if(!Array.isArray(p.votes[o]))p.votes[o]=[];p.votes[o]=p.votes[o].filter(n=>n!==name);});if(!p.votes[opt])p.votes[opt]=[];if(!p.votes[opt].includes(name))p.votes[opt].push(name);save("polls");render();}
 function castVoteByIndex(pid,idx){const p=S.polls.find(x=>x.id===pid);const opt=p?.options?.[idx];if(opt==null)return;castVote(pid,opt,S.userName);}
 function closePoll(pid){const p=S.polls.find(x=>x.id===pid);if(p){p.closed=true;save("polls");render();}}
 function reopenPoll(pid){const p=S.polls.find(x=>x.id===pid);if(p){p.closed=false;save("polls");render();}}

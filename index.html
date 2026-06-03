@@ -1552,8 +1552,26 @@ function attendanceStatsForOutings(outings){
   out.attPct=(out.present+out.absent)>0?Math.round(out.present/(out.present+out.absent)*100):null;
   return out;
 }
-function personalOutings(){return S.outings.filter(o=>memberIsInOuting(o));}
-function myGroupOutings(){return S.userGroupId?S.outings.filter(o=>Number(o.groupId)===Number(S.userGroupId)):[];}
+function attendanceStatsForMember(m){
+  const out={present:0,absent:0,excused:0,closed:0,pending:0,people:{}};
+  if(!m)return {...out,attPct:null};
+  const targetKey=attendanceKey({mid:m.id,name:m.name,gid:m.groupId});
+  const targetName=String(m.name||"").trim().toLowerCase();
+  safeArr(S.outings).filter(isPastOuting).forEach(o=>{
+    const person=attendancePeople(o).find(p=>p.attKey===targetKey||String(p.name||"").trim().toLowerCase()===targetName);
+    if(!person)return;
+    if(!o.attendance?.closed){out.pending++;return;}
+    out.closed++;
+    const st=o.attendance.status?.[person.attKey]||"present";
+    if(st==="absent")out.absent++;
+    else if(st==="excused")out.excused++;
+    else {out.present++;out.people[m.name]=(out.people[m.name]||0)+1;}
+  });
+  out.attPct=(out.present+out.absent)>0?Math.round(out.present/(out.present+out.absent)*100):null;
+  return out;
+}
+function groupOutings(gid){return gid?S.outings.filter(o=>Number(o.groupId)===Number(gid)):[];}
+function myGroupOutings(){return groupOutings(S.userGroupId);}
 function generalOutings(){return S.outings.filter(isGeneralOuting);}
 function statsCard(title,stats,subtitle="",personal=false){
   const pct=stats.attPct===null?"—":stats.attPct+"%";
@@ -1584,8 +1602,9 @@ function renderGroupStatsList(){
 function renderEstadistiques(){
   if(!userCanViewStats())return cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Accés restringit</div>`);
   const me=currentMember();
-  const personal=attendanceStatsForOutings(personalOutings());
-  const group=attendanceStatsForOutings(myGroupOutings());
+  const personal=attendanceStatsForMember(me);
+  const statsGroupId=S.role==="cap"?S.capGroupId:S.userGroupId;
+  const group=attendanceStatsForOutings(groupOutings(statsGroupId));
   const general=attendanceStatsForOutings(generalOutings());
   const club=attendanceStatsForOutings(S.outings);
   let html="";
@@ -1598,12 +1617,12 @@ function renderEstadistiques(){
     html+=statsCard("El meu grup",group,`Agregat del ${esc(gname(S.capGroupId))}.`);
     html+=statsCard("Total club",club,"Agregat de totes les sortides del club: de grup i obertes.");
   }else if(memberIsGeneralCap(me)){
-    html+=statsCard("Sortides obertes",general,"Agregat de les sortides obertes a tots els grups.");
+    html+=statsCard("Sortides obertes",general,"Agregat de totes les sortides obertes del club.");
     html+=statsCard("Les meves dades",personal,"Les teves assistències personals confirmades.",true);
   }else if(memberCanViewStats(me)){
     html+=statsCard("Les meves dades",personal,"Les teves assistències personals confirmades.",true);
     html+=statsCard("El meu grup",group,`Agregat del ${esc(gname(S.userGroupId))}.`);
-    html+=statsCard("Sortides obertes",general,"Agregat de sortides obertes a tots els grups.");
+    html+=statsCard("Total club",club,"Agregat de totes les sortides del club: de grup i obertes.");
   }else{
     html+=statsCard("Les meves dades",personal,"Les teves assistències personals confirmades.",true);
   }

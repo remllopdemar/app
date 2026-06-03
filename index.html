@@ -1591,27 +1591,36 @@ function renderEstadistiques(){
   let html="";
 
   if(S.role==="patron"){
-    html+=statsCard("Resum del club",club,"Totes les sortides amb assistència confirmada.");
+    html+=statsCard("Total club",club,"Agregat de totes les sortides: de grup i obertes.");
     html+=renderGroupStatsList();
-    html+=statsCard("Sortides generals",general,"Sortides obertes a tots els grups.");
   }else if(S.role==="cap"){
-    html+=statsCard("El meu grup",group,`Agregat del ${esc(gname(S.capGroupId))}.`);
     html+=statsCard("Les meves dades",personal,"Les teves assistències personals confirmades.",true);
-    html+=statsCard("Sortides generals",general,"Agregat de sortides obertes a tots els grups.");
+    html+=statsCard("El meu grup",group,`Agregat del ${esc(gname(S.capGroupId))}.`);
+    html+=statsCard("Total club",club,"Agregat de totes les sortides del club: de grup i obertes.");
   }else if(memberIsGeneralCap(me)){
-    html+=statsCard("Sortides generals",general,"Agregat de les sortides obertes a tots els grups.");
+    html+=statsCard("Sortides obertes",general,"Agregat de les sortides obertes a tots els grups.");
     html+=statsCard("Les meves dades",personal,"Les teves assistències personals confirmades.",true);
   }else if(memberCanViewStats(me)){
     html+=statsCard("Les meves dades",personal,"Les teves assistències personals confirmades.",true);
     html+=statsCard("El meu grup",group,`Agregat del ${esc(gname(S.userGroupId))}.`);
-    html+=statsCard("Sortides generals",general,"Agregat de sortides obertes a tots els grups.");
+    html+=statsCard("Sortides obertes",general,"Agregat de sortides obertes a tots els grups.");
   }else{
     html+=statsCard("Les meves dades",personal,"Les teves assistències personals confirmades.",true);
   }
 
   if(S.role==="cap"||memberIsGeneralCap(me))html+=renderAttendanceManager(5);
   html+=clubParticipationRanking(10);
-  html+=cc(`${lbl("Com llegir aquestes dades")}<div style="font-size:13px;color:#1a1a18;line-height:1.6"><strong>Apuntar-se no compta com haver remat.</strong><br>Les estadístiques només compten assistències tancades pels caps corresponents. El rànquing de participació només compta <strong>Han remat</strong>, no les inscripcions. El percentatge és <strong>Han remat / (Han remat + No presentats)</strong>; les baixes justificades es mostren a part.</div>`);
+  html+=`<details style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
+    <summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <div><div style="font-size:12px;font-weight:800;color:${DARK};text-transform:uppercase;letter-spacing:.04em">Com llegir aquestes dades</div><div style="font-size:11px;color:${MUTED};margin-top:2px">Criteris de càlcul i assistència</div></div>
+      <div style="font-size:18px;color:${MUTED};line-height:1">▾</div>
+    </summary>
+    <div style="padding:0 14px 13px;font-size:12px;color:#1a1a18;line-height:1.55">
+      <strong>Apuntar-se no compta com haver remat.</strong><br>
+      <strong>Total club</strong> és l'agregat de totes les sortides: les de grup i les obertes. <strong>Sortides obertes</strong> són només les sortides obertes a tots els grups, com els divendres o les creades manualment com a obertes.<br>
+      Les estadístiques només compten assistències tancades pels caps corresponents. El rànquing de participació només compta <strong>Han remat</strong>, no les inscripcions. El percentatge és <strong>Han remat / (Han remat + No presentats)</strong>; les baixes justificades es mostren a part.
+    </div>
+  </details>`;
   return html+`<div style="height:14px"></div>`;
 }
 

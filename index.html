@@ -141,7 +141,9 @@ function isNachoMember(m){return normalizeNameKey(m?.name)==="nacho garcia";}
 function currentMember(){return S.memberId?S.membres.find(m=>Number(m.id)===Number(S.memberId)):null;}
 function memberCanViewStats(m){return !!(m?.canViewStats||m?.isWebmaster||isNachoMember(m));}
 function memberIsWebmaster(m){return !!(m?.isWebmaster||isNachoMember(m));}
-function userCanViewStats(){return S.role==="patron"||S.role==="cap"||memberCanViewStats(currentMember());}
+function memberIsGeneralCap(m){return !!(m?.isGeneralCap||m?.isCapGenerals);}
+function userIsGeneralCap(){return memberIsGeneralCap(currentMember());}
+function userCanViewStats(){return !!S.role;}
 function userIsWebmaster(){return S.role==="patron"||memberIsWebmaster(currentMember());}
 function readOnlyMode(){return !!S.syncErr;}
 function showToast(type,text){
@@ -286,6 +288,13 @@ async function withActionLock(key,fn){
 // Clics delegats: evita problemes d'onclick inline en alguns mòbils/previews
 // i fa més fiable que el patró pugui treure vogadors, timonels i llista d'espera.
 document.addEventListener("click",e=>{
+  const att=e.target.closest("[data-action='attendance-mark']");
+  if(att){
+    e.preventDefault();
+    e.stopPropagation();
+    markAttendance(att.dataset.oid,att.dataset.key,att.dataset.status);
+    return;
+  }
   const btn=e.target.closest("[data-action='patron-remove-person']");
   if(!btn)return;
   e.preventDefault();
@@ -454,8 +463,13 @@ function ensureAttendance(o){
   if(!o.attendance.status)o.attendance.status={};
   return o.attendance;
 }
-function canManageAttendance(o){return (S.role==="patron"||(S.role==="cap"&&Number(S.capGroupId)===Number(o.groupId)))&&isPastOuting(o)&&attendancePeople(o).length>0;}
-function attendanceStatusLabel(st){return st==="absent"?"No presentat":st==="excused"?"Baixa / justificat":"Ha vingut";}
+function canManageAttendance(o){
+  const me=currentMember();
+  const canGroup=S.role==="cap"&&Number(S.capGroupId)===Number(o.groupId);
+  const canGeneral=memberIsGeneralCap(me)&&isGeneralOuting(o);
+  return (canGroup||canGeneral)&&isPastOuting(o)&&attendancePeople(o).length>0;
+}
+function attendanceStatusLabel(st){return st==="absent"?"No presentat":st==="excused"?"Baixa / justificat":"Ha remat";}
 function attendanceStatusStyle(st){
   if(st==="absent")return {bg:"#fff0f0",col:RED,ico:"❌"};
   if(st==="excused")return {bg:"#fff8ee",col:"#b07a10",ico:"➖"};
@@ -509,26 +523,29 @@ function renderAttendancePanel(o,opts={}){
   const rows=people.map(p=>{
     const st=att.status[p.attKey]||"present";
     const ss=attendanceStatusStyle(st);
-    const btn=(val,label)=>`<button onclick="markAttendance(${o.id},${jsArg(p.attKey)},'${val}')" style="padding:6px 8px;border-radius:8px;border:.5px solid ${st===val?attendanceStatusStyle(val).col:BORDER};background:${st===val?attendanceStatusStyle(val).bg:'#fff'};color:${st===val?attendanceStatusStyle(val).col:MUTED};font-size:10px;font-weight:800;cursor:pointer;white-space:nowrap">${label}</button>`;
-    return `<div style="padding:9px 0;border-top:.5px solid #f0ede6">
-      <div style="display:flex;justify-content:space-between;gap:9px;align-items:flex-start">
+    const btn=(val,label,ico)=>{
+      const bs=attendanceStatusStyle(val),active=st===val;
+      return `<button type="button" data-action="attendance-mark" data-oid="${esc(o.id)}" data-key="${esc(p.attKey)}" data-status="${val}" style="flex:1;min-width:78px;padding:8px 7px;border-radius:9px;border:1px solid ${active?bs.col:BORDER};background:${active?bs.bg:'#fff'};color:${active?bs.col:'#1a1a18'};font-size:11px;font-weight:850;cursor:pointer;white-space:nowrap;text-align:center">${ico} ${label}</button>`;
+    };
+    return `<div style="padding:10px 0;border-top:.5px solid #f0ede6">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:7px">
         <div style="min-width:0;flex:1">
-          <div style="font-size:13px;font-weight:700;color:#1a1a18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</div>
+          <div style="font-size:13px;font-weight:750;color:#1a1a18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</div>
           <div style="font-size:10px;color:${MUTED};margin-top:2px">${esc(p.attRole)} · ${esc(gname(p.gid||memberFromEntry(p)?.groupId).split(" · ")[0]||"")}</div>
-          <div style="display:inline-flex;align-items:center;gap:4px;background:${ss.bg};color:${ss.col};border-radius:99px;padding:2px 7px;font-size:10px;font-weight:800;margin-top:5px">${ss.ico} ${attendanceStatusLabel(st)}</div>
         </div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:160px">${btn("present","Ha vingut")}${btn("absent","No")}${btn("excused","Baixa")}</div>
+        <div style="display:inline-flex;align-items:center;gap:4px;background:${ss.bg};color:${ss.col};border-radius:99px;padding:3px 8px;font-size:10px;font-weight:850;white-space:nowrap">${ss.ico} ${attendanceStatusLabel(st)}</div>
       </div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">${btn("present","Ha remat","✅")}${btn("absent","No presentat","❌")}${btn("excused","Baixa","➖")}</div>
     </div>`;
   }).join("");
   const controls=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px">
-    <button onclick="setAllAttendance(${o.id},'present')" style="flex:1;padding:8px;background:#fff;border:.5px solid ${GREEN};border-radius:8px;color:${GREEN};font-size:11px;font-weight:800;cursor:pointer">Tots han vingut</button>
+    <button onclick="setAllAttendance(${o.id},'present')" style="flex:1;padding:8px;background:#fff;border:.5px solid ${GREEN};border-radius:8px;color:${GREEN};font-size:11px;font-weight:800;cursor:pointer">Tots han remat</button>
     <button onclick="setAllAttendance(${o.id},'absent')" style="flex:1;padding:8px;background:#fff;border:.5px solid ${RED};border-radius:8px;color:${RED};font-size:11px;font-weight:800;cursor:pointer">Tots no</button>
   </div>`;
   const closeBtn=att.closed
     ?`<div style="display:flex;gap:8px;margin-top:10px"><button onclick="closeAttendance(${o.id})" style="flex:1;padding:9px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:850;cursor:pointer">Actualitzar assistència</button><button onclick="reopenAttendance(${o.id})" style="padding:9px 11px;background:#fff;border:.5px solid ${BORDER};border-radius:8px;color:${DARK};font-size:12px;font-weight:800;cursor:pointer">Reobrir</button></div>`
     :`<button onclick="closeAttendance(${o.id})" style="margin-top:10px;width:100%;padding:10px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:850;cursor:pointer">Tancar assistència</button>`;
-  const body=`<div style="font-size:11px;color:${MUTED};line-height:1.45;margin:2px 0 8px">Marca l'assistència real després de la sortida. Per defecte compta com a “Ha vingut”; canvia només absències o baixes justificades.</div>${controls}<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 8px"><span style="background:#e6f4ee;color:${GREEN};border-radius:99px;padding:4px 8px;font-size:10px;font-weight:850">✅ ${counts.present}</span><span style="background:#fff0f0;color:${RED};border-radius:99px;padding:4px 8px;font-size:10px;font-weight:850">❌ ${counts.absent}</span><span style="background:#fff8ee;color:#b07a10;border-radius:99px;padding:4px 8px;font-size:10px;font-weight:850">➖ ${counts.excused}</span></div>${rows}${closeBtn}`;
+  const body=`<div style="font-size:11px;color:${MUTED};line-height:1.45;margin:2px 0 8px">Marca l'assistència real després de la sortida. Per defecte compta com a “Ha remat”; canvia només no presentats o baixes justificades.</div>${controls}<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 8px"><span style="background:#e6f4ee;color:${GREEN};border-radius:99px;padding:4px 8px;font-size:10px;font-weight:850">✅ ${counts.present}</span><span style="background:#fff0f0;color:${RED};border-radius:99px;padding:4px 8px;font-size:10px;font-weight:850">❌ ${counts.absent}</span><span style="background:#fff8ee;color:#b07a10;border-radius:99px;padding:4px 8px;font-size:10px;font-weight:850">➖ ${counts.excused}</span></div>${rows}${closeBtn}`;
   if(standalone){
     return `<div style="background:#fff;border:.5px solid ${att.closed?BORDER:GREEN};border-radius:14px;margin:10px 14px 0;overflow:hidden">
       <div style="padding:11px 14px;background:${att.closed?'#fbfaf6':'#f8fbf8'};border-bottom:.5px solid #f0ede6;display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
@@ -539,13 +556,36 @@ function renderAttendancePanel(o,opts={}){
   }
   return `<details${openAttr} style="border-top:.5px solid #f5f3ee;background:#f8fbf8"><summary style="list-style:none;cursor:pointer;padding:10px 14px;display:flex;justify-content:space-between;gap:10px;align-items:center"><div><div style="font-size:12px;font-weight:700;color:${GREEN}">${esc(title)}</div><div style="font-size:11px;color:${MUTED}">${summary}</div></div><div style="font-size:18px;color:${MUTED}">▾</div></summary><div style="padding:0 14px 12px">${body}</div></details>`;
 }
+function renderClosedAttendanceSummary(o){
+  if(!canManageAttendance(o))return "";
+  const att=ensureAttendance(o),counts=attendanceCounts(o);
+  if(!att.closed)return renderAttendancePanel(o,{standalone:true});
+  const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
+  const absentNames=attendancePeople(o).filter(p=>(att.status?.[p.attKey]||"present")==="absent").map(p=>p.name);
+  const excusedNames=attendancePeople(o).filter(p=>(att.status?.[p.attKey]||"present")==="excused").map(p=>p.name);
+  const detailRows=`${absentNames.length?`<div style="font-size:12px;color:${RED};line-height:1.45;margin-top:8px"><strong>No presentats:</strong> ${absentNames.map(esc).join(", ")}</div>`:""}${excusedNames.length?`<div style="font-size:12px;color:#b07a10;line-height:1.45;margin-top:5px"><strong>Baixa / justificat:</strong> ${excusedNames.map(esc).join(", ")}</div>`:""}`||`<div style="font-size:12px;color:${MUTED};line-height:1.45;margin-top:8px">Tothom consta com a assistència confirmada.</div>`;
+  return `<details style="background:#fff;border:.5px solid ${BORDER};border-radius:14px;margin:10px 14px 0;overflow:hidden">
+    <summary style="list-style:none;cursor:pointer;padding:11px 14px;display:flex;justify-content:space-between;gap:10px;align-items:center;background:#fbfaf6">
+      <div style="min-width:0;flex:1">
+        <div style="font-size:14px;font-weight:800;color:#1a1a18;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(outingDisplayTitle(o))} · ${esc(o.time||"")} h</div>
+        <div style="font-size:11px;color:${MUTED};margin-top:3px">📅 ${dateStr} · Assistència tancada</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"><span style="background:#e6f4ee;color:${GREEN};border-radius:99px;padding:3px 8px;font-size:10px;font-weight:850">✅ ${counts.present}</span><span style="background:#fff0f0;color:${RED};border-radius:99px;padding:3px 8px;font-size:10px;font-weight:850">❌ ${counts.absent}</span><span style="background:#fff8ee;color:#b07a10;border-radius:99px;padding:3px 8px;font-size:10px;font-weight:850">➖ ${counts.excused}</span></div>
+      </div>
+      <div style="font-size:18px;color:${MUTED};line-height:1">▾</div>
+    </summary>
+    <div style="padding:0 14px 12px;border-top:.5px solid #f0ede6">
+      ${detailRows}
+      <div style="display:flex;gap:8px;margin-top:10px"><button onclick="reopenAttendance(${o.id})" style="flex:1;padding:8px;background:#fff;border:.5px solid ${BORDER};border-radius:8px;color:${DARK};font-size:12px;font-weight:800;cursor:pointer">Reobrir / editar assistència</button></div>
+    </div>
+  </details>`;
+}
 function manageableAttendanceOutings(){
   return S.outings.filter(o=>canManageAttendance(o)).sort((a,b)=>sortOutings(b,a));
 }
 function renderAttendanceManager(limit=4){
-  if(!(S.role==="patron"||S.role==="cap"))return "";
+  if(!(S.role==="cap"||userIsGeneralCap()))return "";
   const all=manageableAttendanceOutings();
-  if(!all.length)return cc(`${lbl("Assistència real")}<div style="font-size:13px;color:${MUTED};line-height:1.45">Quan hi hagi sortides passades amb apuntats, aquí podràs marcar qui ha vingut, qui no s'ha presentat i les baixes justificades.</div>`);
+  if(!all.length)return cc(`${lbl("Assistència real")}<div style="font-size:13px;color:${MUTED};line-height:1.45">Quan hi hagi sortides passades amb apuntats, aquí podràs marcar qui ha remat, qui no s'ha presentat i les baixes justificades.</div>`);
   const pending=all.filter(o=>!o.attendance?.closed);
   const closed=all.filter(o=>o.attendance?.closed).slice(0,2);
   let html=`<div style="margin:12px 14px 4px">${lbl("Assistència pendent")}</div>`;
@@ -556,7 +596,7 @@ function renderAttendanceManager(limit=4){
     html+=cc(`<div style="font-size:13px;color:${GREEN};font-weight:700;text-align:center;padding:.6rem 0">✅ No hi ha assistències pendents de tancar</div>`);
   }
   if(closed.length){
-    html+=`<div style="margin:14px 14px 4px">${lbl("Últimes assistències tancades")}</div>`+closed.map(o=>renderAttendancePanel(o,{standalone:true})).join("");
+    html+=`<div style="margin:14px 14px 4px">${lbl("Últimes assistències tancades")}</div>`+closed.map(o=>renderClosedAttendanceSummary(o)).join("");
   }
   return html;
 }
@@ -572,7 +612,7 @@ function betaCheckKey(group,item){return normalizeNameKey(group+":"+item).replac
 function betaChecklist(){return store.get("ldm:betaChecklist")||{};}
 function setBetaCheck(k,val){const d=betaChecklist();d[k]=val;store.set("ldm:betaChecklist",d);showToast("ok","Checklist actualitzada.");}
 function exportBackup(){
-  const data={exportedAt:nowIso(),version:"fix19",keys:{}};
+  const data={exportedAt:nowIso(),version:"fix28",keys:{}};
   SUPA_KEYS.forEach(k=>data.keys[k]=S[k]);
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);const a=document.createElement("a");
@@ -828,6 +868,7 @@ function approvePending(id){if(S.role!=="patron")return;const m=S.membres.find(x
 function rejectPending(id){if(S.role!=="patron")return;if(!confirm("Rebutjar la sol·licitud?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
 function resetMemberPin(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m&&confirm("Reset de clau de "+m.name+"?\nHaurà de crear una nova clau al proper accés.")){m.pin=null;save("membres");render();}}
 function toggleIsCap(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m){m.isCap=!m.isCap;save("membres");render();}}
+function toggleIsGeneralCap(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id);if(m){m.isGeneralCap=!memberIsGeneralCap(m);delete m.isCapGenerals;save("membres");render();}}
 
 // ── Helpers de UI ─────────────────────────────────────────────────────────────
 function num(v,d=1){return Number.isFinite(Number(v))?Number(v).toFixed(d).replace(".0",""):"—";}
@@ -1244,6 +1285,29 @@ function renderOutingCard(o){
     </div>
   </div>`:"";
 
+  const compactClosed=!isPast&&!openTrigger&&!o.isOpen&&!isMyGroup&&!amIn&&!amWait&&!amHelm;
+  if(compactClosed){
+    const closedHint=isGeneral
+      ?`S'obrirà ${formatNaturalOpenLabel(o)}`
+      :`Reservada al ${shortGroup(o.groupId)} fins a ${formatNaturalOpenLabel(o)}`;
+    const detailsOpen=S.patronAddOuting===o.id?" open":"";
+    return`<details${detailsOpen} style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
+      <summary style="list-style:none;cursor:pointer;padding:11px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;background:#fffdf8">
+        <div style="min-width:0">
+          <div style="font-size:14px;font-weight:750;color:#1a1a18;line-height:1.2">${esc(outingDisplayTitle(o))} · ${esc(o.time)} h</div>
+          <div style="font-size:11px;color:${MUTED};line-height:1.35;margin-top:3px">📅 ${dateStr} · ${closedHint}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0">${badge}<span style="font-size:10px;color:${MUTED};font-weight:800">Detalls ▾</span></div>
+      </summary>
+      <div style="border-top:.5px solid #f5f3ee;padding:10px 14px 0">
+        ${openInfo}
+        ${compactStats}
+      </div>
+      ${peopleDropdown}${renderOutingLogs(o)}${addMemberModal}
+      ${acts.length?`<div style="padding:10px 14px;display:flex;gap:8px;flex-wrap:wrap">${acts.join("")}</div>`:""}
+    </details>`;
+  }
+
   return`<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
     <div style="padding:12px 14px;border-bottom:.5px solid #f5f3ee">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;gap:10px">
@@ -1375,7 +1439,9 @@ function renderHomeOutingMini(o){
     ${maxHelm>0?`<span style="display:inline-flex;align-items:center;gap:4px;background:#eef6ee;border-radius:999px;font-size:11px;padding:4px 8px;color:#4a7a3d;font-weight:700">⛵ ${o.helmsmanSignups.length}/${maxHelm}</span>`:""}
     <span style="display:inline-flex;align-items:center;gap:4px;background:#fff8ee;border-radius:999px;font-size:11px;padding:4px 8px;color:#b07a10;font-weight:700">⏳ ${o.waitlist.length}</span>
   </div>`;
-  return `<div style="border:.5px solid ${BORDER};border-radius:14px;overflow:hidden;margin-bottom:9px;background:#fff"><div style="padding:11px 12px;border-bottom:.5px solid #f0ede6;display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div style="min-width:0"><div style="font-size:14px;font-weight:750;color:#1a1a18;line-height:1.25">${esc(outingDisplayTitle(o))} · ${esc(o.time||"")} h</div><div style="font-size:11px;color:${MUTED};line-height:1.35;margin-top:3px">📅 ${dateStr}</div></div><span style="font-size:10px;font-weight:800;border-radius:99px;padding:3px 8px;white-space:nowrap;background:${statusBg};color:${statusCol}">${status}</span></div>${stats}<div style="padding:0 10px 9px;font-size:10px;color:${MUTED};font-weight:700;text-align:right">Noms només a Sortides › Veure apuntats</div></div>`;
+  const closedCompact=!open&&!o.isOpen&&!memberIsInOuting(o);
+  const closedHint=isGeneralOuting(o)?`S'obrirà ${formatNaturalOpenLabel(o)}`:`Reservada fins a ${formatNaturalOpenLabel(o)}`;
+  return `<div style="border:.5px solid ${BORDER};border-radius:14px;overflow:hidden;margin-bottom:9px;background:#fff"><div style="padding:11px 12px;border-bottom:${closedCompact?"none":".5px solid #f0ede6"};display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div style="min-width:0"><div style="font-size:14px;font-weight:750;color:#1a1a18;line-height:1.25">${esc(outingDisplayTitle(o))} · ${esc(o.time||"")} h</div><div style="font-size:11px;color:${MUTED};line-height:1.35;margin-top:3px">📅 ${dateStr}${closedCompact?` · ${closedHint}`:""}</div></div><span style="font-size:10px;font-weight:800;border-radius:99px;padding:3px 8px;white-space:nowrap;background:${statusBg};color:${statusCol}">${status}</span></div>${closedCompact?"":stats+`<div style="padding:0 10px 9px;font-size:10px;color:${MUTED};font-weight:700;text-align:right">Noms només a Sortides › Veure apuntats</div>`}</div>`;
 }
 function renderHomeSortides(){
   const list=visibleOutings().filter(o=>!isPastOuting(o)).sort(sortOutings).slice(0,2);
@@ -1469,50 +1535,83 @@ function renderAvisos(){
   return createBtn+form+cards+empty+`<div style="height:14px"></div>`;
 }
 
+function attendanceStatsForOutings(outings){
+  const out={present:0,absent:0,excused:0,closed:0,pending:0,people:{}};
+  safeArr(outings).filter(isPastOuting).forEach(o=>{
+    const people=attendancePeople(o);
+    if(!people.length)return;
+    if(!o.attendance?.closed){out.pending++;return;}
+    out.closed++;
+    people.forEach(p=>{
+      const st=o.attendance.status?.[p.attKey]||"present";
+      if(st==="absent")out.absent++;
+      else if(st==="excused")out.excused++;
+      else {out.present++;out.people[p.name]=(out.people[p.name]||0)+1;}
+    });
+  });
+  out.attPct=(out.present+out.absent)>0?Math.round(out.present/(out.present+out.absent)*100):null;
+  return out;
+}
+function personalOutings(){return S.outings.filter(o=>memberIsInOuting(o));}
+function myGroupOutings(){return S.userGroupId?S.outings.filter(o=>Number(o.groupId)===Number(S.userGroupId)):[];}
+function generalOutings(){return S.outings.filter(isGeneralOuting);}
+function statsCard(title,stats,subtitle="",personal=false){
+  const pct=stats.attPct===null?"—":stats.attPct+"%";
+  const presentLbl=personal?"He remat":"Han remat";
+  const excusedLbl=personal?"Baixa":"Baixes";
+  const absentLbl=personal?"No presentat":"No presentats";
+  return cc(`${lbl(title)}${subtitle?`<div style="font-size:12px;color:${MUTED};line-height:1.45;margin-bottom:10px">${subtitle}</div>`:""}
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px">
+      <div style="background:#f8fbf8;border:.5px solid #d8ebdd;border-radius:10px;padding:9px;text-align:center"><div style="font-size:20px;font-weight:850;color:${GREEN}">${stats.present}</div><div style="font-size:9px;color:${MUTED};margin-top:1px">${presentLbl}</div></div>
+      <div style="background:#fff8ee;border:.5px solid #f0dfbc;border-radius:10px;padding:9px;text-align:center"><div style="font-size:20px;font-weight:850;color:#b07a10">${stats.excused}</div><div style="font-size:9px;color:${MUTED};margin-top:1px">${excusedLbl}</div></div>
+      <div style="background:#fff0f0;border:.5px solid #f0c9c9;border-radius:10px;padding:9px;text-align:center"><div style="font-size:20px;font-weight:850;color:${RED}">${stats.absent}</div><div style="font-size:9px;color:${MUTED};margin-top:1px">${absentLbl}</div></div>
+      <div style="background:#eef0fa;border:.5px solid #d8dff2;border-radius:10px;padding:9px;text-align:center"><div style="font-size:20px;font-weight:850;color:${DARK}">${pct}</div><div style="font-size:9px;color:${MUTED};margin-top:1px">Assistència</div></div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px"><span style="font-size:10px;color:${MUTED};background:#f5f3ee;border-radius:99px;padding:3px 8px">${stats.closed} Assistències tancades</span>${stats.pending?`<span style="font-size:10px;color:#b07a10;background:#fff8ee;border-radius:99px;padding:3px 8px">${stats.pending} Pendents</span>`:""}</div>`);
+}
+function clubParticipationRanking(limit=10){
+  const stats=attendanceStatsForOutings(S.outings);
+  const top=Object.entries(stats.people).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],"ca")).slice(0,limit);
+  return cc(`${lbl("Participació del club")}${top.length?top.map(([n,c],i)=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:${i<top.length-1?'.5px solid #f0ede6':'none'}"><div style="display:flex;align-items:center;gap:8px;min-width:0"><span style="width:22px;height:22px;border-radius:50%;background:${i<3?'#eef0fa':'#f5f3ee'};color:${i<3?DARK:MUTED};display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:850;flex-shrink:0">${i+1}</span><span style="font-size:13px;color:#1a1a18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n)}</span></div><strong style="font-size:13px;color:${DARK};white-space:nowrap">${c}</strong></div>`).join(""):`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Encara no hi ha assistències confirmades.</div>`}`);
+}
+function renderGroupStatsList(){
+  const cards=S.groups.map(g=>{
+    const stats=attendanceStatsForOutings(S.outings.filter(o=>Number(o.groupId)===Number(g.id)));
+    return `<div style="padding:10px 0;border-bottom:.5px solid #f0ede6"><div style="font-size:13px;font-weight:800;color:#1a1a18;margin-bottom:6px">${esc(g.name)}</div><div style="display:flex;gap:6px;flex-wrap:wrap"><span style="font-size:10px;background:#e6f4ee;color:${GREEN};border-radius:99px;padding:3px 8px">✅ ${stats.present}</span><span style="font-size:10px;background:#fff8ee;color:#b07a10;border-radius:99px;padding:3px 8px">➖ ${stats.excused}</span><span style="font-size:10px;background:#fff0f0;color:${RED};border-radius:99px;padding:3px 8px">❌ ${stats.absent}</span><span style="font-size:10px;background:#eef0fa;color:${DARK};border-radius:99px;padding:3px 8px">${stats.attPct===null?'—':stats.attPct+'%'}</span></div></div>`;
+  }).join("");
+  return cc(`${lbl("Assistència per grup")}<div style="font-size:12px;color:${MUTED};line-height:1.45;margin-bottom:6px">Visió agregada per grup. Les baixes justificades no penalitzen el percentatge principal.</div>${cards}`);
+}
 function renderEstadistiques(){
   if(!userCanViewStats())return cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Accés restringit</div>`);
-  const scope=S.role==="patron"?S.outings:S.role==="cap"?S.outings.filter(o=>o.groupId===S.capGroupId):S.outings.filter(o=>memberIsInOuting(o));
-  const past=scope.filter(isPastOuting);
-  const future=scope.filter(o=>!isPastOuting(o));
-  const signups=scope.reduce((a,o)=>a+safeArr(o.signups).length,0);
-  const waits=scope.reduce((a,o)=>a+safeArr(o.waitlist).length,0);
-  let confirmed=0,absent=0,excused=0,closed=0;
-  const peopleCount={};
-  past.forEach(o=>{
-    const att=o.attendance;
-    if(att?.closed){
-      closed++;
-      attendancePeople(o).forEach(p=>{
-        const st=att.status?.[p.attKey]||"present";
-        if(st==="present"){confirmed++;peopleCount[p.name]=(peopleCount[p.name]||0)+1;}
-        else if(st==="absent")absent++;
-        else excused++;
-      });
-    }
-  });
-  let html=strow([[scope.length,"sortides"],[future.length,"properes"],[past.length,"històric"]]);
-  html+=strow([[signups,"apuntats"],[waits,"espera"],[confirmed,"assistència real"]]);
-  if(S.role==="patron"||S.role==="cap")html+=renderAttendanceManager(5);
-  html+=cc(`${lbl("Criteri de dades")}<div style="font-size:13px;color:#1a1a18;line-height:1.55"><strong>Apuntat no vol dir assistència.</strong> Les estadístiques fiables es basen en sortides amb <strong>assistència tancada</strong>. Ara hi ha ${closed} sortida${closed!==1?"s":""} tancada${closed!==1?"s":""}.</div>`);
-  html+=strow([[closed,"tancades"],[absent,"no presentats"],[excused,"baixa/justificat"]]);
-  if(S.role==="soci"){
-    const mineConfirmed=past.filter(o=>o.attendance?.closed&&attendancePeople(o).some(p=>entryMatchesCurrent(p)&&(o.attendance.status?.[p.attKey]||"present")==="present")).length;
-    const mineWait=scope.filter(o=>safeArr(o.waitlist).some(entryMatchesCurrent)).length;
-    html+=cc(`${lbl("La meva activitat")}<div style="font-size:14px;color:#1a1a18;line-height:1.6">Assistència confirmada: <strong>${mineConfirmed}</strong>. Sortides on has estat en llista d'espera: <strong>${mineWait}</strong>.</div>`);
+  const me=currentMember();
+  const personal=attendanceStatsForOutings(personalOutings());
+  const group=attendanceStatsForOutings(myGroupOutings());
+  const general=attendanceStatsForOutings(generalOutings());
+  const club=attendanceStatsForOutings(S.outings);
+  let html="";
+
+  if(S.role==="patron"){
+    html+=statsCard("Resum del club",club,"Totes les sortides amb assistència confirmada.");
+    html+=renderGroupStatsList();
+    html+=statsCard("Sortides generals",general,"Sortides obertes a tots els grups.");
+  }else if(S.role==="cap"){
+    html+=statsCard("El meu grup",group,`Agregat del ${esc(gname(S.capGroupId))}.`);
+    html+=statsCard("Les meves dades",personal,"Les teves assistències personals confirmades.",true);
+    html+=statsCard("Sortides generals",general,"Agregat de sortides obertes a tots els grups.");
+  }else if(memberIsGeneralCap(me)){
+    html+=statsCard("Sortides generals",general,"Agregat de les sortides obertes a tots els grups.");
+    html+=statsCard("Les meves dades",personal,"Les teves assistències personals confirmades.",true);
+  }else if(memberCanViewStats(me)){
+    html+=statsCard("Les meves dades",personal,"Les teves assistències personals confirmades.",true);
+    html+=statsCard("El meu grup",group,`Agregat del ${esc(gname(S.userGroupId))}.`);
+    html+=statsCard("Sortides generals",general,"Agregat de sortides obertes a tots els grups.");
+  }else{
+    html+=statsCard("Les meves dades",personal,"Les teves assistències personals confirmades.",true);
   }
-  if(S.role==="patron"||S.role==="cap"){
-    const groups=(S.role==="patron"?S.groups:S.groups.filter(g=>g.id===S.capGroupId)).map(g=>{
-      const os=S.outings.filter(o=>o.groupId===g.id);
-      const s=os.reduce((a,o)=>a+safeArr(o.signups).length,0);
-      const w=os.reduce((a,o)=>a+safeArr(o.waitlist).length,0);
-      const done=os.filter(o=>o.attendance?.closed).length;
-      return {g,os,s,w,done};
-    });
-    const rows=groups.map(x=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:.5px solid #f0ede6"><div><div style="font-size:13px;font-weight:650;color:#1a1a18">${x.g.name}</div><div style="font-size:11px;color:${MUTED}">${x.os.length} sortides · ${x.s} apuntats · ${x.w} espera · ${x.done} assistències tancades</div></div></div>`).join("");
-    html+=cc(`${lbl(S.role==="patron"?"Resum per grup":"Resum del meu grup")}${rows||`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1rem 0">Encara no hi ha dades</div>`}`);
-    const top=Object.entries(peopleCount).sort((a,b)=>b[1]-a[1]).slice(0,8);
-    if(top.length){html+=cc(`${lbl("Assistència confirmada")} ${top.map(([n,c],i)=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:${i<top.length-1?'.5px solid #f0ede6':'none'}"><span style="font-size:13px;color:#1a1a18">${esc(n)}</span><strong style="font-size:13px;color:${DARK}">${c}</strong></div>`).join("")}`);}
-  }
+
+  if(S.role==="cap"||memberIsGeneralCap(me))html+=renderAttendanceManager(5);
+  html+=clubParticipationRanking(10);
+  html+=cc(`${lbl("Com llegir aquestes dades")}<div style="font-size:13px;color:#1a1a18;line-height:1.6"><strong>Apuntar-se no compta com haver remat.</strong><br>Les estadístiques només compten assistències tancades pels caps corresponents. El rànquing de participació només compta <strong>Han remat</strong>, no les inscripcions. El percentatge és <strong>Han remat / (Han remat + No presentats)</strong>; les baixes justificades es mostren a part.</div>`);
   return html+`<div style="height:14px"></div>`;
 }
 
@@ -1570,7 +1669,7 @@ function renderMembres(){
       <div style="display:flex;align-items:center;justify-content:space-between">
         <div style="flex:1">
           <div style="font-size:14px;font-weight:600;color:#1a1a18;margin-bottom:5px">
-            ${m.name}${m.isCap?` <span style="font-size:10px;color:${DARK};background:#eef0fa;padding:1px 6px;border-radius:10px;font-weight:600">🧭 Cap</span>`:""}
+            ${m.name}${m.isCap?` <span style="font-size:10px;color:${DARK};background:#eef0fa;padding:1px 6px;border-radius:10px;font-weight:600">🧭 Cap</span>`:""}${memberIsGeneralCap(m)?` <span style="font-size:10px;color:${GREEN};background:#e6f4ee;padding:1px 6px;border-radius:10px;font-weight:600">🌊 Cap generals</span>`:""}
           </div>
           <div style="display:flex;gap:4px;align-items:center">
             ${secBadge(m.sections)}
@@ -1601,6 +1700,7 @@ function renderMembres(){
       </div>`:`<div style="display:flex;gap:6px;margin-top:10px;padding-top:8px;border-top:.5px solid #f5f3ee;flex-wrap:wrap">
         <button onclick="startEditMembre(${m.id})" style="flex:1;min-width:88px;padding:5px 8px;background:transparent;border:.5px solid ${BORDER};border-radius:6px;color:${DARK};font-size:11px;cursor:pointer;font-weight:600">✏️ Editar</button>
         <button onclick="toggleIsCap(${m.id})" style="flex:1;min-width:110px;padding:5px 8px;background:${m.isCap?"#eef0fa":"transparent"};border:.5px solid ${m.isCap?DARK:BORDER};border-radius:6px;color:${m.isCap?DARK:MUTED};font-size:11px;cursor:pointer;font-weight:${m.isCap?700:400}">🧭 ${m.isCap?"És cap de grup":"Fer cap de grup"}</button>
+        <button onclick="toggleIsGeneralCap(${m.id})" style="flex:1;min-width:118px;padding:5px 8px;background:${memberIsGeneralCap(m)?"#e6f4ee":"transparent"};border:.5px solid ${memberIsGeneralCap(m)?GREEN:BORDER};border-radius:6px;color:${memberIsGeneralCap(m)?GREEN:MUTED};font-size:11px;cursor:pointer;font-weight:${memberIsGeneralCap(m)?700:400}">🌊 ${memberIsGeneralCap(m)?"Cap generals":"Fer cap generals"}</button>
         <button onclick="resetMemberPin(${m.id})" style="flex:1;min-width:96px;padding:5px 8px;background:transparent;border:.5px solid ${BORDER};border-radius:6px;color:${m.pin?MUTED:RED};font-size:11px;cursor:pointer">${m.pin?"🔑 Reset clau":"⚠️ Sense clau"}</button>
       </div>`}
     </div>`).join("")}

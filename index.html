@@ -113,7 +113,7 @@ let S={
   membreSections:["social"],
   newPos:1,calMonth:new Date().getMonth(),calYear:new Date().getFullYear(),
   pollQ:"",pollOpts:["",""],pollErr:"",
-  meteo:null,marine:null,meteoLoading:true,marineLoading:true,selectedMeteoDate:null,
+  meteo:null,marine:null,meteoLoading:true,marineLoading:true,selectedMeteoDate:null,meteoHoursOpen:false,
   supaLoading:true,supaSyncing:false,lastSyncAt:null,syncErr:"",actionBusy:null,
   patronAddOuting:null,
   groups:loadData("groups"),
@@ -369,7 +369,17 @@ function normalizeAllOutingEntries(){
   S.outings.forEach(o=>{if(normalizeOutingEntries(o))changed=true;});
   return changed;
 }
-function outingLabel(o){return `${o.title} · ${new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"})} · ${o.time} h`;}
+function outingDisplayTitle(o){
+  if(!o)return "Sortida";
+  // Les sortides setmanals per grup es mostren amb el nom del grup (Grup A, Grup C...),
+  // no amb el títol tècnic "Sortida setmanal".
+  if(!isGeneralOuting(o)&&o.groupId){
+    const gn=gname(o.groupId).split(" · ")[0];
+    if(gn&&gn!=="—")return gn;
+  }
+  return o.title||"Sortida";
+}
+function outingLabel(o){return `${outingDisplayTitle(o)} · ${new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"})} · ${o.time} h`;}
 function actorLabel(){return S.role==="patron"?"Patró":(S.userName||"Sistema");}
 function pushAviso(a){S.avisos.unshift({id:mkId(),date:td(),createdAt:nowIso(),pin:false,...a});}
 function addOutingLog(o,type,text,extra={}){
@@ -699,8 +709,21 @@ function renderMeteo(){
   let sel=S.selectedMeteoDate||firstRegularOutingDate(availableDays);
   if(dayList.length&&!dayList.includes(sel))sel=dayList[0];
 
+  const windState=v=>{
+    const n=Number(v);
+    if(!Number.isFinite(n))return "—";
+    if(n>=20)return "Molt fort";
+    if(n>=15)return "Fort";
+    if(n>=10)return "Moderat";
+    return "Fluix";
+  };
+  const riskBg=warn=>warn?"rgba(255,107,107,.14)":"rgba(255,255,255,.075)";
+  const riskBorder=warn=>warn?"rgba(255,107,107,.36)":"rgba(255,255,255,.1)";
+  const riskColor=warn=>warn?"#ffb4b4":"#fff";
+
   const curCode=weatherCodeFrom(m.current);
-  const kn=Math.round((m.current?.wind_speed_10m||0)*.539957),strong=kn>=15;
+  const curKn=Math.round((m.current?.wind_speed_10m||0)*.539957);
+  const curDir=wDir(m.current?.wind_direction_10m||0);
   const selIndex=availableDays.indexOf(sel);
   const max=selIndex>=0?m.daily?.temperature_2m_max?.[selIndex]:null;
   const min=selIndex>=0?m.daily?.temperature_2m_min?.[selIndex]:null;
@@ -712,11 +735,11 @@ function renderMeteo(){
     const maxDay=idx>=0?m.daily?.temperature_2m_max?.[idx]:null;
     const code=weatherCodeFrom({weather_code:idx>=0?m.daily?.weather_code?.[idx]:null,weathercode:idx>=0?m.daily?.weathercode?.[idx]:null});
     const label=d===td()?"Avui":DAYS[dy.getDay()];
-    return`<button onclick="go({selectedMeteoDate:'${d}'})" style="flex:1;text-align:center;font-size:10px;color:${isSel?'#fff':'rgba(255,255,255,.62)'};background:${isSel?'rgba(255,255,255,.16)':'transparent'};border:${isSel?'1px solid rgba(255,255,255,.28)':'1px solid transparent'};border-radius:9px;padding:6px 3px;cursor:pointer"><div style="font-weight:800;margin-bottom:2px">${label}</div><div style="font-size:15px;line-height:1">${wIcon(code)}</div><div style="font-size:11px;font-weight:700;margin-top:2px">${maxDay!==null&&maxDay!==undefined?Math.round(maxDay)+'°':'—'}</div></button>`;
+    return`<button onclick="go({selectedMeteoDate:'${d}',meteoHoursOpen:false})" style="flex:1;text-align:center;font-size:10px;color:${isSel?'#fff':'rgba(255,255,255,.62)'};background:${isSel?'rgba(255,255,255,.16)':'transparent'};border:${isSel?'1px solid rgba(255,255,255,.28)':'1px solid transparent'};border-radius:9px;padding:6px 3px;cursor:pointer"><div style="font-weight:800;margin-bottom:2px">${label}</div><div style="font-size:15px;line-height:1">${wIcon(code)}</div><div style="font-size:11px;font-weight:700;margin-top:2px">${maxDay!==null&&maxDay!==undefined?Math.round(maxDay)+'°':'—'}</div></button>`;
   }).join("");
 
   const hourSlots=["08:00","11:00","14:00","17:00","20:00"];
-  const rows=hourSlots.map(t=>{
+  const slotData=hourSlots.map(t=>{
     const wi=meteoHourlyIndex(m,sel,t),mi=meteoHourlyIndex(S.marine,sel,t);
     const h=m.hourly||{},mh=S.marine?.hourly||{};
     const temp=wi>=0?h.temperature_2m?.[wi]:null;
@@ -727,11 +750,24 @@ function renderMeteo(){
     const wh=mi>=0?mh.wave_height?.[mi]:null;
     const wdir=mi>=0?mh.wave_direction?.[mi]:null;
     const wp=mi>=0?mh.wave_period?.[mi]:null;
-    const warn=(Number(wkn)>=15)||(Number(wh)>=0.8);
-    return`<div style="display:flex;align-items:center;gap:7px;background:${warn?'rgba(255,107,107,.12)':'rgba(255,255,255,.075)'};border:1px solid ${warn?'rgba(255,107,107,.32)':'rgba(255,255,255,.08)'};border-radius:10px;padding:7px 8px;margin-top:6px;font-size:12px;color:rgba(255,255,255,.82);line-height:1.25">
-      <div style="width:38px;font-weight:850;color:#fff;flex-shrink:0">${t.slice(0,2)}h</div>
-      <div style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${wIcon(code)} ${temp!==null&&temp!==undefined?Math.round(temp)+'°':'—'} · ${wkn!==null?wkn+' kn':'—'} ${wdeg!==null?wDir(wdeg):''}${rain!==null&&rain!==undefined&&Number(rain)>0?` · 🌧️ ${num(rain,1)} mm`:''}</div>
-      <div style="flex-shrink:0;text-align:right;white-space:nowrap;color:${warn?'#ffb4b4':'rgba(255,255,255,.78)'}">🌊 ${wh!==null&&wh!==undefined?num(wh,1)+' m':'—'} ${wdir!==null?wDir(wdir):''}${wp!==null&&wp!==undefined?` · ${num(wp,0)}s`:''}</div>
+    return {t,temp,wkn,wdeg,code,rain,wh,wdir,wp};
+  });
+  const bestWind=slotData.reduce((best,x)=>Number(x.wkn)>Number(best?.wkn??-1)?x:best,null);
+  const bestWave=slotData.reduce((best,x)=>Number(x.wh)>Number(best?.wh??-1)?x:best,null);
+  const maxWind=Number(bestWind?.wkn);
+  const maxWave=Number(bestWave?.wh);
+  const windWarn=Number.isFinite(maxWind)&&maxWind>=15;
+  const seaWarn=Number.isFinite(maxWave)&&maxWave>=0.8;
+  const strong=curKn>=15||windWarn||seaWarn;
+
+  const rows=slotData.map(x=>{
+    const warn=(Number(x.wkn)>=15)||(Number(x.wh)>=0.8);
+    return`<div style="display:grid;grid-template-columns:38px 1fr;gap:8px;align-items:center;background:${riskBg(warn)};border:1px solid ${riskBorder(warn)};border-radius:10px;padding:7px 8px;margin-top:6px;font-size:12px;color:rgba(255,255,255,.82);line-height:1.25">
+      <div style="font-weight:850;color:#fff;flex-shrink:0">${x.t.slice(0,2)}h</div>
+      <div style="min-width:0">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;color:${riskColor(warn)};font-weight:850"><span>💨 ${x.wkn!==null&&x.wkn!==undefined?x.wkn+' kn':'—'} ${x.wdeg!==null?wDir(x.wdeg):''}</span><span>🌊 ${x.wh!==null&&x.wh!==undefined?num(x.wh,1)+' m':'—'} ${x.wdir!==null?wDir(x.wdir):''}</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:2px;color:rgba(255,255,255,.58);font-size:11px"><span>${wIcon(x.code)} ${x.temp!==null&&x.temp!==undefined?Math.round(x.temp)+'°':'—'}${x.rain!==null&&x.rain!==undefined&&Number(x.rain)>0?` · 🌧️ ${num(x.rain,1)} mm`:''}</span><span>${x.wp!==null&&x.wp!==undefined?num(x.wp,0)+'s':''}</span></div>
+      </div>
     </div>`;
   }).join("");
 
@@ -739,15 +775,31 @@ function renderMeteo(){
   const selTitle=selDate.toLocaleDateString("ca-ES",{weekday:"long",day:"numeric",month:"long"});
   const marineNote=S.marine?"":"<div style='font-size:11px;color:rgba(255,255,255,.48);margin-top:8px'>Estat del mar no disponible ara mateix.</div>";
   const daySummary=`${min!==null&&min!==undefined?Math.round(min)+'° / ':''}${max!==null&&max!==undefined?Math.round(max)+'°':''}${rainDay!==null&&rainDay!==undefined&&Number(rainDay)>0?` · Pluja ${num(rainDay,1)} mm`:''}`;
+  const windMain=Number.isFinite(maxWind)?`${maxWind} kn ${bestWind?.wdeg!==null&&bestWind?.wdeg!==undefined?wDir(bestWind.wdeg):''}`:"—";
+  const seaMain=Number.isFinite(maxWave)?`${num(maxWave,1)} m ${bestWave?.wdir!==null&&bestWave?.wdir!==undefined?wDir(bestWave.wdir):''}`:"—";
+  const seaLabel=Number.isFinite(maxWave)?seaStateLabel(maxWave):"Mar no disponible";
+  const hoursOpen=!!S.meteoHoursOpen;
+  const hoursDropdown=`<button onclick="go({meteoHoursOpen:${hoursOpen?'false':'true'}})" style="width:100%;margin-top:8px;background:rgba(255,255,255,.075);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:9px 10px;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;text-align:left">
+    <span style="font-size:12px;font-weight:800">${hoursOpen?'Amagar detall per franges':'Veure detall per franges'}</span>
+    <span style="font-size:11px;color:rgba(255,255,255,.6);white-space:nowrap">${hoursOpen?'▲':'vent i mar ▾'}</span>
+  </button>`;
 
-  return`<div style="background:linear-gradient(135deg,${DARK},#122860);border-radius:14px;margin:10px 14px 0;padding:14px;color:#fff">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
-      <div><div style="font-size:11px;opacity:.55">📍 Port de Sant Feliu de Guíxols</div><div style="font-size:13px;font-weight:850;margin-top:3px">Previsió meteo i mar</div></div>
-      <div style="text-align:right"><div style="font-size:10px;opacity:.55">Ara</div><div style="font-size:16px;font-weight:850;color:${strong?'#ffb4b4':'#fff'}">${Math.round(m.current?.temperature_2m??0)}° · ${kn} kn</div><div style="font-size:10px;opacity:.55">${wIcon(curCode)} ${wDir(m.current?.wind_direction_10m||0)}</div></div>
+  return`<div style="background:linear-gradient(135deg,${DARK},#122860);border-radius:14px;margin:10px 14px 0;padding:12px;color:#fff">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px">
+      <div><div style="font-size:11px;opacity:.55">📍 Port de Sant Feliu de Guíxols</div><div style="font-size:13px;font-weight:850;margin-top:2px">Vent i estat del mar</div></div>
+      <div style="text-align:right"><div style="font-size:10px;opacity:.55">Vent ara</div><div style="font-size:15px;font-weight:850;color:${curKn>=15?'#ffb4b4':'#fff'}">${curKn} kn ${curDir}</div><div style="font-size:10px;opacity:.55">${wIcon(curCode)} ${Math.round(m.current?.temperature_2m??0)}°</div></div>
     </div>
-    <div style="display:flex;gap:5px;padding-top:10px;border-top:.5px solid rgba(255,255,255,.15)">${dayButtons}</div>
-    <div style="margin-top:11px"><div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px"><div style="font-size:13px;font-weight:850;text-transform:capitalize">${selTitle}</div><div style="font-size:11px;color:rgba(255,255,255,.62);white-space:nowrap">${daySummary}</div></div>${rows}${marineNote}</div>
-  </div>${strong?`<div style="background:#fff0f0;border:.5px solid ${RED};border-radius:10px;margin:8px 14px 0;padding:10px 12px;display:flex;gap:8px;align-items:center">⚠️<span style="font-size:12px;color:${RED}">Vent fort (${kn} kn). Consulteu amb el patró.</span></div>`:""}`;
+    <div style="display:flex;gap:5px;padding-top:8px;border-top:.5px solid rgba(255,255,255,.15)">${dayButtons}</div>
+    <div style="margin-top:9px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px"><div style="font-size:13px;font-weight:850;text-transform:capitalize;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${selTitle}</div><div style="font-size:11px;color:rgba(255,255,255,.58);white-space:nowrap">${daySummary}</div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px">
+        <div style="background:${riskBg(windWarn)};border:1px solid ${riskBorder(windWarn)};border-radius:10px;padding:9px 10px"><div style="font-size:10px;color:rgba(255,255,255,.58);font-weight:800;text-transform:uppercase;letter-spacing:.04em">💨 Vent màxim</div><div style="font-size:17px;font-weight:900;color:${riskColor(windWarn)};margin-top:2px">${windMain}</div><div style="font-size:11px;color:rgba(255,255,255,.58);margin-top:2px">${windState(maxWind)}${bestWind?.t?` · ${bestWind.t.slice(0,2)}h`:''}</div></div>
+        <div style="background:${riskBg(seaWarn)};border:1px solid ${riskBorder(seaWarn)};border-radius:10px;padding:9px 10px"><div style="font-size:10px;color:rgba(255,255,255,.58);font-weight:800;text-transform:uppercase;letter-spacing:.04em">🌊 Ona màxima</div><div style="font-size:17px;font-weight:900;color:${riskColor(seaWarn)};margin-top:2px">${seaMain}</div><div style="font-size:11px;color:rgba(255,255,255,.58);margin-top:2px">${seaLabel}${bestWave?.t?` · ${bestWave.t.slice(0,2)}h`:''}</div></div>
+      </div>
+      ${hoursDropdown}
+      ${hoursOpen?rows:""}${marineNote}
+    </div>
+  </div>${strong?`<div style="background:#fff0f0;border:.5px solid ${RED};border-radius:10px;margin:8px 14px 0;padding:10px 12px;display:flex;gap:8px;align-items:center">⚠️<span style="font-size:12px;color:${RED}">Reviseu les condicions: ${windWarn?`vent fins a ${maxWind} kn`:curKn>=15?`vent ara ${curKn} kn`:''}${(windWarn||curKn>=15)&&seaWarn?' · ':''}${seaWarn?`ona fins a ${num(maxWave,1)} m`:''}. Consulteu amb el patró.</span></div>`:""}`;
 }
 
 
@@ -890,6 +942,7 @@ function renderOutingCard(o){
   const isOpen=shouldBeOpen(o);
   const openTrigger=openTriggerReached(o);
   const hasGeneralSpots=hasOpenGeneralSpots(o);
+  const publicWaitlistOpen=canJoinPublicWaitlist(o);
   const cfg=getOutingCfg(o.groupId,o.date);
   const capacity=outingCapacity(o);
   const reserve=isGeneral?0:Number(o.reserve||1);
@@ -904,22 +957,27 @@ function renderOutingCard(o){
   const amHelm=o.helmsmanSignups.some(entryMatchesCurrent);
   const amIn=o.signups.some(entryMatchesCurrent);
   const amWait=o.waitlist.some(entryMatchesCurrent);
-  const canAccess=isGeneral?isOpen:(isMyGroup||isOpen);
+  const canAccess=isGeneral?publicWaitlistOpen:(isMyGroup||isOpen||publicWaitlistOpen);
   const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
 
-  // Estat clar: reservada al grup o programada per a tots fins a l'obertura natural.
-  // L'obertura a tots no és un estat permanent: només és activa si ja toca i hi ha places lliures.
+  // Estat clar: abans de l'obertura queda reservada; quan arriba l'hora, s'obre al general
+  // encara que no hi hagi places lliures, permetent apuntar-se a la llista d'espera.
   let openInfo="";
   const openDate=getNaturalOpenDate(o);
-  if(!isOpen&&!isPast){
+  const hasPriorityWait=hasPriorityGroupWaitlist(o);
+  if(!isPast){
     const groupLabel=isGeneral?"tots els grups":esc(grp?.name?.split(" · ")[0]||"grup");
     const openStr=openDate?formatNaturalOpenLabel(o):"quan el cap o el patró l'obrin";
-    if(openTrigger&&!hasGeneralSpots){
-      openInfo=`<div style="font-size:11px;color:${RED};background:#fff0f0;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🔒 L'hora d'obertura ja ha passat, però no s'obre a tots perquè no hi ha places lliures.</div>`;
+    if(openTrigger){
+      if(!hasGeneralSpots){
+        openInfo=`<div style="font-size:11px;color:#b07a10;background:#fff8ee;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">⏳ Oberta a tots. La sortida està plena: només et pots apuntar a la llista d'espera.</div>`;
+      }else if(hasPriorityWait){
+        openInfo=`<div style="font-size:11px;color:#b07a10;background:#fff8ee;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🔓 Oberta a tots. Si s'allibera una plaça, primer puja la llista d'espera prioritària del grup.</div>`;
+      }
     }else if(isGeneral){
-      openInfo=`<div style="font-size:11px;color:#b07a10;background:#fff8ee;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🔒 Programada per a ${groupLabel}. S'obrirà ${openStr} si hi ha places lliures.</div>`;
+      openInfo=`<div style="font-size:11px;color:#b07a10;background:#fff8ee;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🔒 Programada per a ${groupLabel}. S'obrirà ${openStr}.</div>`;
     }else{
-      openInfo=`<div style="font-size:11px;color:#b07a10;background:#fff8ee;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🔒 Reservada al ${groupLabel}. S'obrirà a tots ${openStr} si hi ha places lliures.</div>`;
+      openInfo=`<div style="font-size:11px;color:#b07a10;background:#fff8ee;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🔒 Reservada al ${groupLabel}. S'obrirà a tots ${openStr}, hi hagi places lliures o només llista d'espera.</div>`;
     }
   }
 
@@ -932,47 +990,59 @@ function renderOutingCard(o){
     const isHelm=mode==="helm";
     const bg=isWait?"#e8a020":isHelm?"#4a7a3d":isReserve?"#8b4513":(isOwner?DARK:GREEN);
     const groupTxt=shortGroup(gid);
-    const title=isWait?"Llista d'espera":isHelm?"Timoner":isReserve?"Plaça de reserva":(isGeneral?`Grup ${groupTxt}`:(isOwner?"Del grup":"D'un altre grup"));
+    const hasPrio=isWait&&waitEntryHasGroupPriority(s,o);
+    const title=isWait?(hasPrio?"Llista d'espera prioritària del grup":"Llista d'espera"):isHelm?"Timoner":isReserve?"Plaça de reserva":(isGeneral?`Grup ${groupTxt}`:(isOwner?"Del grup":"D'un altre grup"));
     const mid=s.mid||memberFromEntry(s)?.id;
     const listName=isWait?"waitlist":(isHelm?"helmsmanSignups":"signups");
     const removeBtn=isPatron&&!isPast?` <button type="button" data-action="patron-remove-person" data-oid="${esc(o.id)}" data-list="${listName}" data-idx="${idx}" data-mid="${esc(mid||"")}" data-name="${esc(s.name)}" style="background:rgba(255,255,255,.25);border:none;border-radius:50%;width:18px;height:18px;color:#fff;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:1;padding:0;flex-shrink:0">×</button>`:"";
     return`<span title="${title}" style="display:inline-flex;align-items:center;gap:4px;background:${bg};border-radius:999px;padding:5px 9px;color:#fff;font-size:12px;font-weight:600;line-height:1.15">
       <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">${esc(s.name)}</span>
-      <span style="font-size:10px;opacity:.78;background:rgba(255,255,255,.18);border-radius:999px;padding:1px 6px;white-space:nowrap">${isHelm?"Tim":isReserve?"R":groupTxt}</span>${removeBtn}
+      <span style="font-size:10px;opacity:.78;background:rgba(255,255,255,.18);border-radius:999px;padding:1px 6px;white-space:nowrap">${isHelm?"Tim":isReserve?"R":(hasPrio?"P":groupTxt)}</span>${removeBtn}
     </span>`;
   }).join("")}</div>`:"";
 
-  const badge=isOpen
-    ?`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔓 Oberta a tots</span>`
-    :(openTrigger&&!hasGeneralSpots
-      ?`<span style="background:#fff0f0;color:${RED};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 Sense places</span>`
-      :(isGeneral
-        ?`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 Tots els grups</span>`
-        :`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 Reservada ${grp?.name?.split(" · ")[0]||""}</span>`));
+  const badge=openTrigger
+    ?(hasGeneralSpots
+      ?`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔓 Oberta a tots</span>`
+      :`<span style="background:#fff8ee;color:#b07a10;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">⏳ Oberta · només espera</span>`)
+    :(isGeneral
+      ?`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 Tots els grups</span>`
+      :`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600">🔒 Reservada ${grp?.name?.split(" · ")[0]||""}</span>`);
 
   const pct=Math.min(100,Math.round((total/capacity)*100));
 
-  // Bloc timonels
-  const helmsBlock=maxHelm>0?`<div style="padding:8px 14px;border-bottom:.5px solid #f5f3ee;background:#f8f6f0">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-      <div style="font-size:10px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em">⛵ TIMONELS ${o.helmsmanSignups.length}/${maxHelm}${helmsRequired?" · obligatori":""}</div>
+  const reserveCount=safeArr(o.signups).filter(s=>s.isReserve).length;
+  const rowerCount=Math.max(0,total-reserveCount);
+  const hasPeopleDetail=!!(o.signups.length||o.waitlist.length||o.helmsmanSignups.length||maxHelm>0);
+  const compactStats=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
+    <span style="display:inline-flex;align-items:center;gap:5px;background:#f5f3ee;border-radius:999px;padding:5px 9px;font-size:11px;color:#1a1a18;font-weight:600">🚣 ${rowerCount}/${capacity}${reserve?` + ${reserve}R`:""}</span>
+    ${reserve?`<span style="display:inline-flex;align-items:center;gap:5px;background:#fff5ec;border-radius:999px;padding:5px 9px;font-size:11px;color:#8b4513;font-weight:600">🤎 Reserva ${reserveCount}/${reserve}</span>`:""}
+    ${maxHelm>0?`<span style="display:inline-flex;align-items:center;gap:5px;background:#eef6ee;border-radius:999px;padding:5px 9px;font-size:11px;color:#4a7a3d;font-weight:600">⛵ Timonels ${o.helmsmanSignups.length}/${maxHelm}</span>`:""}
+    <span style="display:inline-flex;align-items:center;gap:5px;background:#fff8ee;border-radius:999px;padding:5px 9px;font-size:11px;color:#b07a10;font-weight:600">⏳ Espera ${o.waitlist.length}</span>
+  </div>`;
+
+  const regularSignups=o.signups.filter(s=>!s.isReserve);
+  const reserveSignups=o.signups.filter(s=>s.isReserve);
+  const peopleDropdown=hasPeopleDetail?`<details style="border-top:.5px solid #f5f3ee;background:#fcfbf8">
+    <summary style="list-style:none;cursor:pointer;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <div>
+        <div style="font-size:12px;font-weight:700;color:${DARK}">Veure apuntats</div>
+        <div style="font-size:11px;color:${MUTED}">Noms de vogadors, reserva, timonels i llista d'espera</div>
+      </div>
+      <div style="font-size:18px;color:${MUTED};line-height:1">▾</div>
+    </summary>
+    <div style="padding:0 14px 12px">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+        ${isGeneral?`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${GREEN}"></span>Oberta a tots els grups</span>`:`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${DARK}"></span>Del grup</span><span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${GREEN}"></span>Altres grups</span>${reserve?`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:#8b4513"></span>Reserva</span>`:""}`}
+      </div>
+      <div style="font-size:10px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">🚣 Vogadors ${rowerCount}/${capacity}</div>
+      ${regularSignups.length?personChips(regularSignups,"signups"):`<div style="font-size:12px;color:${MUTED};font-style:italic;margin-bottom:8px">Encara no hi ha vogadors apuntats</div>`}
+      ${reserve?`<div style="font-size:10px;color:#8b4513;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:10px 0 6px">🤎 Reserva ${reserveCount}/${reserve}</div>${reserveSignups.length?personChips(reserveSignups,"signups"):`<div style="font-size:12px;color:${MUTED};font-style:italic;margin-bottom:8px">Sense reserva assignada</div>`}`:""}
+      ${maxHelm>0?`<div style="font-size:10px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:10px 0 6px">⛵ Timonels ${o.helmsmanSignups.length}/${maxHelm}${helmsRequired?" · obligatori":""}</div>${o.helmsmanSignups.length?personChips(o.helmsmanSignups,"helm"):`<div style="font-size:12px;color:${helmsRequired?RED:MUTED};font-style:italic;margin-bottom:8px">${helmsRequired?"Cal timoner per fer la sortida":"Sense timoner assignat"}</div>`}`:""}
+      <div style="font-size:10px;color:#b07a10;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:10px 0 6px">⏳ Llista d'espera (${o.waitlist.length})${isGeneral?` · Ordre d'inscripció`:` · Prioritat si és abans de l'obertura`}</div>
+      ${o.waitlist.length?personChips(o.waitlist,"wait"):`<div style="font-size:12px;color:${MUTED};font-style:italic">No hi ha ningú en espera</div>`}
     </div>
-    ${o.helmsmanSignups.length?personChips(o.helmsmanSignups,"helm"):`<div style="font-size:12px;color:${helmsRequired?RED:MUTED};font-style:italic">${helmsRequired?"Cal timoner per fer la sortida":"Sense timoner assignat"}</div>`}
-  </div>`:"";
-
-  const outingLegend=isOpen?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
-    ${isGeneral?`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${GREEN}"></span>Oberta a tots els grups</span>`:`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${DARK}"></span>Del grup</span><span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:${GREEN}"></span>Altres grups</span><span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:${MUTED}"><span style="width:9px;height:9px;border-radius:50%;background:#8b4513"></span>Reserva</span>`}
-  </div>`:"";
-
-  const signupsBlock=o.signups.length?`<div style="padding:10px 14px;border-bottom:.5px solid #f5f3ee">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
-      <div style="font-size:10px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em">VOGADORS</div>
-      <div style="font-size:10px;color:${MUTED};font-weight:600">${total}/${capacity}${isMyGroup&&!isOpen?`+1R`:""}</div>
-    </div>${outingLegend}${personChips(o.signups,"signups")}</div>`:"";
-
-  const waitBlock=o.waitlist.length?`<div style="padding:8px 14px;border-bottom:.5px solid #f5f3ee;background:#fffdf7">
-    <div style="font-size:10px;color:#b07a10;margin-bottom:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">⏳ LLISTA D'ESPERA (${o.waitlist.length}) · ${isGeneral?"Ordre d'inscripció":"Prioritat grup"}</div>
-    ${personChips(o.waitlist,"wait")}</div>`:"";
+  </details>`:"";
 
   // Botons d'acció
   const acts=[];
@@ -980,14 +1050,15 @@ function renderOutingCard(o){
   if((S.role==="soci"||S.role==="cap")&&!isPast){
     const canJoinHelm=maxHelm>0&&!amHelm&&!amIn&&!amWait&&canAccess&&o.helmsmanSignups.length<maxHelm;
     const canJoinRow=!amIn&&!amWait&&!amHelm&&canAccess;
-    const rowFull=total>=capacity+(isMyGroup?reserve:0);
-    const cantAccess=!isMyGroup&&!isOpen;
+    const myEntry={name:S.userName,gid:S.userGroupId,mid:S.memberId,ts:nowIso()};
+    const rowDirect=canTakeRowerSpot(o,myEntry);
+    const cantAccess=!isMyGroup&&!canAccess;
 
     if(canJoinHelm)
       acts.push(`<button onclick="signup(${o.id},true)" style="flex:1;padding:9px;background:#4a7a3d;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">⛵ Timoner</button>`);
-    if(canJoinRow&&!rowFull)
+    if(canJoinRow&&rowDirect)
       acts.push(`<button onclick="signup(${o.id},false)" style="flex:1;padding:9px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:13px;cursor:pointer">✋ Apuntar-me</button>`);
-    if(canJoinRow&&rowFull)
+    if(canJoinRow&&!rowDirect)
       acts.push(`<button onclick="signup(${o.id},false)" style="flex:1;padding:9px;background:#e8a020;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:13px;cursor:pointer">⏳ Llista d'espera</button>`);
     if((amIn||amHelm)&&!isPast)
       acts.push(`<button onclick="unsignup(${o.id})" style="flex:1;padding:9px;background:transparent;border:.5px solid ${RED};border-radius:8px;color:${RED};font-weight:500;font-size:13px;cursor:pointer">Desapuntar-me</button>`);
@@ -996,10 +1067,8 @@ function renderOutingCard(o){
     if(cantAccess)
       acts.push(`<div style="flex:1;padding:9px;background:#f8f8f8;border-radius:8px;color:${MUTED};font-size:12px;text-align:center">${isGeneral?`S'obrirà a tots ${formatNaturalOpenLabel(o)}`:`Reservada al ${shortGroup(o.groupId)} fins a l'obertura general`}</div>`);
   }
-  if((isMyCap||isPatron)&&!isPast&&!isOpen&&!o.isOpen&&hasGeneralSpots)
+  if((isMyCap||isPatron)&&!isPast&&!openTrigger&&!o.isOpen)
     acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:12px;cursor:pointer">🔓 Obrir</button>`);
-  else if((isMyCap||isPatron)&&!isPast&&!isOpen&&!hasGeneralSpots)
-    acts.push(`<div style="padding:9px 12px;background:#f8f8f8;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:12px;text-align:center">Sense places per obrir a tothom</div>`);
   if(isPatron&&!isPast&&o.isOpen&&!autoOpenReached(o))
     acts.push(`<button onclick="closeOut(${o.id})" style="padding:9px 12px;background:#fff;border:.5px solid ${RED};border-radius:8px;color:${RED};font-size:12px;font-weight:700;cursor:pointer">🔒 Tancar a tots</button>`);
   if(isPatron&&!isPast)
@@ -1035,20 +1104,21 @@ function renderOutingCard(o){
 
   return`<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
     <div style="padding:12px 14px;border-bottom:.5px solid #f5f3ee">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <div style="font-size:14px;font-weight:600;color:#1a1a18">${esc(o.title)}</div>${badge}
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;gap:10px">
+        <div style="font-size:15px;font-weight:750;color:#1a1a18;line-height:1.2;min-width:0">${esc(outingDisplayTitle(o))} · ${esc(o.time)} h</div>${badge}
       </div>
-      <div style="font-size:12px;color:${MUTED}">📅 ${dateStr} · ${esc(o.time)} h${isPast?` · <span style="background:#f5f3ee;color:${MUTED};font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">Sortida passada</span>`:""}</div>
+      <div style="font-size:12px;color:${MUTED}">📅 ${dateStr}${isPast?` · <span style="background:#f5f3ee;color:${MUTED};font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600">Sortida passada</span>`:""}</div>
       ${openInfo}
       <div style="margin-top:10px">
         <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-          <span style="font-size:11px;color:${MUTED}">Vogadors</span>
+          <span style="font-size:11px;color:${MUTED}">Places ocupades</span>
           <span style="font-size:11px;font-weight:600;color:${total>=capacity?RED:DARK}">${total}/${capacity}${o.waitlist.length?` · ${o.waitlist.length} esperant`:""}</span>
         </div>
         <div style="background:#f0ede8;border-radius:4px;height:5px"><div style="background:${total>=capacity?RED:DARK};height:5px;border-radius:4px;width:${pct}%"></div></div>
       </div>
+      ${compactStats}
     </div>
-    ${helmsBlock}${signupsBlock}${waitBlock}${addMemberModal}
+    ${peopleDropdown}${addMemberModal}
     ${acts.length?`<div style="padding:10px 14px;display:flex;gap:8px;flex-wrap:wrap">${acts.join("")}</div>`:""}
   </div>`;
 }
@@ -1138,20 +1208,31 @@ function renderHomeAvisos(){
 }
 function renderHomeOutingMini(o){
   if(!o.waitlist)o.waitlist=[];
+  if(!o.helmsmanSignups)o.helmsmanSignups=[];
   normalizeOutingEntries(o);
   if(reconcileOutingWaitlist(o)){save("outings");save("avisos");}
   const total=safeArr(o.signups).length;
+  const capacity=outingCapacity(o)||o.capacity||8;
+  const reserve=isGeneralOuting(o)?0:Number(o.reserve||1);
+  const reserveCount=safeArr(o.signups).filter(s=>s.isReserve).length;
+  const rowerCount=Math.max(0,total-reserveCount);
+  const cfg=getOutingCfg(o.groupId,o.date);
+  const maxHelm=o.helmsmen||cfg?.helmsmen||0;
   const isClub=!o.groupId;
   const grp=isClub?"Club":gname(o.groupId).split(" · ")[0];
   const dateStr=new Date((o.date||td())+"T12:00:00").toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
-  const chips=safeArr(o.signups).slice(0,6).map(s=>`<span style="display:inline-block;background:${s.gid===o.groupId?DARK:GREEN};border-radius:20px;font-size:11px;padding:3px 8px;margin:2px;color:#fff;font-weight:650">${esc(s.name)}</span>`).join("");
-  const more=total>6?`<span style="display:inline-block;background:#f0ede8;border-radius:20px;font-size:11px;padding:3px 8px;margin:2px;color:${MUTED};font-weight:700">+${total-6}</span>`:"";
-  const open=shouldBeOpen(o);
-  const noSpots=openTriggerReached(o)&&!hasOpenGeneralSpots(o);
-  const status=open?"🔓 Oberta":(noSpots?"🔒 Sense places":"🔒 Grup");
-  const statusBg=open?"#e6f4ee":(noSpots?"#fff0f0":"#fff8ee");
-  const statusCol=open?GREEN:(noSpots?RED:"#b07a10");
-  return `<div style="border:.5px solid ${BORDER};border-radius:14px;overflow:hidden;margin-bottom:9px;background:#fff"><div style="padding:11px 12px;border-bottom:.5px solid #f0ede6;display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div style="min-width:0"><div style="font-size:14px;font-weight:750;color:#1a1a18;line-height:1.25">${esc(o.title||"Sortida")}</div><div style="font-size:11px;color:${MUTED};line-height:1.35;margin-top:3px">${dateStr} · ${esc(o.time||"")} h · ${grp} · ${total}/${o.capacity||8} places</div></div><span style="font-size:10px;font-weight:800;border-radius:99px;padding:3px 8px;white-space:nowrap;background:${statusBg};color:${statusCol}">${status}</span></div>${chips||more?`<div style="padding:8px 10px;display:flex;gap:2px;flex-wrap:wrap">${chips}${more}</div>`:""}</div>`;
+  const open=openTriggerReached(o);
+  const noSpots=open&&!hasOpenGeneralSpots(o);
+  const status=open?(noSpots?"⏳ Només espera":"🔓 Oberta"):(isGeneralOuting(o)?"🔒 Programada":"🔒 Grup");
+  const statusBg=open?(noSpots?"#fff8ee":"#e6f4ee"):"#fff8ee";
+  const statusCol=open?(noSpots?"#b07a10":GREEN):"#b07a10";
+  const stats=`<div style="padding:8px 10px;display:flex;gap:6px;flex-wrap:wrap">
+    <span style="display:inline-flex;align-items:center;gap:4px;background:#f5f3ee;border-radius:999px;font-size:11px;padding:4px 8px;color:#1a1a18;font-weight:700">🚣 ${rowerCount}/${capacity}${reserve?` + ${reserve}R`:""}</span>
+    ${reserve?`<span style="display:inline-flex;align-items:center;gap:4px;background:#fff5ec;border-radius:999px;font-size:11px;padding:4px 8px;color:#8b4513;font-weight:700">Reserva ${reserveCount}/${reserve}</span>`:""}
+    ${maxHelm>0?`<span style="display:inline-flex;align-items:center;gap:4px;background:#eef6ee;border-radius:999px;font-size:11px;padding:4px 8px;color:#4a7a3d;font-weight:700">⛵ ${o.helmsmanSignups.length}/${maxHelm}</span>`:""}
+    <span style="display:inline-flex;align-items:center;gap:4px;background:#fff8ee;border-radius:999px;font-size:11px;padding:4px 8px;color:#b07a10;font-weight:700">⏳ ${o.waitlist.length}</span>
+  </div>`;
+  return `<div style="border:.5px solid ${BORDER};border-radius:14px;overflow:hidden;margin-bottom:9px;background:#fff"><div style="padding:11px 12px;border-bottom:.5px solid #f0ede6;display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div style="min-width:0"><div style="font-size:14px;font-weight:750;color:#1a1a18;line-height:1.25">${esc(outingDisplayTitle(o))} · ${esc(o.time||"")} h</div><div style="font-size:11px;color:${MUTED};line-height:1.35;margin-top:3px">📅 ${dateStr}</div></div><span style="font-size:10px;font-weight:800;border-radius:99px;padding:3px 8px;white-space:nowrap;background:${statusBg};color:${statusCol}">${status}</span></div>${stats}<div style="padding:0 10px 9px;font-size:10px;color:${MUTED};font-weight:700;text-align:right">Noms només a Sortides › Veure apuntats</div></div>`;
 }
 function renderHomeSortides(){
   const list=visibleOutings().filter(o=>!isPastOuting(o)).sort(sortOutings).slice(0,2);
@@ -1488,10 +1569,13 @@ async function signup(oid,asHelm=false){
     if(!o.waitlist)o.waitlist=[];
     if(!o.helmsmanSignups)o.helmsmanSignups=[];
     const isGeneral=isGeneralOuting(o);
-    const isMyGroup=!isGeneral&&S.userGroupId===o.groupId;
+    const isMyGroup=!isGeneral&&Number(S.userGroupId)===Number(o.groupId);
     const isOpen=shouldBeOpen(o);
-    if(!isMyGroup&&!isOpen)return;
+    const publicWaitlistOpen=canJoinPublicWaitlist(o);
+    if(!isMyGroup&&!isOpen&&!publicWaitlistOpen)return;
     const entry={name:S.userName,gid:S.userGroupId,mid:S.memberId,ts:nowIso()};
+    markWaitlistPriority(entry,o);
+    reconcileOutingWaitlist(o);
     // No pot ser timoner i vogador alhora, ni duplicar inscripció.
     const amHelm=o.helmsmanSignups.some(entryMatchesCurrent);
     const amRower=o.signups.some(entryMatchesCurrent);
@@ -1504,19 +1588,16 @@ async function signup(oid,asHelm=false){
       o.helmsmanSignups.push(entry);
       addOutingLog(o,"helm_signup",`${S.userName} s'apunta de timoner a ${outingLabel(o)}.`);
     } else {
-      const maxNormal=outingCapacity(o);
-      const maxWithReserve=isMyGroup?(maxNormal+outingReserve(o)):maxNormal;
-      if(o.signups.length>=maxNormal){
-        if(isMyGroup&&o.signups.length<maxWithReserve){
-          o.signups.push({...entry,isReserve:true});
-          addOutingLog(o,"signup_reserve",`${S.userName} ocupa la plaça de reserva de ${outingLabel(o)}.`);
-        } else {
-          o.waitlist.push(entry);
-          addOutingLog(o,"waitlist_join",`${S.userName} entra a la llista d'espera de ${outingLabel(o)}.`);
-        }
-      } else {
+      if(canTakeRowerSpot(o,entry)){
         o.signups.push(entry);
         addOutingLog(o,"signup",`${S.userName} s'apunta a ${outingLabel(o)}.`);
+      }else if(canTakeReserveSpot(o,entry)){
+        o.signups.push({...entry,isReserve:true});
+        addOutingLog(o,"signup_reserve",`${S.userName} ocupa la plaça de reserva de ${outingLabel(o)}.`);
+      }else{
+        markWaitlistPriority(entry,o);
+        o.waitlist.push(entry);
+        addOutingLog(o,"waitlist_join",`${S.userName} entra a la llista d'espera de ${outingLabel(o)}${entry.groupPriority?" amb prioritat de grup":""}.`);
       }
     }
     await saveMany(["outings","avisos"]);
@@ -1591,6 +1672,7 @@ async function patronAddMember(oid){
     if(!m)return alert("No s'ha trobat aquest soci.");
 
     const entry={name:m.name,gid:m.groupId,mid:m.id,ts:nowIso()};
+    markWaitlistPriority(entry,o);
     const same=e=>Number(e.mid)===Number(m.id)||String(e.name||"")===String(m.name||"");
     const alreadyIn=o.signups.some(same);
     const alreadyHelm=o.helmsmanSignups.some(same);
@@ -1611,19 +1693,16 @@ async function patronAddMember(oid){
       o.helmsmanSignups.push(entry);
       addOutingLog(o,"helm_signup_patron",`El patró apunta ${m.name} de timoner a ${outingLabel(o)}.`);
     } else {
-      const cap=outingCapacity(o);
-      const isGeneral=isGeneralOuting(o);
-      const isOwnGroup=!isGeneral&&Number(m.groupId)===Number(o.groupId);
-      const reserve=isOwnGroup?outingReserve(o):0;
-      if(o.signups.length<cap){
+      if(canTakeRowerSpot(o,entry)){
         o.signups.push(entry);
         addOutingLog(o,"signup_patron",`El patró apunta ${m.name} a ${outingLabel(o)}.`);
-      }else if(isOwnGroup&&o.signups.length<cap+reserve){
+      }else if(canTakeReserveSpot(o,entry)){
         o.signups.push({...entry,isReserve:true});
         addOutingLog(o,"signup_patron_reserve",`El patró apunta ${m.name} a la plaça de reserva de ${outingLabel(o)}.`);
       }else{
+        markWaitlistPriority(entry,o);
         o.waitlist.push(entry);
-        addOutingLog(o,"waitlist_join_patron",`El patró posa ${m.name} a la llista d'espera de ${outingLabel(o)}.`);
+        addOutingLog(o,"waitlist_join_patron",`El patró posa ${m.name} a la llista d'espera de ${outingLabel(o)}${entry.groupPriority?" amb prioritat de grup":""}.`);
       }
     }
 
@@ -1751,15 +1830,13 @@ async function openOut(oid){
     const isOwnCap=!isGeneralOuting(o)&&S.role==="cap"&&S.capGroupId===o.groupId;
     if(!isPatron&&!isOwnCap)return;
     const changed=reconcileOutingWaitlist(o);
-    if(!hasOpenGeneralSpots(o)){
-      if(changed){await saveMany(["outings","avisos"]);}
-      alert(hasGroupWaitlist(o)?"Abans d'obrir a tothom cal respectar la llista d'espera del grup.":"No es pot obrir a tothom perquè no hi ha places lliures.");
-      return;
-    }
     if(!o.isOpen){
       o.isOpen=true;
+      o.openedAt=nowIso();
       addOutingLog(o,"outing_opened",`${actorLabel()} obre a tothom la inscripció de ${outingLabel(o)}.`);
       reconcileOutingWaitlist(o);
+      await saveMany(["outings","avisos"]);
+    }else if(changed){
       await saveMany(["outings","avisos"]);
     }
   });
@@ -1776,6 +1853,7 @@ async function closeOut(oid){
       return;
     }
     o.isOpen=false;
+    delete o.openedAt;
     addOutingLog(o,"outing_closed_manual",`El patró tanca a tothom la inscripció de ${outingLabel(o)}. Torna a quedar reservada fins a l'obertura automàtica.`);
     await saveMany(["outings","avisos"]);
   });
@@ -1991,13 +2069,45 @@ function waitEntryBelongsToGroup(w,o){
   if(isGeneralOuting(o))return false;
   return waitEntryGroupId(w)===Number(o?.groupId||0);
 }
-function hasGroupWaitlist(o){
-  if(isGeneralOuting(o))return false;
-  return safeArr(o?.waitlist).some(w=>waitEntryBelongsToGroup(w,o));
+function generalOpenCutoff(o){
+  if(!o)return null;
+  if(o.isOpen&&o.openedAt){
+    const d=new Date(o.openedAt);
+    if(!Number.isNaN(d.getTime()))return d;
+  }
+  return getNaturalOpenDate(o);
 }
+function entryJoinedBeforeGeneralOpen(w,o){
+  const cutoff=generalOpenCutoff(o);
+  if(!cutoff)return false;
+  const ts=w?.ts?new Date(w.ts):null;
+  if(!ts||Number.isNaN(ts.getTime()))return !openTriggerReached(o);
+  return ts<cutoff;
+}
+function shouldHaveGroupPriority(entry,o){
+  return waitEntryBelongsToGroup(entry,o)&&entryJoinedBeforeGeneralOpen(entry,o);
+}
+function markWaitlistPriority(entry,o){
+  if(!entry)return entry;
+  if(shouldHaveGroupPriority(entry,o))entry.groupPriority=true;
+  else delete entry.groupPriority;
+  return entry;
+}
+function waitEntryHasGroupPriority(w,o){
+  if(!waitEntryBelongsToGroup(w,o))return false;
+  if(w?.groupPriority===true)return true;
+  if(w?.groupPriority===false)return false;
+  return entryJoinedBeforeGeneralOpen(w,o);
+}
+function hasPriorityGroupWaitlist(o){
+  if(isGeneralOuting(o))return false;
+  return safeArr(o?.waitlist).some(w=>waitEntryHasGroupPriority(w,o));
+}
+// Compatibilitat amb codi anterior: ara "llista del grup" vol dir només la prioritària.
+function hasGroupWaitlist(o){return hasPriorityGroupWaitlist(o);}
 function hasOpenGeneralSpots(o){
-  // Sortides generals: només cal que hi hagi plaça. Sortides de grup: primer es respecta la llista del grup.
-  return safeArr(o?.signups).length<outingCapacity(o)&&!hasGroupWaitlist(o);
+  // Hi ha plaça directa per a gent del general només si no hi ha espera prioritària del grup.
+  return normalRowerCount(o)<outingCapacity(o)&&!hasPriorityGroupWaitlist(o);
 }
 
 function autoOpenReached(o){
@@ -2009,16 +2119,35 @@ function openTriggerReached(o){
   return autoOpenReached(o);
 }
 
-// Calcula si una sortida està oberta a tots ara mateix.
-// Regla: només i sempre que ja toqui obrir-la, hi hagi places lliures i no hi hagi llista del grup pendent.
+// Calcula si la sortida ja està en fase d'obertura general, independentment de si hi ha places.
 function shouldBeOpen(o){
-  return openTriggerReached(o)&&hasOpenGeneralSpots(o);
+  return openTriggerReached(o);
+}
+
+// Quan arriba l'hora d'obertura general, qualsevol soci pot entrar a la llista d'espera,
+// encara que la sortida estigui plena o hi hagi una espera prioritària del grup.
+function canJoinPublicWaitlist(o){
+  return openTriggerReached(o);
 }
 
 function outingReserve(o){
   if(!o||isGeneralOuting(o))return 0;
   const cfg=getOutingCfg(o.groupId,o.date);
   return Number(o.reserve ?? cfg?.reserve ?? 0)||0;
+}
+function canTakeRowerSpot(o,entry){
+  if(!o||!entry)return false;
+  if(normalRowerCount(o)>=outingCapacity(o))return false;
+  if(hasPriorityGroupWaitlist(o))return false;
+  if(isGeneralOuting(o))return openTriggerReached(o);
+  const isOwn=Number(entry.gid)===Number(o.groupId);
+  return isOwn||openTriggerReached(o);
+}
+function canTakeReserveSpot(o,entry){
+  if(!o||!entry||isGeneralOuting(o))return false;
+  if(Number(entry.gid)!==Number(o.groupId))return false;
+  if(hasPriorityGroupWaitlist(o))return false;
+  return normalRowerCount(o)>=outingCapacity(o)&&reserveRowerCount(o)<outingReserve(o);
 }
 function normalRowerCount(o){
   return safeArr(o?.signups).filter(s=>!s.isReserve).length;
@@ -2068,12 +2197,12 @@ function normalizeReserveSlots(o){
   return changed;
 }
 
-function nextWaitlistCandidate(o,groupOnly=false,allowOthers=false){
+function nextWaitlistCandidate(o,priorityOnly=false,allowOthers=false){
   const wait=safeArr(o?.waitlist);
   if(!wait.length)return null;
-  const own=wait.find(w=>waitEntryBelongsToGroup(w,o));
-  if(groupOnly)return own||null;
-  if(own)return own;
+  const priority=wait.find(w=>waitEntryHasGroupPriority(w,o));
+  if(priorityOnly)return priority||null;
+  if(priority)return priority;
   return allowOthers?wait[0]:null;
 }
 
@@ -2282,7 +2411,7 @@ function generateAutoOutingsForWeekCycle(now=new Date()){
           id:base+(counter++),
           groupId:g.id,
           openAllGroups:false,
-          title:`Sortida setmanal · ${day}`,
+          title:gname(g.id).split(" · ")[0]||`Grup ${g.id}`,
           date:ds,time:t,
           capacity:cfg.capacity,
           reserve:cfg.reserve,

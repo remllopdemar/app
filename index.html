@@ -36,7 +36,16 @@ const MONTHS=["Gener","Febrer","Març","Abril","Maig","Juny","Juliol","Agost","S
 const PTS={1:35,2:28,3:22,4:18,5:15};
 const POS={1:"1r",2:"2n",3:"3r",4:"4t",5:"è"};
 const PCOL={1:"#c8a44a",2:"#888780",3:"#8b6c3c"};
-function wDir(d){return["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSO","SO","OSO","O","ONO","NO","NNO"][Math.round(d/22.5)%16];}
+function wDir(d){
+  const v=Number(d);
+  if(!Number.isFinite(v))return "";
+  return ["Tramuntana","Gregal","Llevant","Xaloc","Migjorn","Garbí","Ponent","Mestral"][Math.round(v/45)%8];
+}
+function compassDir(d){
+  const v=Number(d);
+  if(!Number.isFinite(v))return "";
+  return ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSO","SO","OSO","O","ONO","NO","NNO"][Math.round(v/22.5)%16];
+}
 function wIcon(c){if(c===0)return"☀️";if(c<=3)return"⛅";if(c<=65)return"🌧️";if(c<=82)return"🌦️";return"⛈️";}
 
 // Cache local (ràpid) + Supabase (compartit entre usuaris)
@@ -139,6 +148,16 @@ function normalizeSections(secs){
 function normalizeNameKey(v){return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();}
 function cleanName(v){return String(v||"").normalize("NFC").replace(/[\u0000-\u001F\u007F<>`]/g,"").replace(/\s+/g," ").trim().slice(0,80);}
 function cleanText(v,max=1200){return String(v||"").normalize("NFC").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F`]/g,"").trim().slice(0,max);}
+function cleanTitle(v,max=160){return cleanText(v,max).replace(/[<>]/g,"").replace(/\s+/g," ").trim();}
+function cleanRichInput(v,max=1200){return cleanText(v,max).replace(/[<>]/g,"");}
+function cleanUrl(v,max=500){
+  const raw=cleanText(v,max).replace(/[<>]/g,"").trim();
+  if(!raw)return "";
+  try{
+    const u=new URL(raw,window.location.href);
+    return ["http:","https:","mailto:"].includes(u.protocol)?raw:"";
+  }catch{return "";}
+}
 function isNachoMember(m){return normalizeNameKey(m?.name)==="nacho garcia";}
 function currentMember(){return S.memberId?S.membres.find(m=>Number(m.id)===Number(S.memberId)):null;}
 function memberCanViewStats(m){return !!(m?.canViewStats||m?.isWebmaster||isNachoMember(m));}
@@ -336,6 +355,23 @@ const gname=id=>Number(id)===0?"Tots els grups":(S.groups.find(g=>g.id===id)?.na
 const td=()=>isoDate(new Date());
 const secBadge=secs=>{const c=[];if(secs.includes("competicio"))c.push(`<span style="background:#eef0fa;color:${DARK};font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600">🏆</span>`);if(secs.includes("social"))c.push(`<span style="background:#e6f4ee;color:${GREEN};font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600">⚓</span>`);return c.join(" ");};
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+function richText(v){
+  // Format bàsic i segur per avisos: primer escapem HTML i després permetem només **negreta** i salts de línia.
+  return esc(v||"")
+    .replace(/\*\*([^*]+?)\*\*/g,"<strong>$1</strong>")
+    .replace(/\n/g,"<br>");
+}
+function insertAvisBold(textareaId){
+  const el=document.getElementById(textareaId);
+  if(!el)return;
+  const start=el.selectionStart??el.value.length;
+  const end=el.selectionEnd??start;
+  const selected=el.value.slice(start,end);
+  const insert=selected?`**${selected}**`:"**negreta**";
+  el.value=el.value.slice(0,start)+insert+el.value.slice(end);
+  el.focus();
+  if(selected){el.setSelectionRange(start,start+insert.length);}else{el.setSelectionRange(start+2,start+9);}
+}
 const jsArg=v=>JSON.stringify(String(v??"")).replace(/</g,"\\u003c").replace(/>/g,"\\u003e");
 const pollKey=(pid,opt)=>pid+":"+encodeURIComponent(opt);
 const initials=name=>String(name||"").trim().split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]?.toUpperCase()||"").join("")||"?";
@@ -615,7 +651,7 @@ function betaCheckKey(group,item){return normalizeNameKey(group+":"+item).replac
 function betaChecklist(){return store.get("ldm:betaChecklist")||{};}
 function setBetaCheck(k,val){const d=betaChecklist();d[k]=val;store.set("ldm:betaChecklist",d);showToast("ok","Checklist actualitzada.");}
 function exportBackup(){
-  const data={exportedAt:nowIso(),version:"fix28",keys:{}};
+  const data={exportedAt:nowIso(),version:"fix43",keys:{}};
   SUPA_KEYS.forEach(k=>data.keys[k]=S[k]);
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);const a=document.createElement("a");
@@ -682,6 +718,17 @@ function isPastOuting(o){
 function sortOutings(a,b){return (a.date||"").localeCompare(b.date||"")||(a.time||"").localeCompare(b.time||"");}
 function memberIsInOuting(o,name=S.userName,gid=S.userGroupId,mid=S.memberId){
   return safeArr(o.signups).some(s=>entryMatchesPerson(s,name,gid,mid))||safeArr(o.waitlist).some(s=>entryMatchesPerson(s,name,gid,mid))||safeArr(o.helmsmanSignups).some(s=>entryMatchesPerson(s,name,gid,mid));
+}
+function personalOutingState(o){
+  if(!(S.role==="soci"||S.role==="cap"))return null;
+  const amHelm=safeArr(o.helmsmanSignups).some(entryMatchesCurrent);
+  const signup=safeArr(o.signups).find(entryMatchesCurrent);
+  const waitIdx=safeArr(o.waitlist).findIndex(entryMatchesCurrent);
+  if(amHelm)return {text:"Estàs apuntat com a timoner",icon:"⛵",bg:"#e6f4ee",col:GREEN,active:true};
+  if(signup?.isReserve)return {text:"Estàs en reserva",icon:"🤎",bg:"#fff5ec",col:"#8b4513",active:true};
+  if(signup)return {text:"Estàs apuntat com a vogador",icon:"✅",bg:"#e6f4ee",col:GREEN,active:true};
+  if(waitIdx>=0)return {text:`Estàs en llista d'espera · posició ${waitIdx+1}`,icon:"⏳",bg:"#fff8ee",col:"#b07a10",active:true};
+  return {text:"No estàs apuntat",icon:"ℹ️",bg:"#f5f3ee",col:MUTED,active:false};
 }
 function canSeeOuting(o){
   const isOpen=shouldBeOpen(o);
@@ -974,7 +1021,7 @@ function renderMeteo(){
     return`<div style="display:grid;grid-template-columns:38px 1fr;gap:8px;align-items:center;background:${riskBg(warn)};border:1px solid ${riskBorder(warn)};border-radius:10px;padding:7px 8px;margin-top:6px;font-size:12px;color:rgba(255,255,255,.82);line-height:1.25">
       <div style="font-weight:850;color:#fff;flex-shrink:0">${x.t.slice(0,2)}h</div>
       <div style="min-width:0">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;color:${riskColor(warn)};font-weight:850"><span>💨 ${x.wkn!==null&&x.wkn!==undefined?x.wkn+' kn':'—'} ${x.wdeg!==null?wDir(x.wdeg):''}</span><span>🌊 ${x.wh!==null&&x.wh!==undefined?num(x.wh,1)+' m':'—'} ${x.wdir!==null?wDir(x.wdir):''}</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;color:${riskColor(warn)};font-weight:850"><span>💨 ${x.wkn!==null&&x.wkn!==undefined?x.wkn+' kn':'—'} ${x.wdeg!==null?wDir(x.wdeg):''}</span><span>🌊 ${x.wh!==null&&x.wh!==undefined?num(x.wh,1)+' m':'—'} ${x.wdir!==null?compassDir(x.wdir):''}</span></div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:2px;color:rgba(255,255,255,.58);font-size:11px"><span>${wIcon(x.code)} ${x.temp!==null&&x.temp!==undefined?Math.round(x.temp)+'°':'—'}${x.rain!==null&&x.rain!==undefined&&Number(x.rain)>0?` · 🌧️ ${num(x.rain,1)} mm`:''}</span><span>${x.wp!==null&&x.wp!==undefined?num(x.wp,0)+'s':''}</span></div>
       </div>
     </div>`;
@@ -985,7 +1032,7 @@ function renderMeteo(){
   const marineNote=S.marine?"":"<div style='font-size:11px;color:rgba(255,255,255,.48);margin-top:8px'>Estat del mar no disponible ara mateix.</div>";
   const daySummary=`${min!==null&&min!==undefined?Math.round(min)+'° / ':''}${max!==null&&max!==undefined?Math.round(max)+'°':''}${rainDay!==null&&rainDay!==undefined&&Number(rainDay)>0?` · Pluja ${num(rainDay,1)} mm`:''}`;
   const windMain=Number.isFinite(maxWind)?`${maxWind} kn ${bestWind?.wdeg!==null&&bestWind?.wdeg!==undefined?wDir(bestWind.wdeg):''}`:"—";
-  const seaMain=Number.isFinite(maxWave)?`${num(maxWave,1)} m ${bestWave?.wdir!==null&&bestWave?.wdir!==undefined?wDir(bestWave.wdir):''}`:"—";
+  const seaMain=Number.isFinite(maxWave)?`${num(maxWave,1)} m ${bestWave?.wdir!==null&&bestWave?.wdir!==undefined?compassDir(bestWave.wdir):''}`:"—";
   const seaLabel=Number.isFinite(maxWave)?seaStateLabel(maxWave):"Mar no disponible";
   const hoursOpen=!!S.meteoHoursOpen;
   const hoursDropdown=`<button onclick="go({meteoHoursOpen:${hoursOpen?'false':'true'}})" style="width:100%;margin-top:8px;background:rgba(255,255,255,.075);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:9px 10px;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;text-align:left">
@@ -1136,13 +1183,8 @@ function renderOutingCard(o){
   const canAccess=isGeneral?publicWaitlistOpen:(isMyGroup||isOpen||publicWaitlistOpen);
   const writeBlocked=readOnlyMode();
   const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
-  const mySignup=o.signups.find(entryMatchesCurrent);
-  const myWaitIdx=o.waitlist.findIndex(entryMatchesCurrent);
-  const myStatus=amHelm?"Estàs apuntat com a timoner":mySignup?.isReserve?"Estàs en reserva":amIn?"Estàs apuntat com a vogador":amWait?`Estàs en llista d'espera · posició ${myWaitIdx+1}`:"No estàs apuntat";
-  const myStatusBg=amHelm||amIn?"#e6f4ee":amWait?"#fff8ee":"#f5f3ee";
-  const myStatusCol=amHelm||amIn?GREEN:amWait?"#b07a10":MUTED;
-  const myStatusIcon=amHelm?"⛵":amIn?"✅":amWait?"⏳":"ℹ️";
-  const personalStatus=(S.role==="soci"||S.role==="cap")?`<div style="font-size:12px;color:${myStatusCol};background:${myStatusBg};border-radius:9px;padding:7px 9px;margin-top:8px;font-weight:750;line-height:1.3">${myStatusIcon} ${myStatus}</div>`:"";
+  const ps=personalOutingState(o);
+  const personalStatus=ps?`<div style="font-size:12px;color:${ps.col};background:${ps.bg};border:.5px solid ${ps.active?ps.col:BORDER};border-radius:10px;padding:8px 10px;margin-top:8px;font-weight:850;line-height:1.3;display:flex;align-items:center;gap:6px"><span>${ps.icon}</span><span>${ps.text}</span></div>`:"";
 
   // Estat clar: abans de l'obertura queda reservada; quan arriba l'hora, s'obre al general
   // encara que no hi hagi places lliures, permetent apuntar-se a la llista d'espera.
@@ -1420,9 +1462,43 @@ function renderPollCard(p){
 }
 
 // ── Pantalles principals ────────────────────────────────────────────────────────
+function renderMyNextOuting(){
+  if(!(S.role==="soci"||S.role==="cap"))return "";
+  const next=visibleOutings().filter(o=>!isPastOuting(o)&&memberIsInOuting(o)).sort(sortOutings)[0];
+  if(!next){
+    return cc(`${lbl("🚣 La meva propera sortida")}<div style="font-size:13px;color:${MUTED};line-height:1.45">No tens cap sortida propera. Quan t'apuntis a una sortida, apareixerà aquí.</div><div style="display:flex;justify-content:flex-end;margin-top:9px"><button onclick="go({screen:'entrena',section:'social'})" style="border:none;background:${BG};border-radius:8px;color:${DARK};font-size:11px;font-weight:800;padding:6px 9px;cursor:pointer">Veure sortides</button></div>`);
+  }
+  const ps=personalOutingState(next);
+  const dateStr=new Date(next.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
+  return `<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
+    <div style="height:4px;background:${ps?.active?GREEN:DARK}"></div>
+    <div style="padding:12px 14px">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+        <div style="min-width:0"><div style="font-size:11px;color:${MUTED};font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">🚣 La meva propera sortida</div><div style="font-size:16px;font-weight:850;color:#1a1a18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(outingDisplayTitle(next))} · ${esc(next.time||"")} h</div><div style="font-size:12px;color:${MUTED};margin-top:3px">📅 ${dateStr}</div></div>
+        <button onclick="go({screen:'entrena',section:'social'})" style="background:${BG};border:none;border-radius:8px;color:${DARK};font-size:11px;font-weight:850;padding:6px 9px;cursor:pointer;white-space:nowrap">Veure</button>
+      </div>
+      ${ps?`<div style="font-size:12px;color:${ps.col};background:${ps.bg};border:.5px solid ${ps.active?ps.col:BORDER};border-radius:10px;padding:8px 10px;margin-top:10px;font-weight:850;line-height:1.3">${ps.icon} ${ps.text}</div>`:""}
+    </div>
+  </div>`;
+}
+
+function renderOutingsHelp(){
+  return `<details style="background:#fff;border:.5px solid ${BORDER};border-radius:14px;margin:10px 14px 0;overflow:hidden">
+    <summary style="list-style:none;cursor:pointer;padding:11px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div><div style="font-size:13px;font-weight:850;color:${DARK}">Com funcionen les sortides?</div><div style="font-size:11px;color:${MUTED};margin-top:2px">Places, reserva i llista d'espera</div></div><div style="font-size:18px;color:${MUTED}">▾</div>
+    </summary>
+    <div style="padding:0 14px 12px;border-top:.5px solid #f0ede6;font-size:12px;color:#1a1a18;line-height:1.5">
+      <p style="margin-top:10px"><strong>Sortides de grup:</strong> primer estan reservades al grup corresponent. Quan arriba l'obertura general, qualsevol soci es pot apuntar a plaça o a llista d'espera.</p>
+      <p style="margin-top:8px"><strong>Reserva:</strong> en les sortides de grup pot haver-hi una plaça de reserva. Si queda lliure una plaça normal, la reserva puja automàticament.</p>
+      <p style="margin-top:8px"><strong>Llista d'espera:</strong> si la sortida està plena, et pots apuntar a llista d'espera. La llista del grup creada abans de l'obertura general manté prioritat.</p>
+      <p style="margin-top:8px"><strong>Sortides obertes:</strong> són per a tots els grups des del principi i no tenen reserva de grup.</p>
+    </div>
+  </details>`;
+}
+
 function renderHomeAvisos(){
   const list=[...S.avisos].filter(a=>(!a.kind||a.kind==="public")&&canSeeAvis(a)).sort((a,b)=>(b.pin?1:0)-(a.pin?1:0)||(b.date||"").localeCompare(a.date||"")).slice(0,2);
-  const body=list.length?list.map(a=>`<div style="border-radius:12px;margin-bottom:8px;overflow:hidden;border:.5px solid ${a.pin?RED:BORDER}">${a.pin?`<div style="background:${RED};padding:4px 10px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase">📌 Avís important · ${audienceLabel(a)}</div>`:`<div style="background:#f5f5f5;padding:4px 10px;font-size:10px;font-weight:700;color:${MUTED};text-transform:uppercase">📢 ${audienceLabel(a)}</div>`}<div style="background:#fff;padding:10px 12px;font-size:13px;color:#1a1a18;line-height:1.45">${esc(a.text)}</div></div>`).join(""):`<div style="font-size:13px;color:${MUTED};text-align:center;padding:.8rem 0">Cap avís pendent</div>`;
+  const body=list.length?list.map(a=>`<div style="border-radius:12px;margin-bottom:8px;overflow:hidden;border:.5px solid ${a.pin?RED:BORDER}">${a.pin?`<div style="background:${RED};padding:4px 10px;font-size:10px;font-weight:800;color:#fff;text-transform:uppercase">📌 Avís important · ${audienceLabel(a)}</div>`:`<div style="background:#f5f5f5;padding:4px 10px;font-size:10px;font-weight:700;color:${MUTED};text-transform:uppercase">📢 ${audienceLabel(a)}</div>`}<div style="background:#fff;padding:10px 12px;font-size:13px;color:#1a1a18;line-height:1.45">${richText(a.text)}</div></div>`).join(""):`<div style="font-size:13px;color:${MUTED};text-align:center;padding:.8rem 0">Cap avís pendent</div>`;
   return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">${lbl("📢 Avisos")}<span style="background:#eef0fa;color:${DARK};font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px">${list.length}</span></div>${body}<div style="display:flex;justify-content:flex-end;margin-top:8px"><button onclick="go({screen:'avisos'})" style="border:none;background:${BG};border-radius:8px;color:${DARK};font-size:11px;font-weight:800;padding:6px 9px;cursor:pointer">Veure avisos</button></div>`);
 }
 function renderHomeOutingMini(o){
@@ -1471,7 +1547,7 @@ function renderHomeEnquestes(){
   return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">${lbl("📊 Enquestes")}<span style="background:#eef0fa;color:${DARK};font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px">${open.length}</span></div>${body}<div style="display:flex;justify-content:flex-end;margin-top:8px"><button onclick="go({screen:'vots'})" style="border:none;background:${BG};border-radius:8px;color:${DARK};font-size:11px;font-weight:800;padding:6px 9px;cursor:pointer">Veure enquestes</button></div>`);
 }
 function renderInici(){
-  return renderHomeAvisos()+renderMeteo()+renderHomeSortides()+renderHomeEnquestes()+`<div style="margin:12px 14px 4px">${lbl("📅 Calendari del club")}</div>`+renderClubAgenda()+`<div style="height:14px"></div>`;
+  return renderMyNextOuting()+renderHomeAvisos()+renderMeteo()+renderHomeSortides()+renderHomeEnquestes()+`<div style="margin:12px 14px 4px">${lbl("📅 Calendari del club")}</div>`+renderClubAgenda()+`<div style="height:14px"></div>`;
 }
 
 function renderEntrena(){
@@ -1500,7 +1576,7 @@ function renderEntrena(){
     const pager=passades.length>pageSize?`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px 14px 0"><button onclick="go({outingHistoryPage:${Math.max(page-1,0)}})" ${page===0?"disabled":""} style="flex:1;padding:8px;background:${page===0?"#f5f3ee":"#fff"};border:.5px solid ${BORDER};border-radius:8px;color:${page===0?MUTED:DARK};font-size:12px;cursor:${page===0?"default":"pointer"}">‹ Anteriors</button><div style="font-size:11px;color:${MUTED};font-weight:600">${page+1}/${totalPages}</div><button onclick="go({outingHistoryPage:${Math.min(page+1,totalPages-1)}})" ${page>=totalPages-1?"disabled":""} style="flex:1;padding:8px;background:${page>=totalPages-1?"#f5f3ee":"#fff"};border:.5px solid ${BORDER};border-radius:8px;color:${page>=totalPages-1?MUTED:DARK};font-size:12px;cursor:${page>=totalPages-1?"default":"pointer"}">Següents ›</button></div>`:"";
     histBlock=`<div style="margin:14px 14px 4px">${lbl("Històric de sortides")}</div>`+items.map(o=>renderOutingCard(o)).join("")+pager;
   }
-  return createBtn+form+properesBlock+histBtn+histBlock+`<div style="height:14px"></div>`;
+  return createBtn+form+renderOutingsHelp()+properesBlock+histBtn+histBlock+`<div style="height:14px"></div>`;
 }
 
 function renderResultats(){
@@ -1531,17 +1607,17 @@ function renderAvisos(){
     const audienceInput=isCap
       ?`<div style="background:#fff8ee;border:.5px solid #f0d9a8;border-radius:9px;padding:9px 10px;margin-bottom:8px;font-size:13px;color:#7a5200">👥 Aquest avís s'enviarà només al ${esc(gname(S.capGroupId).split(" · ")[0]||"teu grup")}.</div>`
       :`<select id="avis-audience" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;margin-bottom:8px"><option value="general">General · Tothom</option><option value="competicio">Competició</option><option value="social">Social</option><option value="group">Un grup concret</option></select><select id="avis-group" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;margin-bottom:8px">${S.groups.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join("")}</select>`;
-    form=cc(`${lbl(title)}${audienceInput}<textarea id="avis-text" placeholder="Escriu el missatge..." style="width:100%;padding:10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;min-height:80px;resize:vertical;margin-bottom:10px"></textarea><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><input type="checkbox" id="avis-pin" style="width:16px;height:16px;accent-color:${RED}"><label for="avis-pin" style="font-size:13px;color:#1a1a18;cursor:pointer">Fixar a dalt (important)</label></div><div style="display:flex;gap:8px"><button onclick="createAvis()" style="flex:1;padding:10px;background:${isCap?DARK:RED};border:none;border-radius:8px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Publicar</button><button onclick="go({showAvisForm:false})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`);
+    form=cc(`${lbl(title)}${audienceInput}<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px"><button type="button" onclick="insertAvisBold('avis-text')" title="Afegir negreta" style="background:#fff;border:.5px solid ${BORDER};border-radius:8px;color:${DARK};font-size:13px;font-weight:900;padding:5px 10px;cursor:pointer">B</button><div style="font-size:11px;color:${MUTED};flex:1;text-align:right">Emojis i <strong>**negreta**</strong></div></div><textarea id="avis-text" placeholder="Escriu el missatge..." style="width:100%;padding:10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;min-height:80px;resize:vertical;margin-bottom:10px"></textarea><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><input type="checkbox" id="avis-pin" style="width:16px;height:16px;accent-color:${RED}"><label for="avis-pin" style="font-size:13px;color:#1a1a18;cursor:pointer">Fixar a dalt (important)</label></div><div style="display:flex;gap:8px"><button onclick="createAvis()" style="flex:1;padding:10px;background:${isCap?DARK:RED};border:none;border-radius:8px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Publicar</button><button onclick="go({showAvisForm:false})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`);
   }
   const createBtn=canCreate&&!S.showAvisForm?`<div style="margin:10px 14px 0"><button onclick="go({showAvisForm:true,editAvisId:null})" style="width:100%;padding:11px;background:${S.role==="cap"?DARK:RED};border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">📢 Nou avís</button></div>`:"";
   const cards=publics.map(a=>{
     const st=audienceStyle(a);
     if(userCanManageContent()&&S.editAvisId===a.id){
       const aud=avisoAudience(a);
-      return cc(`${lbl("Editar avís")}<select id="edit-avis-audience-${a.id}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;margin-bottom:8px"><option value="general" ${aud==="general"?"selected":""}>General · Tothom</option><option value="competicio" ${aud==="competicio"?"selected":""}>Competició</option><option value="social" ${aud==="social"?"selected":""}>Social</option><option value="group" ${aud==="group"?"selected":""}>Grup concret</option></select><select id="edit-avis-group-${a.id}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;margin-bottom:8px">${S.groups.map(g=>`<option value="${g.id}" ${Number(a.groupId)===Number(g.id)?"selected":""}>${esc(g.name)}</option>`).join("")}</select><textarea id="edit-avis-text-${a.id}" style="width:100%;padding:10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;min-height:80px;resize:vertical;margin-bottom:10px">${esc(a.text||"")}</textarea><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><input type="checkbox" id="edit-avis-pin-${a.id}" ${a.pin?"checked":""} style="width:16px;height:16px;accent-color:${RED}"><label for="edit-avis-pin-${a.id}" style="font-size:13px;color:#1a1a18;cursor:pointer">Fixar a dalt</label></div><div style="display:flex;gap:8px"><button onclick="saveAvisEdit(${a.id})" style="flex:1;padding:10px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Desar canvis</button><button onclick="go({editAvisId:null})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`);
+      return cc(`${lbl("Editar avís")}<select id="edit-avis-audience-${a.id}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;margin-bottom:8px"><option value="general" ${aud==="general"?"selected":""}>General · Tothom</option><option value="competicio" ${aud==="competicio"?"selected":""}>Competició</option><option value="social" ${aud==="social"?"selected":""}>Social</option><option value="group" ${aud==="group"?"selected":""}>Grup concret</option></select><select id="edit-avis-group-${a.id}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;margin-bottom:8px">${S.groups.map(g=>`<option value="${g.id}" ${Number(a.groupId)===Number(g.id)?"selected":""}>${esc(g.name)}</option>`).join("")}</select><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px"><button type="button" onclick="insertAvisBold('edit-avis-text-${a.id}')" title="Afegir negreta" style="background:#fff;border:.5px solid ${BORDER};border-radius:8px;color:${DARK};font-size:13px;font-weight:900;padding:5px 10px;cursor:pointer">B</button><div style="font-size:11px;color:${MUTED};flex:1;text-align:right">Emojis i <strong>**negreta**</strong></div></div><textarea id="edit-avis-text-${a.id}" style="width:100%;padding:10px;border-radius:8px;border:.5px solid ${BORDER};font-size:13px;background:${BG};outline:none;box-sizing:border-box;min-height:80px;resize:vertical;margin-bottom:10px">${esc(a.text||"")}</textarea><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><input type="checkbox" id="edit-avis-pin-${a.id}" ${a.pin?"checked":""} style="width:16px;height:16px;accent-color:${RED}"><label for="edit-avis-pin-${a.id}" style="font-size:13px;color:#1a1a18;cursor:pointer">Fixar a dalt</label></div><div style="display:flex;gap:8px"><button onclick="saveAvisEdit(${a.id})" style="flex:1;padding:10px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Desar canvis</button><button onclick="go({editAvisId:null})" style="padding:10px 14px;background:transparent;border:.5px solid ${BORDER};border-radius:8px;color:${MUTED};font-size:14px;cursor:pointer">Cancel·lar</button></div>`);
     }
     const author=a.byRole==="cap"?"Cap de grup":"Patró";
-    return`<div style="border-radius:12px;margin:8px 14px 0;overflow:hidden;border:.5px solid ${a.pin?RED:BORDER}">${a.pin?`<div style="background:${RED};padding:4px 12px;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase">📌 Avís important · ${audienceLabel(a)}</div>`:`<div style="background:${st.bg};padding:4px 12px;font-size:10px;font-weight:700;color:${st.col};text-transform:uppercase">${st.ico} Avís ${audienceLabel(a)}</div>`}<div style="background:#fff;padding:12px 14px"><div style="font-size:14px;color:#1a1a18;line-height:1.55;margin-bottom:8px">${esc(a.text)}</div><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font-size:11px;color:${MUTED}">⚓ ${author} · ${esc(a.date||"")}</span>${userCanManageContent()?`<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button onclick="go({editAvisId:${a.id},showAvisForm:false})" style="background:none;border:.5px solid ${BORDER};border-radius:6px;color:${DARK};font-size:11px;padding:3px 8px;cursor:pointer">Editar</button>${S.role==="patron"?`<button onclick="togglePin(${a.id})" style="background:none;border:.5px solid ${BORDER};border-radius:6px;color:${MUTED};font-size:11px;padding:3px 8px;cursor:pointer">${a.pin?"Desfixar":"📌 Fixar"}</button><button onclick="delAvis(${a.id})" style="background:none;border:.5px solid ${BORDER};border-radius:6px;color:${RED};font-size:11px;padding:3px 8px;cursor:pointer">Eliminar</button>`:""}</div>`:""}</div></div></div>`;
+    return`<div style="border-radius:12px;margin:8px 14px 0;overflow:hidden;border:.5px solid ${a.pin?RED:BORDER}">${a.pin?`<div style="background:${RED};padding:4px 12px;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase">📌 Avís important · ${audienceLabel(a)}</div>`:`<div style="background:${st.bg};padding:4px 12px;font-size:10px;font-weight:700;color:${st.col};text-transform:uppercase">${st.ico} Avís ${audienceLabel(a)}</div>`}<div style="background:#fff;padding:12px 14px"><div style="font-size:14px;color:#1a1a18;line-height:1.55;margin-bottom:8px">${richText(a.text)}</div><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font-size:11px;color:${MUTED}">⚓ ${author} · ${esc(a.date||"")}</span>${userCanManageContent()?`<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button onclick="go({editAvisId:${a.id},showAvisForm:false})" style="background:none;border:.5px solid ${BORDER};border-radius:6px;color:${DARK};font-size:11px;padding:3px 8px;cursor:pointer">Editar</button>${S.role==="patron"?`<button onclick="togglePin(${a.id})" style="background:none;border:.5px solid ${BORDER};border-radius:6px;color:${MUTED};font-size:11px;padding:3px 8px;cursor:pointer">${a.pin?"Desfixar":"📌 Fixar"}</button><button onclick="delAvis(${a.id})" style="background:none;border:.5px solid ${BORDER};border-radius:6px;color:${RED};font-size:11px;padding:3px 8px;cursor:pointer">Eliminar</button>`:""}</div>`:""}</div></div></div>`;
   }).join("");
   const empty=!publics.length?cc(`<div style="font-size:13px;color:${MUTED};text-align:center;padding:1.5rem 0">Cap avís publicat</div>`):"";
   return createBtn+form+cards+empty+`<div style="height:14px"></div>`;
@@ -2137,7 +2213,7 @@ function addOut(){
   const tm=document.getElementById("o-time")?.value||"09:00";
   const gid=parseInt(document.getElementById("o-group")?.value??"0");
   const isOpenAll=Number(gid)===0;
-  let t=document.getElementById("o-title")?.value?.trim();
+  let t=cleanTitle(document.getElementById("o-title")?.value||"",160);
   if(!t)t=isOpenAll?"Sortida oberta":(gname(gid).split(" · ")[0]||"Sortida");
   const cap=parseInt(document.getElementById("o-cap")?.value)||(isOpenAll?12:8);
   const o={id:Date.now(),groupId:isOpenAll?0:gid,openAllGroups:isOpenAll,title:t,date:d,time:tm,capacity:cap,isOpen:isOpenAll,openedAt:isOpenAll?nowIso():null,reserve:0,helmsmen:0,helmsmanRequired:false,helmsmanSignups:[],signups:[],waitlist:[]};
@@ -2145,14 +2221,14 @@ function addOut(){
   addOutingLog(o,"outing_created",`El patró crea ${outingLabel(o)}${isOpenAll?" oberta a tots els grups":""}.`);
   save("outings");save("avisos");showToast("ok",isOpenAll?"Sortida oberta creada.":"Sortida creada.");go({showForm:false});
 }
-function addSess(){if(!(S.role==="patron"||(S.role==="cap"&&S.userSections.includes("competicio"))))return;const t=document.getElementById("f-type")?.value||"";if(!t)return;S.sessions.unshift({id:Date.now(),type:t,date:document.getElementById("f-date")?.value||"",duration:parseInt(document.getElementById("f-dur")?.value)||0,km:parseFloat(document.getElementById("f-km")?.value)||0,section:"competicio",note:""});save("sessions");go({showForm:false});}
+function addSess(){if(!(S.role==="patron"||(S.role==="cap"&&S.userSections.includes("competicio"))))return;const t=cleanTitle(document.getElementById("f-type")?.value||"",120);if(!t)return;S.sessions.unshift({id:Date.now(),type:t,date:document.getElementById("f-date")?.value||"",duration:parseInt(document.getElementById("f-dur")?.value)||0,km:parseFloat(document.getElementById("f-km")?.value)||0,section:"competicio",note:""});save("sessions");go({showForm:false});}
 function delSess(id){S.sessions=S.sessions.filter(s=>s.id!==id);save("sessions");render();}
-function addRes(){const r=document.getElementById("r-race")?.value||"";if(!r)return;S.results.unshift({id:Date.now(),race:r,date:document.getElementById("r-date")?.value||"",place:document.getElementById("r-place")?.value||"",pos:S.newPos,points:PTS[S.newPos]||10});save("results");go({showForm:false,newPos:1});}
+function addRes(){const r=cleanTitle(document.getElementById("r-race")?.value||"",160);if(!r)return;S.results.unshift({id:Date.now(),race:r,date:document.getElementById("r-date")?.value||"",place:cleanTitle(document.getElementById("r-place")?.value||"",160),pos:S.newPos,points:PTS[S.newPos]||10});save("results");go({showForm:false,newPos:1});}
 function delRes(id){S.results=S.results.filter(r=>r.id!==id);save("results");render();}
 function createAvis(){
   if(!(S.role==="patron"||S.role==="cap"))return;
   if(!canWriteNow())return;
-  const t=cleanText(document.getElementById("avis-text")?.value||"",1200);
+  const t=cleanRichInput(document.getElementById("avis-text")?.value||"",1200);
   if(!t)return;
   const pin=document.getElementById("avis-pin")?.checked||false;
   let audience="general",groupId=null;
@@ -2170,7 +2246,7 @@ function saveAvisEdit(id){
   if(!userCanManageContent())return;
   const a=S.avisos.find(x=>x.id===id);
   if(!a)return;
-  const t=cleanText(document.getElementById(`edit-avis-text-${id}`)?.value||"",1200);
+  const t=cleanRichInput(document.getElementById(`edit-avis-text-${id}`)?.value||"",1200);
   if(!t)return;
   const audience=document.getElementById(`edit-avis-audience-${id}`)?.value||"general";
   a.text=t;
@@ -2198,27 +2274,45 @@ function rememberEditPollForm(pid){
 function addEditPollOpt(pid){rememberEditPollForm(pid);if((S.editPollOpts||[]).length>=6)return;go({editPollOpts:[...(S.editPollOpts||[]),""],editPollErr:""});}
 function rmEditPollOpt(pid,i){rememberEditPollForm(pid);const next=(S.editPollOpts||[]).filter((_,j)=>j!==i);go({editPollOpts:next.length?next:["",""],editPollErr:""});}
 function cancelPollEdit(){go({editPollId:null,editPollQ:"",editPollOpts:["",""],editPollErr:""});}
-function savePollEdit(pid){
+async function savePollEdit(pid){
   if(!userCanManageContent()||!canWriteNow())return;
   const p=S.polls.find(x=>x.id===pid);if(!p)return;
-  rememberEditPollForm(pid);
-  const q=cleanText(S.editPollQ,180);
-  const opts=(S.editPollOpts||[]).map(o=>cleanText(o,80)).filter(Boolean);
+
+  // Llegim directament el formulari abans de desar. Això evita que es perdi
+  // l'últim canvi escrit en un input si l'estat S.editPoll* encara no s'havia actualitzat.
+  const qRaw=document.getElementById(`edit-poll-q-${pid}`)?.value??S.editPollQ??"";
+  const optInputs=Array.from(document.querySelectorAll(`[id^="edit-opt-${pid}-"]`))
+    .sort((a,b)=>Number(a.id.split("-").pop())-Number(b.id.split("-").pop()))
+    .map(el=>el.value);
+  const q=cleanTitle(qRaw,180);
+  const opts=(optInputs.length?optInputs:(S.editPollOpts||[])).map(o=>cleanTitle(o,80)).filter(Boolean);
   const unique=[];opts.forEach(o=>{if(!unique.includes(o))unique.push(o);});
-  if(!q)return go({editPollErr:"La pregunta és obligatòria"});
-  if(unique.length<2)return go({editPollErr:"Calen almenys dues opcions"});
+
+  if(!q)return go({editPollErr:"La pregunta és obligatòria",editPollQ:qRaw,editPollOpts:optInputs.length?optInputs:S.editPollOpts});
+  if(unique.length<2)return go({editPollErr:"Calen almenys dues opcions",editPollQ:qRaw,editPollOpts:optInputs.length?optInputs:S.editPollOpts});
+
   const oldOptions=p.options||[];
   const oldVotes=p.votes||{};
   const votes={};
   unique.forEach((opt,i)=>{const old=oldOptions[i];votes[opt]=Array.isArray(oldVotes[old])?[...oldVotes[old]]:[];});
-  p.question=q;p.options=unique;p.votes=votes;p.updatedAt=nowIso();p.updatedBy=actorLabel();
-  save("polls");
+  p.question=q;
+  p.options=unique;
+  p.votes=votes;
+  p.updatedAt=nowIso();
+  p.updatedBy=actorLabel();
+
+  const res=await save("polls");
+  if(res?.error){
+    go({editPollErr:"No s'ha pogut desar l'enquesta. Torna-ho a provar.",editPollQ:qRaw,editPollOpts:optInputs.length?optInputs:S.editPollOpts});
+    showToast("error","No s'ha pogut desar l'enquesta.");
+    return;
+  }
   go({editPollId:null,editPollQ:"",editPollOpts:["",""],editPollErr:""});
-  showToast("ok","Enquesta actualitzada.");
+  showToast("ok","Enquesta actualitzada i desada.");
 }
 function togglePollVoters(pid,opt){const key=pollKey(pid,opt);const open=Object.assign({},S.pollVotersOpen||{});open[key]=!open[key];go({pollVotersOpen:open});}
 function togglePollVotersByIndex(pid,idx){const p=S.polls.find(x=>x.id===pid);const opt=p?.options?.[idx];if(opt==null)return;togglePollVoters(pid,opt);}
-function createPoll(){if(S.role!=="patron"||!canWriteNow())return;const q=cleanText(document.getElementById("poll-q")?.value||"",180);if(!q)return;const opts=S.pollOpts.map((_,i)=>cleanText(document.getElementById(`opt-${i}`)?.value||"",80)).filter(Boolean);const unique=[];opts.forEach(o=>{if(!unique.includes(o))unique.push(o);});if(unique.length<2)return;const votes={};unique.forEach(o=>votes[o]=[]);S.polls.unshift({id:Date.now(),question:q,options:unique,votes,closed:false,date:td()});save("polls");go({showForm:false,pollQ:"",pollOpts:["",""],pollErr:""});}
+function createPoll(){if(S.role!=="patron"||!canWriteNow())return;const q=cleanTitle(document.getElementById("poll-q")?.value||"",180);if(!q)return;const opts=S.pollOpts.map((_,i)=>cleanTitle(document.getElementById(`opt-${i}`)?.value||"",80)).filter(Boolean);const unique=[];opts.forEach(o=>{if(!unique.includes(o))unique.push(o);});if(unique.length<2)return;const votes={};unique.forEach(o=>votes[o]=[]);S.polls.unshift({id:Date.now(),question:q,options:unique,votes,closed:false,date:td()});save("polls");go({showForm:false,pollQ:"",pollOpts:["",""],pollErr:""});}
 function castVote(pid,opt,name){if(!canWriteNow())return;const p=S.polls.find(x=>x.id===pid);name=name||S.userName;if(!p||p.closed||!name)return;p.votes=p.votes||{};(p.options||[]).forEach(o=>{if(!Array.isArray(p.votes[o]))p.votes[o]=[];p.votes[o]=p.votes[o].filter(n=>n!==name);});if(!p.votes[opt])p.votes[opt]=[];if(!p.votes[opt].includes(name))p.votes[opt].push(name);save("polls");render();}
 function castVoteByIndex(pid,idx){const p=S.polls.find(x=>x.id===pid);const opt=p?.options?.[idx];if(opt==null)return;castVote(pid,opt,S.userName);}
 function closePoll(pid){if(S.role!=="patron"||!canWriteNow())return;const p=S.polls.find(x=>x.id===pid);if(p){p.closed=true;save("polls");render();}}
@@ -2229,11 +2323,11 @@ function delPoll(pid){if(S.role!=="patron"||!canWriteNow())return;if(!confirm("E
 function readEventForm(id){
   return {
     type:normalizeEventType(document.getElementById(`ev-type-${id}`)?.value||"altres"),
-    title:(document.getElementById(`ev-title-${id}`)?.value||"").trim(),
+    title:cleanTitle(document.getElementById(`ev-title-${id}`)?.value||"",160),
     date:document.getElementById(`ev-date-${id}`)?.value||td(),
     time:document.getElementById(`ev-time-${id}`)?.value||"",
-    place:(document.getElementById(`ev-place-${id}`)?.value||"").trim(),
-    desc:(document.getElementById(`ev-desc-${id}`)?.value||"").trim()
+    place:cleanTitle(document.getElementById(`ev-place-${id}`)?.value||"",160),
+    desc:cleanRichInput(document.getElementById(`ev-desc-${id}`)?.value||"",800)
   };
 }
 function addEvent(){

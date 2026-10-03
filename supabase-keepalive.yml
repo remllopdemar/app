@@ -1,0 +1,24 @@
+# Manté despert el projecte Supabase de l'app (el pla gratuït el pausa
+# després d'una setmana sense activitat). Llegeix la URL i la clau anon
+# directament de index.html, així no cal configurar cap secret.
+name: Supabase keepalive
+
+on:
+  schedule:
+    - cron: "17 6 */3 * *"   # cada 3 dies, 06:17 UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Consulta lleugera a Supabase
+        run: |
+          URL=$(grep -o 'const SUPA_URL="[^"]*"' index.html | cut -d'"' -f2)
+          KEY=$(grep -o 'const SUPA_KEY="[^"]*"' index.html | cut -d'"' -f2)
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            "$URL/rest/v1/app_data?select=key&key=eq.ldm:groups" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY")
+          echo "Supabase HTTP $code"
+          test "$code" = "200"

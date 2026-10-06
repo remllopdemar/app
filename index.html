@@ -211,31 +211,173 @@ function normalizeAllMemberSections(){
 normalizeAllMemberSections();
 
 function go(u){Object.assign(S,u);render();}
-function save(key){
-  store.set("ldm:"+key,S[key]);
-  return supa.from("app_data").upsert({key:"ldm:"+key,value:S[key]},{onConflict:"key"})
-    .then(({error})=>{
+// ── Desat segur amb escriptures simultànies ──────────────────────────────────
+// Cada clau (outings, membres…) es guarda sencera a app_data. Per no trepitjar
+// canvis d'altres mòbils, recordem l'última versió llegida del servidor (BASE),
+// calculem només el que ha canviat aquest mòbil i ho fusionem amb la versió
+// actual del servidor (per id d'element). Si existeix la funció ldm_cas a
+// Supabase, l'escriptura és atòmica (només s'aplica si ningú ha escrit entremig);
+// si no, es rellegeix just abans d'escriure per reduir la finestra de risc.
+const BASE={};            // key -> JSON (string) de l'última versió coneguda del servidor; null = no existeix
+let CAS_RPC=true;         // passa a false si la funció ldm_cas no existeix a Supabase
+const saveChain={};
+const TXN_RETRY="__txn_retry__";
+function stableStr(v){
+  if(Array.isArray(v))return "["+v.map(stableStr).join(",")+"]";
+  if(v&&typeof v==="object")return "{"+Object.keys(v).sort().filter(k=>v[k]!==undefined).map(k=>JSON.stringify(k)+":"+stableStr(v[k])).join(",")+"}";
+  return JSON.stringify(v===undefined?null:v);
+}
+function rememberBase(key,value){BASE[key]=value===null||value===undefined?null:JSON.stringify(value);}
+function itemKey(it){return it&&typeof it==="object"&&it.id!=null?"id:"+it.id:"v:"+stableStr(it);}
+// Fusió a tres bandes per elements: aplica a "theirs" el que "mine" ha afegit,
+// esborrat o modificat respecte a "base". Si un element l'han modificat tots dos,
+// guanya el del servidor i es marca conflicte.
+function mergeArrays(base,mine,theirs){
+  base=Array.isArray(base)?base:[];mine=Array.isArray(mine)?mine:[];theirs=Array.isArray(theirs)?theirs:[];
+  const bMap=new Map(),mMap=new Map(),tMap=new Map();
+  base.forEach(x=>{const k=itemKey(x);if(!bMap.has(k))bMap.set(k,x);});
+  mine.forEach(x=>{const k=itemKey(x);if(!mMap.has(k))mMap.set(k,x);});
+  theirs.forEach(x=>{const k=itemKey(x);if(!tMap.has(k))tMap.set(k,x);});
+  let conflict=false;
+  const out=theirs.slice();
+  const idx=k=>out.findIndex(x=>itemKey(x)===k);
+  // Esborrats per mi
+  bMap.forEach((b,k)=>{if(!mMap.has(k)){const i=idx(k);if(i>=0)out.splice(i,1);}});
+  // Modificats per mi
+  mMap.forEach((m,k)=>{
+    if(!bMap.has(k))return;
+    const ms=stableStr(m),bs=stableStr(bMap.get(k));
+    if(ms===bs)return;
+    if(!tMap.has(k))return; // l'altre l'ha esborrat
+    const ts=stableStr(tMap.get(k));
+    if(ts===bs||ts===ms){const i=idx(k);if(i>=0)out[i]=m;}
+    else conflict=true;
+  });
+  // Afegits per mi (respectant l'ordre relatiu de "mine")
+  let prevKey=null;
+  mine.forEach(m=>{
+    const k=itemKey(m);
+    if(!bMap.has(k)&&!tMap.has(k)&&idx(k)<0){
+      const p=prevKey?idx(prevKey):-1;
+      out.splice(p+1,0,m);
+    }
+    if(idx(k)>=0)prevKey=k;
+  });
+  return {merged:out,conflict};
+}
+function setSynced(){S.lastSyncAt=new Date().toISOString();S.syncErr="";}
+function setSyncError(key,error){
+  S.syncErr=error?.message||"Error de sincronització";
+  console.warn("⚠️ Supabase save error ["+key+"]:",S.syncErr);
+}
+async function remoteWrite(key,mine,baseStr){
+  const dbKey="ldm:"+key;
+  const base=baseStr==null?null:JSON.parse(baseStr);
+  let expected=base, toWrite=mine, conflict=false;
+  for(let attempt=0;attempt<12;attempt++){
+    if(CAS_RPC){
+      const {data,error}=await supa.rpc("ldm_cas",{p_key:dbKey,p_expected:expected,p_new:toWrite});
       if(error){
-        S.syncErr=error.message||"Error de sincronització";
-        console.warn("⚠️ Supabase save error ["+key+"]:",error.message);
-      }else{
-        S.lastSyncAt=new Date().toISOString();
-        S.syncErr="";
+        if(error.code==="PGRST202"||/ldm_cas/.test(error.message||"")&&/not find|does not exist/i.test(error.message||"")){
+          console.warn("ℹ️ ldm_cas no instal·lada a Supabase: desat sense bloqueig atòmic.");
+          CAS_RPC=false;continue;
+        }
+        return {error};
       }
-      return {error};
-    }).catch(error=>{
+      if(data&&data.ok)return {written:toWrite,conflict};
+      const theirs=data?data.value:null;
+      const r=mergeArrays(base,mine,theirs);
+      conflict=conflict||r.conflict;
+      expected=theirs;toWrite=r.merged;
+      await new Promise(res=>setTimeout(res,60+Math.random()*140));
+    }else{
+      const {data,error}=await supa.from("app_data").select("value").eq("key",dbKey).maybeSingle();
+      if(error)return {error};
+      const theirs=data?data.value:null;
+      if(stableStr(theirs)!==stableStr(base)){
+        const r=mergeArrays(base,mine,theirs);
+        conflict=conflict||r.conflict;toWrite=r.merged;
+      }
+      const {error:e2}=await supa.from("app_data").upsert({key:dbKey,value:toWrite},{onConflict:"key"});
+      if(e2)return {error:e2};
+      return {written:toWrite,conflict};
+    }
+  }
+  return {busy:true};
+}
+// Fotografia del canvi local (què volem desar i sobre quina versió del servidor),
+// presa just després de modificar, abans que Realtime pugui substituir S[key].
+function captureSave(key){
+  store.set("ldm:"+key,S[key]);
+  return {key,mineStr:JSON.stringify(S[key]??null),baseStr:BASE[key]};
+}
+function save(key,cap=null){
+  const {mineStr,baseStr}=cap||captureSave(key);
+  const prev=saveChain[key]||Promise.resolve();
+  const run=prev.catch(()=>{}).then(async()=>{
+    if(baseStr===undefined){
+      // Encara no hem llegit mai aquesta clau del servidor: no podem saber què ha canviat.
+      console.warn("⚠️ Desat remot ajornat ["+key+"]: encara no hi ha dades del servidor.");
+      return {error:null,skipped:true};
+    }
+    const mine=JSON.parse(mineStr);
+    // Si el servidor ja té exactament el que volem desar, no cal escriure.
+    if(BASE[key]!==undefined&&stableStr(mine)===stableStr(BASE[key]==null?null:JSON.parse(BASE[key]))){setSynced();return {error:null};}
+    try{
+      const r=await remoteWrite(key,mine,baseStr);
+      if(r.busy){console.warn("⚠️ Massa canvis simultanis ["+key+"]");return {error:null,conflict:true};}
+      if(r.error){setSyncError(key,r.error);return {error:r.error};}
+      rememberBase(key,r.written);
+      // Si mentrestant no hi ha hagut altres canvis locals, mostrem la versió fusionada.
+      if(JSON.stringify(S[key]??null)===mineStr&&stableStr(r.written)!==stableStr(mine)){
+        S[key]=r.written;store.set("ldm:"+key,S[key]);
+        if(key==="membres")normalizeAllMemberSections();
+        if(key==="outings")normalizeAllOutingEntries();
+        render();
+      }
+      setSynced();
+      return {error:null,conflict:!!r.conflict};
+    }catch(error){
       S.syncErr=error?.message||"Sense connexió";
       console.warn("⚠️ Supabase save exception ["+key+"]:",S.syncErr);
       return {error};
-    });
+    }
+  });
+  saveChain[key]=run;
+  return run;
 }
 async function saveMany(keys){
-  for(const k of keys){await save(k);}
+  let conflict=false;
+  const caps=keys.map(captureSave);
+  for(const c of caps){const r=await save(c.key,c);if(r?.conflict)conflict=true;}
+  if(conflict)showToast("info","Algú altre ha fet canvis alhora. S'han conservat els dos; revisa que tot sigui correcte.");
 }
-function applySupabaseRows(data,{renderNow=false}={}){
-  if(!Array.isArray(data)||!data.length)return false;
+// Desa sortides + avisos d'una acció d'inscripció. Si algú ha modificat la mateixa
+// sortida alhora, retorna TXN_RETRY perquè l'acció es torni a fer sobre dades fresques.
+async function commitOutings(){
+  const av=captureSave("avisos");
+  const r=await save("outings");
+  if(r?.conflict)return TXN_RETRY;
+  await save("avisos",av);
+  return r;
+}
+async function outingTxn(fn){
+  for(let attempt=0;attempt<10;attempt++){
+    const r=await fn();
+    if(r!==TXN_RETRY)return r;
+    await new Promise(res=>setTimeout(res,(150+Math.random()*350)*Math.min(attempt+1,4)));
+  }
+  showToast("error","Hi ha molta gent apuntant-se ara mateix. Torna-ho a provar.");
+}
+function applySupabaseRows(data,{renderNow=false,keys=null}={}){
+  if(!Array.isArray(data))return false;
   const map={};
   data.forEach(r=>{map[r.key]=r.value;});
+  (keys||SUPA_KEYS).forEach(k=>{
+    if(Object.prototype.hasOwnProperty.call(map,"ldm:"+k))rememberBase(k,map["ldm:"+k]);
+    else BASE[k]=null;
+  });
+  if(!data.length)return false;
   let changed=false;
   SUPA_KEYS.forEach(k=>{
     if(Object.prototype.hasOwnProperty.call(map,"ldm:"+k)){
@@ -258,7 +400,7 @@ async function refreshKeysFromSupabase(keys=SUPA_KEYS,{renderNow=false,silent=tr
   try{
     const {data,error}=await supa.from("app_data").select("key,value").in("key",keys.map(k=>"ldm:"+k));
     if(error)throw error;
-    const changed=applySupabaseRows(data,{renderNow:false});
+    const changed=applySupabaseRows(data,{renderNow:false,keys});
     if(renderNow||!silent)render();
     return changed;
   }catch(e){
@@ -1949,7 +2091,7 @@ function delMembre(id){if(S.role!=="patron")return;if(!confirm("Eliminar el soci
 async function signup(oid,asHelm=false){
   if(!canWriteNow())return;
   const lock=`signup:${oid}:${S.memberId||"anon"}`;
-  return withActionLock(lock,async()=>{
+  return withActionLock(lock,()=>outingTxn(async()=>{
     await refreshOutingsBeforeAction();
     const o=S.outings.find(x=>x.id===oid);
     if(!o||!(S.role==="soci"||S.role==="cap")||isPastOuting(o))return;
@@ -1992,13 +2134,13 @@ async function signup(oid,asHelm=false){
         showToast("ok","Has entrat a la llista d'espera.");
       }
     }
-    await saveMany(["outings","avisos"]);
-  });
+    if(await commitOutings()===TXN_RETRY)return TXN_RETRY;
+  }));
 }
 async function unsignup(oid){
   if(!canWriteNow())return;
   const lock=`unsignup:${oid}:${S.memberId||"anon"}`;
-  return withActionLock(lock,async()=>{
+  return withActionLock(lock,()=>outingTxn(async()=>{
     await refreshOutingsBeforeAction();
     const o=S.outings.find(x=>x.id===oid);
     if(!o||!(S.role==="soci"||S.role==="cap")||isPastOuting(o))return;
@@ -2017,9 +2159,9 @@ async function unsignup(oid){
     // Si allibera plaça de vogador, primer es respecta la llista d'espera del grup.
     // La resta de la llista només puja si la sortida ja està oberta a tothom.
     if(wasIn){reconcileOutingWaitlist(o);}
-    await saveMany(["outings","avisos"]);
+    if(await commitOutings()===TXN_RETRY)return TXN_RETRY;
     if(wasHelm||wasIn||wasWait)showToast("ok","T'has desapuntat correctament.");
-  });
+  }));
 }
 function ensurePatronAddChoice(){
   if(!S.patronAddChoice)S.patronAddChoice={};
@@ -2053,7 +2195,7 @@ async function patronAddMember(oid){
   if(!mid)return alert("Selecciona un soci.");
 
   const lock=`patron-add:${oid}:${mid}:${role}`;
-  return withActionLock(lock,async()=>{
+  return withActionLock(lock,()=>outingTxn(async()=>{
     await refreshOutingsBeforeAction();
     const o=S.outings.find(x=>String(x.id)===String(oid));
     if(!o)return alert("No s'ha trobat aquesta sortida. Actualitza i torna-ho a provar.");
@@ -2101,11 +2243,11 @@ async function patronAddMember(oid){
       }
     }
 
-    await saveMany(["outings","avisos"]);
+    if(await commitOutings()===TXN_RETRY)return TXN_RETRY;
     showToast("ok","Soci afegit a la sortida.");
     if(S.patronAddChoice)delete S.patronAddChoice[oid];
     go({patronAddOuting:null});
-  });
+  }));
 }
 
 async function patronRemovePerson(oid,listName,idx=null,mid="",nameArg=""){
@@ -2115,7 +2257,7 @@ async function patronRemovePerson(oid,listName,idx=null,mid="",nameArg=""){
   const list=allowed[listName];
   if(!list)return alert("No s'ha pogut identificar la llista.");
   const lock=`patron-remove-person:${oid}:${list}:${mid||idx||nameArg||"x"}`;
-  return withActionLock(lock,async()=>{
+  return withActionLock(lock,()=>outingTxn(async()=>{
     await refreshOutingsBeforeAction();
     const o=S.outings.find(x=>String(x.id)===String(oid));
     if(!o)return alert("No s'ha trobat aquesta sortida. Actualitza i torna-ho a provar.");
@@ -2148,15 +2290,15 @@ async function patronRemovePerson(oid,listName,idx=null,mid="",nameArg=""){
       addOutingLog(o,"unsignup_patron",`El patró desapunta ${name} de ${outingLabel(o)}.`);
       reconcileOutingWaitlist(o);
     }
-    await saveMany(["outings","avisos"]);
+    if(await commitOutings()===TXN_RETRY)return TXN_RETRY;
     showToast("ok","Soci retirat de la sortida.");
-  });
+  }));
 }
 
 async function openOut(oid){
   if(!canWriteNow())return;
   const lock=`open:${oid}`;
-  return withActionLock(lock,async()=>{
+  return withActionLock(lock,()=>outingTxn(async()=>{
     await refreshOutingsBeforeAction();
     const o=S.outings.find(x=>x.id===oid);
     if(!o||isPastOuting(o))return;
@@ -2170,18 +2312,18 @@ async function openOut(oid){
       o.openedAt=nowIso();
       addOutingLog(o,"outing_opened",`${actorLabel()} obre a tothom la inscripció de ${outingLabel(o)}.`);
       reconcileOutingWaitlist(o);
-      await saveMany(["outings","avisos"]);
+      if(await commitOutings()===TXN_RETRY)return TXN_RETRY;
       showToast("ok","Sortida oberta a tothom.");
     }else if(changed){
-      await saveMany(["outings","avisos"]);
+      if(await commitOutings()===TXN_RETRY)return TXN_RETRY;
     }
-  });
+  }));
 }
 async function closeOut(oid){
   if(S.role!=="patron")return;
   if(!canWriteNow())return;
   const lock=`close:${oid}`;
-  return withActionLock(lock,async()=>{
+  return withActionLock(lock,()=>outingTxn(async()=>{
     await refreshOutingsBeforeAction();
     const o=S.outings.find(x=>x.id===oid);
     if(!o||isPastOuting(o)||!o.isOpen)return;
@@ -2192,9 +2334,9 @@ async function closeOut(oid){
     o.isOpen=false;
     delete o.openedAt;
     addOutingLog(o,"outing_closed_manual",`El patró tanca a tothom la inscripció de ${outingLabel(o)}. Torna a quedar reservada fins a l'obertura automàtica.`);
-    await saveMany(["outings","avisos"]);
+    if(await commitOutings()===TXN_RETRY)return TXN_RETRY;
     showToast("ok","Obertura manual tancada.");
-  });
+  }));
 }
 
 function delOut(oid){
@@ -2884,7 +3026,7 @@ async function initApp(){
       .in("key",SUPA_KEYS.map(k=>"ldm:"+k));
 
     if(!error&&data&&data.length){
-      let changed=applySupabaseRows(data,{renderNow:false});
+      let changed=applySupabaseRows(data,{renderNow:false,keys:SUPA_KEYS});
       console.log("✅ Supabase sincronitzat ("+data.length+" claus)");
 
       // Migracions lleugeres (ara que tenim les dades fresques)
@@ -2952,8 +3094,10 @@ function setupRealtimeSync(){
         if(!SUPA_KEYS.includes(short))return;
         if(payload.eventType==="DELETE"){
           S[short]=DEF[short]||[];
+          BASE[short]=null;
         }else{
           S[short]=row.value??DEF[short]??[];
+          rememberBase(short,row.value);
         }
         store.set(key,S[short]);
         S.lastSyncAt=new Date().toISOString();

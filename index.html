@@ -732,7 +732,7 @@ function renderAttendancePanel(o,opts={}){
   if(standalone){
     return `<div style="background:#fff;border:.5px solid ${att.closed?BORDER:GREEN};border-radius:14px;margin:10px 14px 0;overflow:hidden">
       <div style="padding:11px 14px;background:${att.closed?'#fbfaf6':'#f8fbf8'};border-bottom:.5px solid #f0ede6;display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
-        <div style="min-width:0"><div style="font-size:18px;font-weight:800;color:#1a1a18;line-height:1.25">${esc(outingDisplayTitle(o))} · <span style="white-space:nowrap">${outingShortDate(o)} · ${esc(o.time||"")} h</span></div><div style="font-size:15px;color:${MUTED};margin-top:3px">📅 ${dateStr} · ${summary}</div></div>
+        <div style="min-width:0"><div style="font-size:18px;font-weight:800;color:#1a1a18;line-height:1.25">${esc(outingDisplayTitle(o))} · <span style="white-space:nowrap">${outingShortDate(o)} · ${esc(o.time||"")} h</span></div><div style="font-size:15px;color:${MUTED};margin-top:3px">${summary}</div></div>
         <span style="font-size:14px;font-weight:850;border-radius:99px;padding:3px 8px;white-space:nowrap;background:${att.closed?'#e6f4ee':'#fff8ee'};color:${att.closed?GREEN:'#b07a10'}">${att.closed?'Tancada':'Pendent'}</span>
       </div><div style="padding:0 14px 12px">${body}</div>
     </div>`;
@@ -751,7 +751,7 @@ function renderClosedAttendanceSummary(o){
     <summary style="list-style:none;cursor:pointer;padding:11px 14px;display:flex;justify-content:space-between;gap:10px;align-items:center;background:#fbfaf6">
       <div style="min-width:0;flex:1">
         <div style="font-size:18px;font-weight:800;color:#1a1a18;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(outingDisplayTitle(o))} · <span style="white-space:nowrap">${outingShortDate(o)} · ${esc(o.time||"")} h</span></div>
-        <div style="font-size:15px;color:${MUTED};margin-top:3px">📅 ${dateStr} · Assistència tancada</div>
+        <div style="font-size:15px;color:${MUTED};margin-top:3px">Assistència tancada</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"><span style="background:#e6f4ee;color:${GREEN};border-radius:99px;padding:3px 8px;font-size:14px;font-weight:850">✅ ${counts.present}</span><span style="background:#fff0f0;color:${RED};border-radius:99px;padding:3px 8px;font-size:14px;font-weight:850">❌ ${counts.absent}</span><span style="background:#fff8ee;color:#b07a10;border-radius:99px;padding:3px 8px;font-size:14px;font-weight:850">➖ ${counts.excused}</span></div>
       </div>
       <div style="font-size:22px;color:${MUTED};line-height:1">▾</div>
@@ -1484,7 +1484,7 @@ function renderOutingCard(o){
       <summary style="list-style:none;cursor:pointer;padding:11px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;background:#fffdf8">
         <div style="min-width:0">
           <div style="font-size:18px;font-weight:750;color:#1a1a18;line-height:1.2">${esc(outingDisplayTitle(o))} · <span style="white-space:nowrap">${outingShortDate(o)} · ${esc(o.time)} h</span></div>
-          <div style="font-size:15px;color:${MUTED};line-height:1.35;margin-top:3px">📅 ${dateStr} · ${closedHint}</div>
+          <div style="font-size:15px;color:${MUTED};line-height:1.35;margin-top:3px">${closedHint}</div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0">${badge}<span style="font-size:14px;color:${MUTED};font-weight:800">Detalls ▾</span></div>
       </summary>
@@ -1502,7 +1502,7 @@ function renderOutingCard(o){
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;gap:10px">
         <div style="font-size:19px;font-weight:750;color:#1a1a18;line-height:1.2;min-width:0">${esc(outingDisplayTitle(o))} · <span style="white-space:nowrap">${outingShortDate(o)} · ${esc(o.time)} h</span></div>${badge}
       </div>
-      <div style="font-size:16px;color:${MUTED}">📅 ${dateStr}${isPast?` · <span style="background:#f5f3ee;color:${MUTED};font-size:14px;padding:1px 6px;border-radius:10px;font-weight:600">Sortida passada</span>`:""}</div>
+      ${isPast?`<div style="font-size:16px;color:${MUTED}"><span style="background:#f5f3ee;color:${MUTED};font-size:14px;padding:1px 6px;border-radius:10px;font-weight:600">Sortida passada</span></div>`:""}
       ${personalStatus}
       ${openInfo}
       <div style="margin-top:10px">
@@ -1673,7 +1673,7 @@ function renderHomeOutingMini(o){
   </div>`;
   const closedCompact=!open&&!o.isOpen&&!memberIsInOuting(o);
   const closedHint=isGeneralOuting(o)?`S'obrirà ${formatNaturalOpenLabel(o)}`:`Reservada fins a ${formatNaturalOpenLabel(o)}`;
-  return `<div style="border:.5px solid ${BORDER};border-radius:14px;overflow:hidden;margin-bottom:9px;background:#fff"><div style="padding:11px 12px;border-bottom:${closedCompact?"none":".5px solid #f0ede6"};display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div style="min-width:0"><div style="font-size:18px;font-weight:750;color:#1a1a18;line-height:1.25">${esc(outingDisplayTitle(o))} · <span style="white-space:nowrap">${outingShortDate(o)} · ${esc(o.time||"")} h</span></div><div style="font-size:15px;color:${MUTED};line-height:1.35;margin-top:3px">📅 ${dateStr}${closedCompact?` · ${closedHint}`:""}</div></div><span style="font-size:14px;font-weight:800;border-radius:99px;padding:3px 8px;white-space:nowrap;background:${statusBg};color:${statusCol}">${status}</span></div>${closedCompact?"":stats+`<div style="padding:0 10px 9px;font-size:14px;color:${MUTED};font-weight:700;text-align:right">Noms només a Sortides › Veure apuntats</div>`}</div>`;
+  return `<div style="border:.5px solid ${BORDER};border-radius:14px;overflow:hidden;margin-bottom:9px;background:#fff"><div style="padding:11px 12px;border-bottom:${closedCompact?"none":".5px solid #f0ede6"};display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div style="min-width:0"><div style="font-size:18px;font-weight:750;color:#1a1a18;line-height:1.25">${esc(outingDisplayTitle(o))} · <span style="white-space:nowrap">${outingShortDate(o)} · ${esc(o.time||"")} h</span></div>${closedCompact?`<div style="font-size:15px;color:${MUTED};line-height:1.35;margin-top:3px">${closedHint}</div>`:""}</div><span style="font-size:14px;font-weight:800;border-radius:99px;padding:3px 8px;white-space:nowrap;background:${statusBg};color:${statusCol}">${status}</span></div>${closedCompact?"":stats+`<div style="padding:0 10px 9px;font-size:14px;color:${MUTED};font-weight:700;text-align:right">Noms només a Sortides › Veure apuntats</div>`}</div>`;
 }
 function renderHomeSortides(){
   const list=visibleOutings().filter(o=>!isPastOuting(o)).sort(sortOutings).slice(0,2);

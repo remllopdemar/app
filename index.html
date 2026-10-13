@@ -89,7 +89,7 @@ const emblema=`<img src="./Assets/logo-llop-de-mar.png" alt="Llop de Mar SFG" st
 
 const DEF={
   membres:[],
-  groups:[{id:1,name:"Grup A · 20.15h"},{id:2,name:"Grup B · 19.00h"},{id:3,name:"Grup C · 17.45h"},{id:4,name:"Grup D · 16.30h"},{id:5,name:"Grup E Matins · 9.15h"},{id:6,name:"Grup F · 8.00h"}],
+  groups:[{id:1,name:"Grup A · 20.15h"},{id:2,name:"Grup B · 19.00h"},{id:3,name:"Grup C · 17.45h"},{id:4,name:"Grup D · 16.30h"},{id:5,name:"Grup E · 9.15h"},{id:6,name:"Grup F · 8.00h"}],
   avisos:[],
   outings:[],
   sessions:[],
@@ -98,6 +98,8 @@ const DEF={
   events:[]
 };
 
+// "Grup E Matins" ara es diu "Grup E" (també si ve de dades guardades abans del canvi).
+function normGroups(gs){return Array.isArray(gs)?gs.map(g=>g?.name?{...g,name:String(g.name).replace("Grup E Matins","Grup E")}:g):gs;}
 function loadData(key){return store.get("ldm:"+key)||DEF[key]||[];}
 
 // Neteja localStorage si conté dades de demo (migració cap a Supabase com a font de veritat)
@@ -125,7 +127,7 @@ let S={
   meteo:null,marine:null,meteoLoading:true,marineLoading:true,selectedMeteoDate:null,meteoHoursOpen:false,
   supaLoading:true,supaSyncing:false,lastSyncAt:null,syncErr:"",actionBusy:null,
   patronAddOuting:null,
-  groups:loadData("groups"),
+  groups:normGroups(loadData("groups")),
   membres:loadData("membres"),
   avisos:loadData("avisos"),
   outings:loadData("outings"),
@@ -382,6 +384,7 @@ function applySupabaseRows(data,{renderNow=false,keys=null}={}){
   SUPA_KEYS.forEach(k=>{
     if(Object.prototype.hasOwnProperty.call(map,"ldm:"+k)){
       S[k]=map["ldm:"+k]??DEF[k]??[];
+      if(k==="groups")S[k]=normGroups(S[k]);
       store.set("ldm:"+k,S[k]);
       changed=true;
     }

@@ -123,7 +123,8 @@ function clearDemoLocalStorage(){
 let S={
   role:null,loginStep:"choose",pinErr:false,pinErrMsg:"",
   memberId:null,userName:"",userGroupId:null,userSections:[],capGroupId:null,
-  selectedMemberId:null,   // id del membre seleccionat al pas soci-list
+  selectedMemberId:null,   // id del membre identificat al pas soci-name
+  loginName:"",            // nom escrit al pas soci-name (es conserva si hi ha error)
   regErr:"",regSections:["social"],  // estat del formulari de registre
   screen:"inici",section:"competicio",
   showForm:false,showAvisForm:false,editAvisId:null,showMembreForm:false,showLogoutConfirm:false,showMemberAdded:false,memberAdded:null,editMemberId:null,editMemberSections:["social"],showOutingHistory:false,outingHistoryPage:0,avisFilter:"all",avisLogPage:0,pollVotersOpen:{},
@@ -935,7 +936,7 @@ function renderLogin(){
   // ── PANTALLA PRINCIPAL ─────────────────────────────────────────────────────
   if(S.loginStep==="choose")return wrap(`<div style="width:100%;max-width:300px">
     ${btnP("⚓ PATRÓ","go({loginStep:'patron-pin',pinErr:false,pinErrMsg:''})")}
-    ${btnS("🚣 SOCI / CAP DE GRUP","go({loginStep:'soci-list'})")}
+    ${btnS("🚣 SOCI / CAP DE GRUP","startSociLogin()")}
     ${btnT("+ Crear compte nou","go({loginStep:'register',regErr:'',regSections:['social']})")}
   </div>`);
 
@@ -948,25 +949,23 @@ function renderLogin(){
     ${btnT("Enrere","go({loginStep:'choose',pinErr:false,pinErrMsg:''})")}
   </div>`);
 
-  // ── SELECCIÓ DE SOCI ──────────────────────────────────────────────────────
-  if(S.loginStep==="soci-list"){
-    const sorted=[...S.membres].filter(m=>!m.pending).sort((a,b)=>a.name.localeCompare(b.name,"ca"));
-    return wrap(`<div style="width:100%;max-width:320px">
-      <div style="color:rgba(255,255,255,.7);font-size:19px;font-weight:500;text-align:center;margin-bottom:16px">Selecciona el teu nom</div>
-      <div style="max-height:340px;overflow-y:auto;padding-right:2px">
-      ${sorted.map(m=>`<button onclick="selectSoci(${m.id})" style="width:100%;padding:12px 16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:12px;color:#fff;font-size:18px;cursor:pointer;text-align:left;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between">
-        <span>${esc(m.name)}${m.isCap?` <span style="font-size:14px;opacity:.55;font-style:italic"> · Cap</span>`:""}</span>
-        <span style="font-size:15px;opacity:.4;margin-left:8px;flex-shrink:0">${gname(m.groupId).split(" · ")[0]}</span>
-      </button>`).join("")}
-      </div>
-      ${btnT("Enrere","go({loginStep:'choose'})")}
+  // ── IDENTIFICACIÓ DEL SOCI (nom + clau, sense llista de socis) ─────────────
+  if(S.loginStep==="soci-name"){
+    return wrap(`<div style="width:100%;max-width:300px">
+      <div style="color:rgba(255,255,255,.7);font-size:19px;font-weight:500;text-align:center;margin-bottom:16px">Escriu el teu nom i la teva clau</div>
+      <input id="soci-nom" type="text" placeholder="Nom i cognom" autocomplete="username" value="${esc(S.loginName||"")}" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid ${S.pinErr?"#ff6b6b":"rgba(255,255,255,.2)"};background:rgba(255,255,255,.08);color:#fff;font-size:18px;outline:none;box-sizing:border-box;margin-bottom:10px">
+      ${pinInp("pin-in","Clau d'accés",S.pinErr)}
+      ${errDiv(S.pinErrMsg)}
+      ${btnP("ENTRAR","trySociName()")}
+      ${btnT("Enrere","go({loginStep:'choose',pinErr:false,pinErrMsg:''})")}
+      <div style="color:rgba(255,255,255,.3);font-size:15px;text-align:center;margin-top:8px;line-height:1.4">Escriu el nom tal com et vas registrar.<br>Si és el teu primer accés, deixa la clau en blanc.</div>
     </div>`);
   }
 
   // ── PIN DEL SOCI (inclou primer accés) ───────────────────────────────────
   if(S.loginStep==="soci-pin"){
     const m=S.membres.find(x=>x.id===S.selectedMemberId);
-    if(!m)return wrap(btnT("Enrere","go({loginStep:'soci-list'})"));
+    if(!m)return wrap(btnT("Enrere","go({loginStep:'soci-name'})"));
     const isFirst=!m.pin;
     return wrap(`<div style="width:100%;max-width:300px">
       <div style="color:#fff;font-size:21px;font-weight:700;text-align:center;margin-bottom:4px">${isFirst?"Benvingut/da,":"Hola,"}</div>
@@ -976,7 +975,8 @@ function renderLogin(){
       ${isFirst?pinInp("pin-in2","Confirma la clau"):""}
       ${errDiv(S.pinErrMsg)}
       ${btnP(isFirst?"CREAR CLAU I ENTRAR":"ENTRAR","tryLoginSoci()")}
-      ${btnT("Enrere","go({loginStep:'soci-list',pinErr:false,pinErrMsg:''})")}
+      ${btnT("No ets tu? Canvia de soci","forgetLastSoci()")}
+      ${btnT("Enrere","go({loginStep:'choose',pinErr:false,pinErrMsg:''})")}
     </div>`);
   }
 
@@ -1027,8 +1027,47 @@ async function tryPin(){
   }
 }
 
-function selectSoci(id){
-  go({selectedMemberId:id,loginStep:"soci-pin",pinErr:false,pinErrMsg:""});
+// Normalitza noms per comparar: sense accents, majúscules ni espais repetits.
+function normLoginName(v){return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9ñç ]/g," ").replace(/\s+/g," ").trim();}
+
+// Entrada de soci: si el dispositiu recorda l'últim soci, va directe a la seva clau.
+function startSociLogin(){
+  const lastId=store.get("ldm:lastMember");
+  const m=lastId?S.membres.find(x=>x.id===lastId&&!x.pending):null;
+  if(m)return go({selectedMemberId:m.id,loginStep:"soci-pin",pinErr:false,pinErrMsg:""});
+  go({loginStep:"soci-name",selectedMemberId:null,pinErr:false,pinErrMsg:""});
+}
+
+function forgetLastSoci(){
+  store.set("ldm:lastMember",null);
+  go({loginStep:"soci-name",selectedMemberId:null,loginName:"",pinErr:false,pinErrMsg:""});
+}
+
+async function trySociName(){
+  const name=cleanName(document.getElementById("soci-nom")?.value||"");
+  const pin=document.getElementById("pin-in")?.value||"";
+  const key=normLoginName(name);
+  const fail=msg=>go({loginName:name,pinErr:true,pinErrMsg:msg||"Nom o clau incorrecta"});
+  if(!key)return fail("Escriu el teu nom");
+  const cands=S.membres.filter(m=>normLoginName(m.name)===key);
+  if(!cands.length)return fail();
+  try{
+    // Primer accés: el soci encara no té clau i la crea a la pantalla següent.
+    const noPin=cands.filter(m=>!m.pending&&!m.pin);
+    if(!pin){
+      if(noPin.length===1)return go({selectedMemberId:noPin[0].id,loginStep:"soci-pin",loginName:"",pinErr:false,pinErrMsg:""});
+      return fail("Escriu la teva clau");
+    }
+    for(const m of cands){
+      if(m.pin&&await memberPinMatches(m,pin)){
+        if(m.pending)return fail("El teu compte encara està pendent d'aprovació del patró");
+        return doLoginSoci(m);
+      }
+    }
+    fail();
+  }catch(e){
+    fail(e.message||"No s'ha pogut validar la clau");
+  }
 }
 
 async function tryLoginSoci(){
@@ -1054,11 +1093,12 @@ async function tryLoginSoci(){
 
 function doLoginSoci(m){
   m.sections=normalizeSections(m.sections);
+  store.set("ldm:lastMember",m.id);
   const role=m.isCap?"cap":"soci";
   store.set("ldm:session",{role,memberId:m.id,pinHash:m.pin,authVersion:SECURITY_VERSION});
   go({role,capGroupId:m.isCap?m.groupId:null,memberId:m.id,userName:m.name,
       userGroupId:m.groupId,userSections:m.sections,loginStep:"choose",
-      pinErr:false,pinErrMsg:"",section:m.sections.includes("competicio")?"competicio":"social"});
+      pinErr:false,pinErrMsg:"",loginName:"",section:m.sections.includes("competicio")?"competicio":"social"});
 }
 
 function togRegSec(sec){
@@ -2071,9 +2111,11 @@ function render(){
     if(!S.role||S.loginStep!=="choose"){
       root.innerHTML=renderLogin();
       const p=document.getElementById("pin-in");
+      const nomIn=document.getElementById("soci-nom");
+      if(nomIn)nomIn.onkeydown=e=>{if(e.key==="Enter")p?.focus();};
       if(p){
-        p.focus();
-        const fn=S.loginStep==="patron-pin"?tryPin:S.loginStep==="soci-pin"?tryLoginSoci:null;
+        if(nomIn&&!nomIn.value)nomIn.focus();else p.focus();
+        const fn=S.loginStep==="patron-pin"?tryPin:S.loginStep==="soci-pin"?tryLoginSoci:S.loginStep==="soci-name"?trySociName:null;
         if(fn)p.onkeydown=e=>{if(e.key==="Enter")fn();};
       }
       const p2=document.getElementById("pin-in2");

@@ -665,7 +665,7 @@ function attendanceKey(e){const m=memberFromEntry(e);return (e?.mid||m?.id)?`id:
 function attendancePeople(o){
   const seen=new Set(),out=[];
   safeArr(o.signups).forEach(e=>{const k=attendanceKey(e);if(!seen.has(k)){seen.add(k);out.push({...e,attRole:e.isReserve?"Reserva":"Vogador",attKey:k});}});
-  safeArr(o.helmsmanSignups).forEach(e=>{const k=attendanceKey(e);if(!seen.has(k)){seen.add(k);out.push({...e,attRole:"Timoner",attKey:k});}});
+  safeArr(o.helmsmanSignups).forEach(e=>{const k=attendanceKey(e);if(!seen.has(k)){seen.add(k);out.push({...e,attRole:"Timonel",attKey:k});}});
   return out;
 }
 function ensureAttendance(o){
@@ -896,7 +896,7 @@ function personalOutingState(o){
   const signup=safeArr(o.signups).find(entryMatchesCurrent);
   const waitIdx=safeArr(o.waitlist).findIndex(entryMatchesCurrent);
   const cannotAttend=safeArr(o.noAttend).some(entryMatchesCurrent);
-  if(amHelm)return {text:"Estàs apuntat com a timoner",icon:"⛵",bg:"#e6f4ee",col:GREEN,active:true};
+  if(amHelm)return {text:"Estàs apuntat com a timonel",icon:"⛵",bg:"#e6f4ee",col:GREEN,active:true};
   if(signup?.isReserve)return {text:"Estàs en reserva",icon:"🤎",bg:"#fff5ec",col:"#8b4513",active:true};
   if(signup)return {text:"Estàs apuntat com a vogador",icon:"✅",bg:"#e6f4ee",col:GREEN,active:true};
   if(waitIdx>=0)return {text:`Estàs en llista d'espera · posició ${waitIdx+1}`,icon:"⏳",bg:"#fff8ee",col:"#b07a10",active:true};
@@ -1391,7 +1391,7 @@ function renderOutingCard(o){
     const bg=isNoAttend?RED:isWait?"#e8a020":isHelm?"#4a7a3d":isReserve?"#8b4513":(isOwner?DARK:GREEN);
     const groupTxt=shortGroup(gid);
     const hasPrio=isWait&&waitEntryHasGroupPriority(s,o);
-    const title=isNoAttend?"Ha indicat que no pot venir":isWait?(hasPrio?"Llista d'espera prioritària del grup":"Llista d'espera"):isHelm?"Timoner":isReserve?"Plaça de reserva":(isGeneral?`Grup ${groupTxt}`:(isOwner?"Del grup":"D'un altre grup"));
+    const title=isNoAttend?"Ha indicat que no pot venir":isWait?(hasPrio?"Llista d'espera prioritària del grup":"Llista d'espera"):isHelm?"Timonel":isReserve?"Plaça de reserva":(isGeneral?`Grup ${groupTxt}`:(isOwner?"Del grup":"D'un altre grup"));
     const mid=s.mid||memberFromEntry(s)?.id;
     const listName=isNoAttend?"noAttend":isWait?"waitlist":(isHelm?"helmsmanSignups":"signups");
     const removeBtn=isPatron&&!isPast?` <button type="button" data-action="patron-remove-person" data-oid="${esc(o.id)}" data-list="${listName}" data-idx="${idx}" data-mid="${esc(mid||"")}" data-name="${esc(s.name)}" style="background:rgba(255,255,255,.25);border:none;border-radius:50%;width:18px;height:18px;color:#fff;font-size:16px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:1;padding:0;flex-shrink:0">×</button>`:"";
@@ -1439,7 +1439,7 @@ function renderOutingCard(o){
       <div style="font-size:14px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">🚣 Vogadors ${rowerCount}/${capacity}</div>
       ${regularSignups.length?personChips(regularSignups,"signups"):`<div style="font-size:16px;color:${MUTED};font-style:italic;margin-bottom:8px">Encara no hi ha vogadors apuntats</div>`}
       ${reserve?`<div style="font-size:14px;color:#8b4513;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:10px 0 6px">🤎 Reserva ${reserveCount}/${reserve}</div>${reserveSignups.length?personChips(reserveSignups,"signups"):`<div style="font-size:16px;color:${MUTED};font-style:italic;margin-bottom:8px">Sense reserva assignada</div>`}`:""}
-      ${maxHelm>0?`<div style="font-size:14px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:10px 0 6px">⛵ Timonels ${o.helmsmanSignups.length}/${maxHelm}${helmsRequired?" · obligatori":""}</div>${o.helmsmanSignups.length?personChips(o.helmsmanSignups,"helm"):`<div style="font-size:16px;color:${helmsRequired?RED:MUTED};font-style:italic;margin-bottom:8px">${helmsRequired?"Cal timoner per fer la sortida":"Sense timoner assignat"}</div>`}`:""}
+      ${maxHelm>0?`<div style="font-size:14px;color:${MUTED};font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:10px 0 6px">⛵ Timonels ${o.helmsmanSignups.length}/${maxHelm}${helmsRequired?" · obligatori":""}</div>${o.helmsmanSignups.length?personChips(o.helmsmanSignups,"helm"):`<div style="font-size:16px;color:${helmsRequired?RED:MUTED};font-style:italic;margin-bottom:8px">${helmsRequired?"Cal timonel per fer la sortida":"Sense timonel assignat"}</div>`}`:""}
       <div style="font-size:14px;color:#b07a10;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:10px 0 6px">⏳ Llista d'espera (${o.waitlist.length})${isGeneral?` · Ordre d'inscripció`:` · Prioritat si és abans de l'obertura`}</div>
       ${o.waitlist.length?personChips(o.waitlist,"wait"):`<div style="font-size:16px;color:${MUTED};font-style:italic">No hi ha ningú en espera</div>`}
       ${!isGeneral?`<div style="font-size:14px;color:${RED};font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:10px 0 6px">❌ No poden venir (${o.noAttend.length})</div>${o.noAttend.length?personChips(o.noAttend,"noAttend"):`<div style="font-size:16px;color:${MUTED};font-style:italic">Ningú no ha indicat que no pot venir</div>`}`:""}
@@ -1459,7 +1459,7 @@ function renderOutingCard(o){
     const cantAccess=!isMyGroup&&!canAccess;
 
     if(canJoinHelm)
-      acts.push(`<button onclick="signup(${o.id},true)" style="flex:1;padding:9px;background:#4a7a3d;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:16px;cursor:pointer">⛵ Timoner</button>`);
+      acts.push(`<button onclick="signup(${o.id},true)" style="flex:1;padding:9px;background:#4a7a3d;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:16px;cursor:pointer">⛵ Timonel</button>`);
     if(canJoinRow&&rowDirect)
       acts.push(`<button onclick="signup(${o.id},false)" style="flex:1;padding:9px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:17px;cursor:pointer">✋ M'hi apunto</button>`);
     if(canJoinRow&&!rowDirect)
@@ -1492,7 +1492,7 @@ function renderOutingCard(o){
     <div style="font-size:15px;font-weight:700;color:${DARK};text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Afegir soci a la sortida</div>
     <select id="patron-add-role-${o.id}" onchange="setPatronAddRole(${o.id},this.value)" style="width:100%;padding:8px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:16px;background:#fff;outline:none;margin-bottom:8px">
       <option value="rower" ${patronAddRole==="rower"?"selected":""}>Vogador</option>
-      ${(o.helmsmen||0)>0?`<option value="helm" ${patronAddRole==="helm"?"selected":""}>Timoner</option>`:""}
+      ${(o.helmsmen||0)>0?`<option value="helm" ${patronAddRole==="helm"?"selected":""}>Timonel</option>`:""}
     </select>
     <select id="patron-add-mid-${o.id}" onchange="setPatronAddMid(${o.id},this.value)" style="width:100%;padding:8px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:16px;background:#fff;outline:none;margin-bottom:8px">
       <option value="" ${patronAddMid?"":"selected"}>— Selecciona soci —</option>
@@ -2144,7 +2144,7 @@ async function signup(oid,asHelm=false){
     const entry={name:S.userName,gid:S.userGroupId,mid:S.memberId,ts:nowIso()};
     markWaitlistPriority(entry,o);
     reconcileOutingWaitlist(o);
-    // No pot ser timoner i vogador alhora, ni duplicar inscripció.
+    // No pot ser timonel i vogador alhora, ni duplicar inscripció.
     const amHelm=o.helmsmanSignups.some(entryMatchesCurrent);
     const amRower=o.signups.some(entryMatchesCurrent);
     const amWait=o.waitlist.some(entryMatchesCurrent);
@@ -2156,8 +2156,8 @@ async function signup(oid,asHelm=false){
       if(!maxHelm)return;
       if(o.helmsmanSignups.length>=maxHelm)return alert("Ja hi ha el màxim de timonels");
       o.helmsmanSignups.push(entry);
-      addOutingLog(o,"helm_signup",`${S.userName} s'apunta de timoner a ${outingLabel(o)}.`);
-      showToast("ok","T'has apuntat com a timoner.");
+      addOutingLog(o,"helm_signup",`${S.userName} s'apunta de timonel a ${outingLabel(o)}.`);
+      showToast("ok","T'has apuntat com a timonel.");
     } else {
       if(canTakeRowerSpot(o,entry)){
         o.signups.push(entry);
@@ -2202,7 +2202,7 @@ async function setOutingNoAttend(oid){
     o.waitlist=o.waitlist.filter(e=>!entryMatchesCurrent(e));
     o.noAttend.push({name:S.userName,gid:ownGroup,mid:S.memberId,ts:nowIso()});
     if(wasIn)reconcileOutingWaitlist(o);
-    if(wasHelm)addOutingLog(o,"helm_unsignup",`${S.userName} es desapunta de timoner de ${outingLabel(o)}.`);
+    if(wasHelm)addOutingLog(o,"helm_unsignup",`${S.userName} es desapunta de timonel de ${outingLabel(o)}.`);
     if(wasIn)addOutingLog(o,"unsignup",`${S.userName} allibera la plaça de ${outingLabel(o)}.`);
     if(wasWait)addOutingLog(o,"waitlist_leave",`${S.userName} surt de la llista d'espera de ${outingLabel(o)}.`);
     addOutingLog(o,"no_attend",`${S.userName} indica que no pot venir a ${outingLabel(o)}.`);
@@ -2226,7 +2226,7 @@ async function unsignup(oid){
     o.helmsmanSignups=o.helmsmanSignups.filter(s=>!entryMatchesCurrent(s));
     o.signups=o.signups.filter(s=>!entryMatchesCurrent(s));
     o.waitlist=o.waitlist.filter(s=>!entryMatchesCurrent(s));
-    if(wasHelm)addOutingLog(o,"helm_unsignup",`${S.userName} es desapunta de timoner de ${outingLabel(o)}.`);
+    if(wasHelm)addOutingLog(o,"helm_unsignup",`${S.userName} es desapunta de timonel de ${outingLabel(o)}.`);
     if(wasIn)addOutingLog(o,"unsignup",`${S.userName} es desapunta de ${outingLabel(o)}.`);
     if(wasWait)addOutingLog(o,"waitlist_leave",`${S.userName} surt de la llista d'espera de ${outingLabel(o)}.`);
     // Si allibera plaça de vogador, primer es respecta la llista d'espera del grup.
@@ -2288,7 +2288,7 @@ async function patronAddMember(oid){
     const alreadyHelm=o.helmsmanSignups.some(same);
     const alreadyWait=o.waitlist.some(same);
     if(alreadyIn||alreadyHelm||alreadyWait){
-      const lloc=alreadyIn?"apuntat":alreadyHelm?"apuntat com a timoner":"a la llista d'espera";
+      const lloc=alreadyIn?"apuntat":alreadyHelm?"apuntat com a timonel":"a la llista d'espera";
       return alert(`${m.name} ja consta ${lloc} en aquesta sortida.`);
     }
     o.noAttend=o.noAttend.filter(e=>!same(e));
@@ -2302,7 +2302,7 @@ async function patronAddMember(oid){
       if(!maxHelm)return alert("Aquesta sortida no admet timonels.");
       if(o.helmsmanSignups.length>=maxHelm)return alert("Ja hi ha el màxim de timonels.");
       o.helmsmanSignups.push(entry);
-      addOutingLog(o,"helm_signup_patron",`El patró apunta ${m.name} de timoner a ${outingLabel(o)}.`);
+      addOutingLog(o,"helm_signup_patron",`El patró apunta ${m.name} de timonel a ${outingLabel(o)}.`);
     } else {
       if(canTakeRowerSpot(o,entry)){
         o.signups.push(entry);
@@ -2359,7 +2359,7 @@ async function patronRemovePerson(oid,listName,idx=null,mid="",nameArg=""){
     if(list==="noAttend"){
       addOutingLog(o,"no_attend_removed_patron",`El patró elimina la resposta de no assistència de ${name} a ${outingLabel(o)}.`);
     }else if(list==="helmsmanSignups"){
-      addOutingLog(o,"helm_unsignup_patron",`El patró desapunta ${name} de timoner a ${outingLabel(o)}.`);
+      addOutingLog(o,"helm_unsignup_patron",`El patró desapunta ${name} de timonel a ${outingLabel(o)}.`);
     }else if(list==="waitlist"){
       addOutingLog(o,"waitlist_leave_patron",`El patró treu ${name} de la llista d'espera de ${outingLabel(o)}.`);
     }else{
@@ -2593,8 +2593,8 @@ const OUTING_OPEN_RULES={
 // Configuració per grup i dia (dow: 1=Dl, 3=Dc). Els divendres són sortides generals.
 // capacity: places de vogador base
 // reserve: +1 plaça reserva per al grup
-// helmsmen: places de timoner
-// helmsmanRequired: si cal timoner per sortir
+// helmsmen: places de timonel
+// helmsmanRequired: si cal timonel per sortir
 const OUTING_CONFIG={
   1:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false},
      Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true}},
@@ -2948,7 +2948,7 @@ function autoOutingHasActivity(o){
 
 function pruneAutoOutingsOutsideWeek(week){
   // Neteja conservadora: només elimina sortides automàtiques buides fora de la setmana activa.
-  // Si hi ha algú apuntat, en espera o com a timoner, es conserva sempre.
+  // Si hi ha algú apuntat, en espera o com a timonel, es conserva sempre.
   const validDates=new Set(week?.dates||[]);
   const before=S.outings.length;
   S.outings=S.outings.filter(o=>{

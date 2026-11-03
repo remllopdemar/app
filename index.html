@@ -221,7 +221,24 @@ function normalizeAllMemberSections(){
 }
 normalizeAllMemberSections();
 
-function go(u){Object.assign(S,u);render();}
+function go(u){Object.assign(S,u);if(u&&u.pinErr===true)clearPinsOnce=true;render();}
+let clearPinsOnce=false; // clau incorrecta: buidem les claus una vegada perquè les tornin a escriure
+// ── Renders en segon pla (refresc 60s, realtime, tornar a l'app) ─────────────
+// Si l'usuari està escrivint en un camp, no refem la pantalla (esborraria el que
+// ha escrit i tancaria el teclat). Ho deixem pendent fins que surti del camp.
+let bgRenderPending=false;
+function userIsTyping(){
+  const a=document.activeElement,root=document.getElementById("root");
+  return !!(a&&root&&root.contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+}
+function bgRender(){
+  if(userIsTyping()){bgRenderPending=true;return;}
+  bgRenderPending=false;render();
+}
+document.addEventListener("focusout",()=>{
+  if(!bgRenderPending)return;
+  setTimeout(()=>{if(bgRenderPending&&!userIsTyping()){bgRenderPending=false;render();}},300);
+});
 // ── Desat segur amb escriptures simultànies ──────────────────────────────────
 // Cada clau (outings, membres…) es guarda sencera a app_data. Per no trepitjar
 // canvis d'altres mòbils, recordem l'última versió llegida del servidor (BASE),
@@ -413,12 +430,12 @@ async function refreshKeysFromSupabase(keys=SUPA_KEYS,{renderNow=false,silent=tr
     const {data,error}=await supa.from("app_data").select("key,value").in("key",keys.map(k=>"ldm:"+k));
     if(error)throw error;
     const changed=applySupabaseRows(data,{renderNow:false,keys});
-    if(renderNow||!silent)render();
+    if(!silent)render();else if(renderNow)bgRender();
     return changed;
   }catch(e){
     S.syncErr=e?.message||"No s'ha pogut sincronitzar";
     console.warn("⚠️ Error sincronitzant Supabase:",S.syncErr);
-    if(!silent||renderNow)render();
+    if(!silent)render();else if(renderNow)bgRender();
     return false;
   }finally{
     if(!silent){S.supaSyncing=false;render();}
@@ -2099,6 +2116,7 @@ function forceGenOutings(){
 }
 
 // ── Render principal ────────────────────────────────────────────────────────────
+let lastLoginKey=null;
 function render(){
   const root=document.getElementById("root");
   if(!root)return;
@@ -2109,12 +2127,28 @@ function render(){
   }
   try{
     if(!S.role||S.loginStep!=="choose"){
+      // Conservem el que l'usuari ha escrit (nom, grup, claus) si la pantalla es
+      // torna a dibuixar sense canviar de pas (error, botó de secció, refresc...).
+      const loginKey=S.loginStep+"|"+(S.selectedMemberId||"");
+      const kept={};let focusId=null,selS=null,selE=null;
+      const clearPins=clearPinsOnce;clearPinsOnce=false;
+      if(lastLoginKey===loginKey){
+        root.querySelectorAll("input[id],select[id],textarea[id]").forEach(el=>{if(!(clearPins&&el.type==="password"))kept[el.id]=el.value;});
+        const a=document.activeElement;
+        if(a&&a.id&&root.contains(a)&&!(clearPins&&a.type==="password")){focusId=a.id;try{selS=a.selectionStart;selE=a.selectionEnd;}catch(e){}}
+      }
+      lastLoginKey=loginKey;
       root.innerHTML=renderLogin();
+      Object.keys(kept).forEach(id=>{const el=document.getElementById(id);if(el&&kept[id]!==undefined&&kept[id]!=="")el.value=kept[id];});
+      if(focusId){
+        const f=document.getElementById(focusId);
+        if(f){f.focus();try{if(selS!=null)f.setSelectionRange(selS,selE);}catch(e){}}
+      }
       const p=document.getElementById("pin-in");
       const nomIn=document.getElementById("soci-nom");
       if(nomIn)nomIn.onkeydown=e=>{if(e.key==="Enter")p?.focus();};
       if(p){
-        if(nomIn&&!nomIn.value)nomIn.focus();else p.focus();
+        if(!focusId){if(nomIn&&!nomIn.value)nomIn.focus();else p.focus();}
         const fn=S.loginStep==="patron-pin"?tryPin:S.loginStep==="soci-pin"?tryLoginSoci:S.loginStep==="soci-name"?trySociName:null;
         if(fn)p.onkeydown=e=>{if(e.key==="Enter")fn();};
       }
@@ -2122,6 +2156,7 @@ function render(){
       if(p2)p2.onkeydown=e=>{if(e.key==="Enter")tryLoginSoci();};
       return;
     }
+  lastLoginKey=null;
   const myGid=S.userGroupId||S.capGroupId;
   const opc=S.polls.filter(p=>!p.closed).length;
   const pendingCount=S.role==="patron"?S.membres.filter(m=>m.pending).length:0;
@@ -3222,13 +3257,13 @@ function setupRealtimeSync(){
         S.syncErr="";
         normalizeAllMemberSections();
         normalizeAllOutingEntries();
-        render();
+        bgRender();
       })
       .subscribe(status=>{
         if(status==="SUBSCRIBED"){
           S.lastSyncAt=new Date().toISOString();
           S.syncErr="";
-          render();
+          bgRender();
         }
       });
   }catch(e){

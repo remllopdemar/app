@@ -665,7 +665,8 @@ function outingLabel(o){return `${outingDisplayTitle(o)} · ${new Date(o.date).t
 function actorLabel(){return S.role==="patron"?"Patró":(S.userName||"Sistema");}
 function pushAviso(a){S.avisos.unshift({id:mkId(),date:td(),createdAt:nowIso(),pin:false,...a});}
 function addOutingLog(o,type,text,extra={}){
-  pushAviso({kind:"log",type,outingId:o.id,groupId:o.groupId,text,byName:actorLabel(),byRole:S.role||"system",...extra});
+  const selfMid=(S.role==="soci"||S.role==="cap")?S.memberId:null;
+  pushAviso({kind:"log",type,outingId:o.id,groupId:o.groupId,text,byName:actorLabel(),byRole:S.role||"system",byMemberId:selfMid,...extra});
 }
 function addPersonalAviso(o,entry,type,title,message){
   const m=memberFromEntry(entry)||{};
@@ -1924,6 +1925,74 @@ function renderGroupStatsList(){
   }).join("");
   return cc(`${lbl("Assistència per grup")}<div style="font-size:16px;color:${MUTED};line-height:1.45;margin-bottom:6px">Visió agregada per grup. Les baixes justificades no penalitzen el percentatge principal.</div>${cards}`);
 }
+function memberAttendanceHistory(m){
+  const out=[];if(!m)return out;
+  const targetKey=attendanceKey({mid:m.id,name:m.name,gid:m.groupId});
+  const targetName=String(m.name||"").trim().toLowerCase();
+  safeArr(S.outings).filter(isPastOuting).forEach(o=>{
+    const person=attendancePeople(o).find(p=>p.attKey===targetKey||String(p.name||"").trim().toLowerCase()===targetName);
+    if(!person)return;
+    const st=o.attendance?.closed?(o.attendance.status?.[person.attKey]||"present"):"pending";
+    out.push({o,st,role:person.attRole});
+  });
+  return out.sort((a,b)=>sortOutings(b.o,a.o));
+}
+// Desapuntades fetes pel mateix soci (no les que fa el patró). "Última hora" = menys de 24 h abans de la sortida.
+const UNSIGNUP_LATE_HOURS=24;
+function memberUnsignupStats(m){
+  const out={total:0,late:0,items:[]};if(!m)return out;
+  const nk=normalizeNameKey(m.name),seen=new Set();
+  safeArr(S.avisos).forEach(a=>{
+    if(a.kind!=="log"||(a.type!=="unsignup"&&a.type!=="helm_unsignup"))return;
+    if(a.byRole!=="soci"&&a.byRole!=="cap")return;
+    const mine=a.byMemberId?Number(a.byMemberId)===Number(m.id):normalizeNameKey(a.byName)===nk;
+    if(!mine)return;
+    const k=String(a.outingId)+"|"+String(a.createdAt||a.date||"").slice(0,16);
+    if(seen.has(k))return;seen.add(k);
+    const o=S.outings.find(x=>String(x.id)===String(a.outingId));
+    const start=o?outingStartDateTime(o):null,at=a.createdAt?new Date(a.createdAt):null;
+    const late=!!(start&&at&&!isNaN(at)&&(start-at)<UNSIGNUP_LATE_HOURS*3600000);
+    out.total++;if(late)out.late++;
+    out.items.push({o,late,at:a.createdAt||a.date||""});
+  });
+  return out;
+}
+function memberRow(m){
+  const hist=memberAttendanceHistory(m);const c={present:0,absent:0,excused:0,pending:0};hist.forEach(h=>c[h.st]++);
+  const pct=(c.present+c.absent)>0?Math.round(c.present/(c.present+c.absent)*100):null;
+  const un=memberUnsignupStats(m);
+  const unPct=(un.total+hist.length)>0?Math.round(un.total/(un.total+hist.length)*100):null;
+  const warn=c.absent>=2||(un.total>=3&&unPct>=50)||un.late>=3;
+  return {m,hist,c,pct,un,unPct,warn};
+}
+function renderMemberAttendanceTable(members,title,subtitle){
+  const rows=safeArr(members).map(memberRow)
+    .sort((a,b)=>b.c.absent-a.c.absent||b.un.late-a.un.late||b.un.total-a.un.total||b.c.present-a.c.present||String(a.m.name||"").localeCompare(String(b.m.name||""),"ca"));
+  if(!rows.length)return cc(`${lbl(title)}<div style="font-size:16px;color:${MUTED};font-style:italic">Cap soci.</div>`);
+  const pill=(txt,bg,col)=>`<span style="font-size:14px;font-weight:800;background:${bg};color:${col};border-radius:99px;padding:3px 8px;white-space:nowrap">${txt}</span>`;
+  const stLbl=st=>st==="pending"?"⏳ Pendent de tancar":st==="absent"?"❌ No presentat":st==="excused"?"➖ Baixa / justificat":"✅ Ha remat";
+  const stCol=st=>st==="pending"?MUTED:st==="absent"?RED:st==="excused"?"#b07a10":GREEN;
+  const list=rows.map(r=>`<details style="border-top:.5px solid #f0ede6"><summary style="list-style:none;cursor:pointer;padding:9px 0;display:flex;align-items:center;justify-content:space-between;gap:8px"><div style="min-width:0;flex:1"><div style="font-size:17px;font-weight:750;color:#1a1a18;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.m.name||"")}</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px">${pill("✅ "+r.c.present,"#e6f4ee",GREEN)}${pill("❌ "+r.c.absent,r.c.absent?"#fff0f0":"#f5f3ee",r.c.absent?RED:MUTED)}${pill("➖ "+r.c.excused,"#fff8ee","#b07a10")}${pill(r.pct===null?"—":r.pct+"%","#eef0fa",DARK)}${r.c.pending?pill("⏳ "+r.c.pending,"#f5f3ee",MUTED):""}${r.un.total?pill("↩️ "+r.un.total+(r.unPct!==null?" ("+r.unPct+"%)":""),"#f5f3ee",DARK):""}${r.un.late?pill("⏰ "+r.un.late,"#fff0f0",RED):""}</div></div>${r.warn?`<span title="Revisar" style="font-size:20px">⚠️</span>`:""}<div style="font-size:22px;color:${MUTED}">▾</div></summary><div style="padding:0 0 10px">${r.un.items.length?`<div style="font-size:15px;color:${MUTED};padding:4px 0 2px">Desapuntades: ${r.un.items.slice().sort((a,b)=>String(b.at).localeCompare(String(a.at))).map(u=>`${u.o?outingShortDate(u.o):"sortida esborrada"}${u.late?' <span style="color:'+RED+';font-weight:800">(última hora)</span>':""}`).join(" · ")}</div>`:""}${r.hist.length?r.hist.map(h=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:.5px dashed #eee;font-size:15px"><span style="color:#1a1a18">${outingShortDate(h.o)} · ${esc(outingDisplayTitle(h.o))}${h.role&&h.role!=="Vogador"?` <span style="color:${MUTED}">(${esc(h.role)})</span>`:""}</span><span style="color:${stCol(h.st)};font-weight:800;white-space:nowrap">${stLbl(h.st)}</span></div>`).join(""):`<div style="font-size:15px;color:${MUTED};font-style:italic">Encara no ha sortit a cap sortida.</div>`}</div></details>`).join("");
+  return cc(`${lbl(title)}<div style="font-size:16px;color:${MUTED};line-height:1.45;margin-bottom:6px">${subtitle} ✅ Ha remat · ❌ No presentat sense avisar · ➖ Baixa justificada · ⏳ Assistència pendent de tancar · ↩️ Desapuntades (i % sobre les vegades que s'ha apuntat) · ⏰ Desapuntades a menys de ${UNSIGNUP_LATE_HOURS} h · ⚠️ A revisar (2+ no presentats, 3+ desapuntades d'última hora o més de la meitat de desapuntades). Toca un nom per veure les seves sortides.</div>${list}`);
+}
+// Regularitat dels últims 90 dies: % de sortides del seu grup (amb assistència tancada) on ha remat.
+const REGULAR_DAYS=90,REGULAR_PCT=50;
+function renderGroupRegularity(){
+  const since=new Date(Date.now()-REGULAR_DAYS*86400000).toISOString().slice(0,10);
+  const active=S.membres.filter(m=>!m.pending);
+  const names=list=>list.length?list.map(x=>esc(x.m.name)+(x.n?` <span style="color:${MUTED}">(${x.n})</span>`:"")).join(", "):`<span style="color:${MUTED};font-style:italic">ningú</span>`;
+  const blocks=S.groups.map(g=>{
+    const ms=active.filter(m=>Number(m.groupId)===Number(g.id));
+    const gOut=groupOutings(g.id).filter(o=>isPastOuting(o)&&(o.date||"")>=since&&o.attendance?.closed&&attendancePeople(o).length);
+    const rows=ms.map(m=>{const n=memberAttendanceHistory(m).filter(h=>h.st==="present"&&(h.o.date||"")>=since).length;return {m,n};});
+    const base=gOut.length;
+    const reg=[],occ=[],never=[];
+    rows.forEach(x=>{if(!x.n)never.push(x);else if(base&&x.n/base*100>=REGULAR_PCT)reg.push(x);else occ.push(x);});
+    [reg,occ].forEach(l=>l.sort((a,b)=>b.n-a.n));
+    return `<details style="border-top:.5px solid #f0ede6"><summary style="list-style:none;cursor:pointer;padding:10px 0;display:flex;justify-content:space-between;align-items:center;gap:8px"><div><div style="font-size:17px;font-weight:800;color:#1a1a18">${esc(g.name)} · ${ms.length} socis</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px"><span style="font-size:14px;font-weight:800;background:#e6f4ee;color:${GREEN};border-radius:99px;padding:3px 8px">🟢 ${reg.length} regulars</span><span style="font-size:14px;font-weight:800;background:#fff8ee;color:#b07a10;border-radius:99px;padding:3px 8px">🟡 ${occ.length} ocasionals</span><span style="font-size:14px;font-weight:800;background:#fff0f0;color:${RED};border-radius:99px;padding:3px 8px">⚪ ${never.length} mai</span></div></div><div style="font-size:22px;color:${MUTED}">▾</div></summary><div style="font-size:15px;line-height:1.5;padding:0 0 10px;color:#1a1a18">${base?"":`<div style="color:#b07a10;margin-bottom:4px">Encara no hi ha assistències tancades d'aquest grup als últims ${REGULAR_DAYS} dies.</div>`}<div><strong>🟢 Regulars:</strong> ${names(reg)}</div><div><strong>🟡 Ocasionals:</strong> ${names(occ)}</div><div><strong>⚪ Mai:</strong> ${names(never)}</div><div style="color:${MUTED};margin-top:4px">${base} sortides del grup amb assistència tancada.</div></div></details>`;
+  }).join("");
+  return cc(`${lbl("Socis per grup i regularitat")}<div style="font-size:16px;color:${MUTED};line-height:1.45;margin-bottom:6px">${active.length} socis actius. Últims ${REGULAR_DAYS} dies: <strong>regular</strong> = ha remat a ${REGULAR_PCT}% o més de les sortides del seu grup; <strong>ocasional</strong> = menys; <strong>mai</strong> = cap. Entre parèntesis, vegades que ha remat.</div>${blocks}`);
+}
 function renderEstadistiques(){
   if(!userCanViewStats())return cc(`<div style="font-size:17px;color:${MUTED};text-align:center;padding:1.5rem 0">Accés restringit</div>`);
   const me=currentMember();
@@ -1952,6 +2021,10 @@ function renderEstadistiques(){
     html+=statsCard("Les meves dades",personal,"Les teves assistències personals confirmades.",true);
   }
 
+  const activeMembers=S.membres.filter(m=>!m.pending);
+  if(S.role==="patron"||memberIsWebmaster(me))html+=renderGroupRegularity();
+  if(S.role==="patron"||memberIsWebmaster(me))html+=renderMemberAttendanceTable(activeMembers,"Assistència per soci","Tots els socis, primer els que tenen més no presentats.");
+  else if(S.role==="cap")html+=renderMemberAttendanceTable(activeMembers.filter(m=>Number(m.groupId)===Number(S.capGroupId)),"Assistència per soci",`Socis del ${esc(gname(S.capGroupId))}, primer els que tenen més no presentats.`);
   if(S.role==="cap"||memberIsGeneralCap(me))html+=renderAttendanceManager(5);
   html+=clubParticipationRanking(10);
   html+=`<details style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">

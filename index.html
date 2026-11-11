@@ -696,7 +696,7 @@ function canManageAttendance(o){
   const me=currentMember();
   const canGroup=S.role==="cap"&&Number(S.capGroupId)===Number(o.groupId);
   const canGeneral=memberIsGeneralCap(me)&&isGeneralOuting(o);
-  const canAll=userIsWebmaster(); // patró i webmaster poden passar llista de qualsevol sortida
+  const canAll=userIsWebmaster(); // patró i webmaster poden confirmar l'assistència de qualsevol sortida
   return (canGroup||canGeneral||canAll)&&isPastOuting(o)&&attendancePeople(o).length>0;
 }
 // Llistes pendents de passar que són responsabilitat directa del cap (o cap de generals).
@@ -715,7 +715,7 @@ function capPendingAttendanceOutings(){
 function renderCapAttendanceReminder(){
   const n=capPendingAttendanceOutings().length;
   if(!n)return "";
-  return `<div style="margin:12px 14px 0;background:#fff8ee;border:1.5px solid #e8a020;border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:12px"><div style="font-size:26px;line-height:1">📋</div><div style="flex:1;min-width:0"><div style="font-size:17px;font-weight:800;color:#b07a10">Tens ${n} llista${n!==1?"s":""} per passar</div><div style="font-size:15px;color:${MUTED};line-height:1.35;margin-top:2px">Marca qui ha remat i qui no s'ha presentat, i tanca l'assistència.</div></div><button onclick="go({screen:'estadistiques'})" style="padding:9px 12px;background:#e8a020;border:none;border-radius:9px;color:#fff;font-size:16px;font-weight:850;cursor:pointer;white-space:nowrap">Passar llista</button></div>`;
+  return `<div style="margin:12px 14px 0;background:#fff8ee;border:1.5px solid #e8a020;border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:12px"><div style="font-size:26px;line-height:1">📋</div><div style="flex:1;min-width:0"><div style="font-size:17px;font-weight:800;color:#b07a10">Tens ${n} sortida${n!==1?"s":""} per confirmar l'assistència</div><div style="font-size:15px;color:${MUTED};line-height:1.35;margin-top:2px">Marca qui no s'ha presentat i tanca l'assistència.</div></div><button onclick="go({screen:'estadistiques'})" style="padding:9px 12px;background:#e8a020;border:none;border-radius:9px;color:#fff;font-size:16px;font-weight:850;cursor:pointer;white-space:nowrap">Confirmar</button></div>`;
 }
 function attendanceStatusLabel(st){return st==="absent"?"No presentat":st==="excused"?"Baixa / justificat":"Ha remat";}
 function attendanceStatusStyle(st){

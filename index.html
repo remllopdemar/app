@@ -696,7 +696,26 @@ function canManageAttendance(o){
   const me=currentMember();
   const canGroup=S.role==="cap"&&Number(S.capGroupId)===Number(o.groupId);
   const canGeneral=memberIsGeneralCap(me)&&isGeneralOuting(o);
-  return (canGroup||canGeneral)&&isPastOuting(o)&&attendancePeople(o).length>0;
+  const canAll=userIsWebmaster(); // patró i webmaster poden passar llista de qualsevol sortida
+  return (canGroup||canGeneral||canAll)&&isPastOuting(o)&&attendancePeople(o).length>0;
+}
+// Llistes pendents de passar que són responsabilitat directa del cap (o cap de generals).
+// Només les dels últims 14 dies, perquè l'avís no quedi encès per sortides molt antigues.
+function capPendingAttendanceOutings(){
+  const me=currentMember();
+  if(!(S.role==="cap"||memberIsGeneralCap(me)))return [];
+  const since=isoDate(new Date(Date.now()-14*864e5));
+  return S.outings.filter(o=>{
+    if(!isPastOuting(o)||o.attendance?.closed||(o.date||"")<since||!attendancePeople(o).length)return false;
+    const own=S.role==="cap"&&Number(S.capGroupId)===Number(o.groupId);
+    const gen=memberIsGeneralCap(me)&&isGeneralOuting(o);
+    return own||gen;
+  });
+}
+function renderCapAttendanceReminder(){
+  const n=capPendingAttendanceOutings().length;
+  if(!n)return "";
+  return `<div style="margin:12px 14px 0;background:#fff8ee;border:1.5px solid #e8a020;border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:12px"><div style="font-size:26px;line-height:1">📋</div><div style="flex:1;min-width:0"><div style="font-size:17px;font-weight:800;color:#b07a10">Tens ${n} llista${n!==1?"s":""} per passar</div><div style="font-size:15px;color:${MUTED};line-height:1.35;margin-top:2px">Marca qui ha remat i qui no s'ha presentat, i tanca l'assistència.</div></div><button onclick="go({screen:'estadistiques'})" style="padding:9px 12px;background:#e8a020;border:none;border-radius:9px;color:#fff;font-size:16px;font-weight:850;cursor:pointer;white-space:nowrap">Passar llista</button></div>`;
 }
 function attendanceStatusLabel(st){return st==="absent"?"No presentat":st==="excused"?"Baixa / justificat":"Ha remat";}
 function attendanceStatusStyle(st){
@@ -812,7 +831,7 @@ function manageableAttendanceOutings(){
   return S.outings.filter(o=>canManageAttendance(o)).sort((a,b)=>sortOutings(b,a));
 }
 function renderAttendanceManager(limit=4){
-  if(!(S.role==="cap"||userIsGeneralCap()))return "";
+  if(!(S.role==="cap"||userIsGeneralCap()||userIsWebmaster()))return "";
   const all=manageableAttendanceOutings();
   if(!all.length)return cc(`${lbl("Assistència real")}<div style="font-size:17px;color:${MUTED};line-height:1.45">Quan hi hagi sortides passades amb apuntats, aquí podràs marcar qui ha remat, qui no s'ha presentat i les baixes justificades.</div>`);
   const pending=all.filter(o=>!o.attendance?.closed);
@@ -1788,7 +1807,7 @@ function renderHomeEnquestes(){
   return cc(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">${lbl("📊 Enquestes")}<span style="background:#eef0fa;color:${DARK};font-size:14px;font-weight:800;padding:2px 8px;border-radius:20px">${open.length}</span></div>${body}<div style="display:flex;justify-content:flex-end;margin-top:8px"><button onclick="go({screen:'vots'})" style="border:none;background:${BG};border-radius:8px;color:${DARK};font-size:15px;font-weight:800;padding:6px 9px;cursor:pointer">Veure enquestes</button></div>`);
 }
 function renderInici(){
-  return renderMyNextOuting()+renderHomeAvisos()+renderMeteo()+renderHomeSortides()+renderHomeEnquestes()+`<div style="margin:12px 14px 4px">${lbl("📅 Calendari del club")}</div>`+renderClubAgenda()+`<div style="height:14px"></div>`;
+  return renderCapAttendanceReminder()+renderMyNextOuting()+renderHomeAvisos()+renderMeteo()+renderHomeSortides()+renderHomeEnquestes()+`<div style="margin:12px 14px 4px">${lbl("📅 Calendari del club")}</div>`+renderClubAgenda()+`<div style="height:14px"></div>`;
 }
 
 function renderEntrena(){
@@ -2042,7 +2061,7 @@ function renderEstadistiques(){
   if(S.role==="patron"||memberIsWebmaster(me))html+=renderGroupRegularity();
   if(S.role==="patron"||memberIsWebmaster(me))html+=renderMemberAttendanceTable(activeMembers,"Assistència per soci","Tots els socis, primer els que tenen més no presentats.");
   else if(S.role==="cap")html+=renderMemberAttendanceTable(activeMembers.filter(m=>Number(m.groupId)===Number(S.capGroupId)),"Assistència per soci",`Socis del ${esc(gname(S.capGroupId))}, primer els que tenen més no presentats.`);
-  if(S.role==="cap"||memberIsGeneralCap(me))html+=renderAttendanceManager(5);
+  if(S.role==="cap"||memberIsGeneralCap(me)||userIsWebmaster())html+=renderAttendanceManager(5);
   html+=clubParticipationRanking(10);
   html+=`<details style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
     <summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px">
@@ -2251,6 +2270,7 @@ function render(){
   const opc=S.polls.filter(p=>!p.closed).length;
   const pendingCount=S.role==="patron"?S.membres.filter(m=>m.pending).length:0;
   const avisUnread=unreadAvisosCount();
+  const attPending=capPendingAttendanceOutings().length;
   // Permisos de secció: el patró veu tot; socis i caps només les seccions assignades.
   const hasC=S.role==="patron"||S.userSections.includes("competicio");
   const hasS=S.role==="patron"||S.userSections.includes("social");
@@ -2278,7 +2298,7 @@ function render(){
   const btnC=hasC?`<button onclick="go({section:'competicio',showForm:false})" style="flex:1;padding:7px;font-size:17px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="competicio"?DARK:"transparent"};color:${S.section==="competicio"?"#fff":MUTED}">🏆 Competició</button>`:"";
   const btnS=hasS?`<button onclick="go({section:'social',showForm:false})" style="flex:1;padding:7px;font-size:17px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="social"?DARK:"transparent"};color:${S.section==="social"?"#fff":MUTED}">⚓ Social</button>`:"";
   const st=hasBoth&&S.screen!=="inici"&&S.screen!=="vots"&&S.screen!=="estadistiques"&&S.screen!=="admin"&&S.screen!=="membres"&&S.screen!=="avisos"?`<div style="display:flex;margin:12px 14px 0;background:#e2dfd6;border-radius:10px;padding:3px">${btnC}${btnS}</div>`:"";
-  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:13px;opacity:.5;letter-spacing:.05em;white-space:nowrap">LLOP DE MAR</div><div style="font-size:21px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:15px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${esc(userSub)}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:16px;cursor:pointer">Sortir</button></div></div>${st}${renderSyncStatus()}${renderReadOnlyBanner()}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,editAvisId:null,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`:`go({screen:'${k}',showForm:false,showAvisForm:false,editAvisId:null,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`;return`<button onclick="${clk}" style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:${nav.length>6?9:nav.length>5?11:13}px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:${nav.length>6?20:22}px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:14px;font-weight:700;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:14px;font-weight:700;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:14px;font-weight:700;min-width:18px;height:18px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${renderToast()}${S.showLogoutConfirm?renderLogoutModal():""}${S.showMemberAdded?renderMemberAddedModal():""}`;
+  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:13px;opacity:.5;letter-spacing:.05em;white-space:nowrap">LLOP DE MAR</div><div style="font-size:21px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:15px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${esc(userSub)}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:16px;cursor:pointer">Sortir</button></div></div>${st}${renderSyncStatus()}${renderReadOnlyBanner()}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,editAvisId:null,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`:`go({screen:'${k}',showForm:false,showAvisForm:false,editAvisId:null,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`;return`<button onclick="${clk}" style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:${nav.length>6?9:nav.length>5?11:13}px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:${nav.length>6?20:22}px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:14px;font-weight:700;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:14px;font-weight:700;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="estadistiques"&&attPending>0&&S.screen!=="estadistiques"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:#e8a020;color:#fff;font-size:14px;font-weight:700;min-width:18px;height:18px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${attPending}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:14px;font-weight:700;min-width:18px;height:18px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${renderToast()}${S.showLogoutConfirm?renderLogoutModal():""}${S.showMemberAdded?renderMemberAddedModal():""}`;
   }catch(err){
     console.error("❌ Error en render():",err);
     root.innerHTML=`<div style="min-height:100vh;background:linear-gradient(160deg,${DARK} 60%,#122860);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:2rem;text-align:center"><div style="color:#fff;font-size:22px;font-weight:700">Error inesperat</div><div style="color:rgba(255,255,255,.5);font-size:17px">${esc(err.message||"Refresca la pàgina")}</div><button onclick="location.reload()" style="background:${RED};border:none;border-radius:12px;color:#fff;padding:12px 24px;font-size:19px;font-weight:700;cursor:pointer;margin-top:8px">↻ Refresca</button></div>`;

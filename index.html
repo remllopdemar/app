@@ -3140,6 +3140,69 @@ function getActiveAutoGenWeek(now=new Date()){
   };
 }
 
+// Id fix per a cada sortida automàtica (data + grup, o data + hora als divendres).
+// Així, si dos mòbils generen la setmana alhora, creen la mateixa sortida amb el
+// mateix id i la fusió del desat no la duplica. Ex.: 2026-11-16 grup 3 → 2026111603;
+// divendres 17:30 → 2026112091, 18:45 → 2026112092.
+function autoOutingId(ds,groupId,time){
+  const d=Number(String(ds||"").replace(/-/g,""))*100;
+  if(groupId==="Dv"){const i=FRIDAY_GENERAL_TIMES.findIndex(t=>normalizeTimeStr(t)===normalizeTimeStr(time));return d+91+Math.max(0,i);}
+  return d+Number(groupId||0);
+}
+function autoOutingSlotKey(o){
+  if(!o?.isAuto||!o.date)return null;
+  return isGeneralOuting(o)?`${o.date}|Dv|${normalizeTimeStr(o.time)}`:`${o.date}|g${Number(o.groupId)}`;
+}
+// Fusiona sortides automàtiques duplicades (mateixa data i grup, o mateixa hora del
+// divendres). Conserva una sola sortida i hi ajunta tots els apuntats, timonels i
+// llista d'espera de les còpies, sense repetir ningú. Si sobren places, els que
+// sobren passen al principi de la llista d'espera.
+function dedupeAutoOutings(){
+  const groups=new Map();
+  S.outings.forEach(o=>{const k=autoOutingSlotKey(o);if(!k)return;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(o);});
+  const drop=new Set();
+  let merged=0;
+  groups.forEach(list=>{
+    if(list.length<2)return;
+    const fixedId=isGeneralOuting(list[0])?autoOutingId(list[0].date,"Dv",list[0].time):autoOutingId(list[0].date,list[0].groupId);
+    // Es queda la que tingui l'id fix; si no, la que tingui més gent; si no, la més antiga.
+    const act=o=>safeArr(o.signups).length+safeArr(o.waitlist).length+safeArr(o.helmsmanSignups).length;
+    const keep=list.find(o=>o.id===fixedId)||list.slice().sort((a,b)=>act(b)-act(a)||Number(a.id)-Number(b.id))[0];
+    const others=list.filter(o=>o!==keep);
+    others.forEach(o=>{
+      keep.signups=[...safeArr(keep.signups),...safeArr(o.signups)];
+      keep.helmsmanSignups=[...safeArr(keep.helmsmanSignups),...safeArr(o.helmsmanSignups)];
+      keep.waitlist=[...safeArr(keep.waitlist),...safeArr(o.waitlist)];
+      keep.noAttend=[...safeArr(keep.noAttend),...safeArr(o.noAttend)];
+      if(o.isOpen)keep.isOpen=true;
+      if(o.attendance){
+        const ka=keep.attendance||{closed:false,status:{},updatedAt:null,closedAt:null,by:null};
+        keep.attendance={...o.attendance,...ka,closed:!!(ka.closed||o.attendance.closed),status:{...(o.attendance.status||{}),...(ka.status||{})}};
+      }
+      drop.add(o);
+    });
+    normalizeOutingEntries(keep);
+    const max=outingCapacity(keep)+Number(keep.reserve||0);
+    if(keep.signups.length>max){
+      const extra=keep.signups.slice(max).map(e=>{const n={...e};delete n.isReserve;return n;});
+      keep.signups=keep.signups.slice(0,max);
+      keep.waitlist=[...extra,...keep.waitlist];
+      normalizeOutingEntries(keep);
+    }
+    merged+=others.length;
+  });
+  if(!merged)return 0;
+  // Còpia de seguretat de les sortides tal com estaven, abans de fusionar.
+  try{
+    const bk="ldm:outings_backup_dedupe_"+isoDate(new Date());
+    supa.from("app_data").upsert({key:bk,value:JSON.parse(JSON.stringify(S.outings))},{onConflict:"key",ignoreDuplicates:true})
+      .then(({error})=>{if(error)console.warn("⚠️ Còpia sortides:",error.message);});
+  }catch(e){}
+  console.log("🧹 Sortides duplicades fusionades:",merged);
+  S.outings=S.outings.filter(o=>!drop.has(o));
+  return merged;
+}
+
 function autoOutingHasActivity(o){
   return safeArr(o.signups).length||safeArr(o.waitlist).length||safeArr(o.helmsmanSignups).length;
 }
@@ -3163,14 +3226,13 @@ function generateAutoOutingsForWeekCycle(now=new Date()){
   let changed=false;
   const generated=[];
 
+  if(dedupeAutoOutings())changed=true;
   if(pruneAutoOutingsOutsideWeek(week))changed=true;
   if(!week){
     store.set("ldm:lastAutoGen",isoDate(now));
     return {changed,generated,week:null};
   }
 
-  const base=Date.now();
-  let counter=0;
 
   const ensureGroupDay=(ds,day)=>{
     S.groups.forEach(g=>{
@@ -3179,7 +3241,7 @@ function generateAutoOutingsForWeekCycle(now=new Date()){
       const cfg=OUTING_CONFIG[g.id]?.[day]||{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false};
       if(!existing){
         S.outings.push({
-          id:base+(counter++),
+          id:autoOutingId(ds,g.id),
           groupId:g.id,
           openAllGroups:false,
           title:gname(g.id).split(" · ")[0]||`Grup ${g.id}`,
@@ -3219,7 +3281,7 @@ function generateAutoOutingsForWeekCycle(now=new Date()){
     }
     if(!existing){
       S.outings.push({
-        id:base+(counter++),
+        id:autoOutingId(week.friStr,"Dv",time),
         groupId:0,
         openAllGroups:true,
         title:"Sortida oberta",

@@ -177,6 +177,14 @@ function memberIsGeneralCap(m){return !!(m?.isGeneralCap||m?.isCapGenerals);}
 function userIsGeneralCap(){return memberIsGeneralCap(currentMember());}
 function userCanViewStats(){return !!S.role;}
 function userIsWebmaster(){return S.role==="patron"||memberIsWebmaster(currentMember());}
+// Segon grup opcional (m.groupId2): el soci compta com a membre dels dos grups.
+function memberGroupIds(m){const g1=Number(m?.groupId||0),g2=Number(m?.groupId2||0);return [g1,g2&&g2!==g1?g2:0].filter(Boolean);}
+function memberInGroup(m,gid){return !!Number(gid)&&memberGroupIds(m).includes(Number(gid));}
+function userGroupIds(){const m=currentMember();const ids=m?memberGroupIds(m):[Number(S.userGroupId||0)].filter(Boolean);const c=Number(S.capGroupId||0);if(c&&!ids.includes(c))ids.push(c);return ids;}
+function userInGroup(gid){return !!Number(gid)&&userGroupIds().includes(Number(gid));}
+function userEntryGid(o){return (o&&!isGeneralOuting(o)&&userInGroup(o.groupId))?Number(o.groupId):S.userGroupId;}
+function memberEntryGid(m,o){return (o&&!isGeneralOuting(o)&&memberInGroup(m,o.groupId))?Number(o.groupId):m.groupId;}
+function memberGroupsLabel(m){return memberGroupIds(m).map(g=>gname(g).split(" · ")[0]).filter(Boolean).join(" + ");}
 function userCanManageContent(){return S.role==="patron"||memberIsWebmaster(currentMember());}
 function readOnlyMode(){return !!S.syncErr;}
 function showToast(type,text){
@@ -893,7 +901,7 @@ function canSeeAvis(a){
   if(kind==="public"){
     const audience=avisoAudience(a);
     if(audience==="general")return true;
-    if(audience==="group")return Number(a.groupId||0)===Number(S.userGroupId||S.capGroupId||0);
+    if(audience==="group")return userInGroup(a.groupId);
     return safeArr(S.userSections).includes(audience);
   }
   if(kind==="log")return S.role==="cap"&&S.capGroupId===a.groupId;
@@ -945,8 +953,8 @@ function canSeeOuting(o){
   const isOpen=shouldBeOpen(o);
   if(S.role==="patron")return true;
   if(isGeneralOuting(o))return isOpen||memberIsInOuting(o);
-  if(S.role==="cap")return o.groupId===S.capGroupId||isOpen;
-  if(S.role==="soci")return o.groupId===S.userGroupId||isOpen||memberIsInOuting(o);
+  if(S.role==="cap")return userInGroup(o.groupId)||isOpen||memberIsInOuting(o);
+  if(S.role==="soci")return userInGroup(o.groupId)||isOpen||memberIsInOuting(o);
   return false;
 }
 function reconcileAllOutingWaitlists(){
@@ -1424,7 +1432,7 @@ function renderOutingCard(o){
   const total=o.signups.length;
   const isFull=total>=capacity+(isOpen?0:reserve);
   const isPast=isPastOuting(o);
-  const isMyGroup=!isGeneral&&(Number(S.userGroupId||0)===Number(o.groupId)||Number(S.capGroupId||0)===Number(o.groupId));
+  const isMyGroup=!isGeneral&&userInGroup(o.groupId);
   const isMyCap=!isGeneral&&S.role==="cap"&&S.capGroupId===o.groupId;
   const isPatron=S.role==="patron";
   const otherGrp=isOtherGroupOuting(o);
@@ -1534,7 +1542,7 @@ function renderOutingCard(o){
     const amNoAttend=o.noAttend.some(entryMatchesCurrent);
     const canJoinHelm=maxHelm>0&&!amHelm&&!amIn&&!amWait&&canAccess&&o.helmsmanSignups.length<maxHelm;
     const canJoinRow=!amIn&&!amWait&&!amHelm&&canAccess;
-    const myEntry={name:S.userName,gid:S.userGroupId,mid:S.memberId,ts:nowIso()};
+    const myEntry={name:S.userName,gid:userEntryGid(o),mid:S.memberId,ts:nowIso()};
     const rowDirect=canTakeRowerSpot(o,myEntry);
     const cantAccess=!isMyGroup&&!canAccess;
 
@@ -1831,7 +1839,7 @@ function renderEntrena(){
     // Primer el teu grup (i les obertes a tots / on ja estàs apuntat); les d'altres grups, plegades a sota.
     const others=properes.filter(o=>isOtherGroupOuting(o)&&!memberIsInOuting(o));
     const mine=properes.filter(o=>!others.includes(o));
-    const myGrp=esc(gname(S.userGroupId||S.capGroupId).split(" · ")[0]||"El teu grup");
+    const myGrp=esc(userGroupIds().map(g=>gname(g).split(" · ")[0]).filter(Boolean).join(" + ")||"El teu grup");
     properesBlock=`<div style="margin:14px 14px 4px">${lbl(`El teu grup · ${myGrp}`)}</div>`+(mine.length?mine.map(o=>renderOutingCard(o)).join(""):emptyCard("Cap sortida programada del teu grup"));
     if(others.length){
       properesBlock+=`<div style="margin:14px 14px 0"><button onclick="go({showOtherGroups:${!S.showOtherGroups}})" style="width:100%;padding:11px;background:${S.showOtherGroups?"#fff":"#fff8ee"};border:1.5px solid #e8a020;border-radius:10px;color:#b07a10;font-weight:700;font-size:17px;cursor:pointer;line-height:1.3">👥 Sortides d'altres grups obertes · ${others.length} ${S.showOtherGroups?"▴":"▾"}</button></div>`;
@@ -2018,7 +2026,7 @@ function renderGroupRegularity(){
   const active=S.membres.filter(m=>!m.pending);
   const names=list=>list.length?list.map(x=>esc(x.m.name)+(x.n?` <span style="color:${MUTED}">(${x.n})</span>`:"")).join(", "):`<span style="color:${MUTED};font-style:italic">ningú</span>`;
   const blocks=S.groups.map(g=>{
-    const ms=active.filter(m=>Number(m.groupId)===Number(g.id));
+    const ms=active.filter(m=>memberInGroup(m,g.id));
     const gOut=groupOutings(g.id).filter(o=>isPastOuting(o)&&(o.date||"")>=since&&o.attendance?.closed&&attendancePeople(o).length);
     const rows=ms.map(m=>{const n=memberAttendanceHistory(m).filter(h=>h.st==="present"&&(h.o.date||"")>=since).length;return {m,n};});
     const base=gOut.length;
@@ -2060,7 +2068,7 @@ function renderEstadistiques(){
   const activeMembers=S.membres.filter(m=>!m.pending);
   if(S.role==="patron"||memberIsWebmaster(me))html+=renderGroupRegularity();
   if(S.role==="patron"||memberIsWebmaster(me))html+=renderMemberAttendanceTable(activeMembers,"Assistència per soci","Tots els socis, primer els que tenen més no presentats.");
-  else if(S.role==="cap")html+=renderMemberAttendanceTable(activeMembers.filter(m=>Number(m.groupId)===Number(S.capGroupId)),"Assistència per soci",`Socis del ${esc(gname(S.capGroupId))}, primer els que tenen més no presentats.`);
+  else if(S.role==="cap")html+=renderMemberAttendanceTable(activeMembers.filter(m=>memberInGroup(m,S.capGroupId)),"Assistència per soci",`Socis del ${esc(gname(S.capGroupId))}, primer els que tenen més no presentats.`);
   if(S.role==="cap"||memberIsGeneralCap(me)||userIsWebmaster())html+=renderAttendanceManager(5);
   html+=clubParticipationRanking(10);
   html+=`<details style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
@@ -2078,6 +2086,30 @@ function renderEstadistiques(){
 }
 
 
+function renderSecondGroupAdmin(){
+  const active=S.membres.filter(m=>!m.pending).sort((a,b)=>String(a.name).localeCompare(String(b.name),"ca"));
+  const withG2=active.filter(m=>memberGroupIds(m).length>1);
+  const st=`width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:17px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px`;
+  const list=withG2.length?withG2.map(m=>`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:.5px solid #f0ede6"><div style="font-size:17px;color:#1a1a18;line-height:1.3"><strong>${esc(m.name)}</strong><br><span style="font-size:15px;color:${MUTED}">${esc(memberGroupsLabel(m))}</span></div><button onclick="setMemberGroup2(${m.id},null)" style="padding:6px 10px;background:transparent;border:.5px solid ${RED};border-radius:8px;color:${RED};font-size:15px;cursor:pointer;flex-shrink:0">Treure</button></div>`).join(""):`<div style="font-size:16px;color:${MUTED};font-style:italic;margin-bottom:6px">Ningú té segon grup.</div>`;
+  return cc(`${lbl("Segon grup")}<div style="font-size:16px;color:${MUTED};line-height:1.45;margin-bottom:8px">Un soci amb segon grup veu i s'apunta a les sortides dels dos grups com a pròpies, amb la mateixa prioritat. Surt a les estadístiques dels dos grups.</div>${list}
+    <div style="margin-top:10px"><select id="g2-member" style="${st}"><option value="">Tria soci…</option>${active.map(m=>`<option value="${m.id}">${esc(m.name)} · ${esc(gname(m.groupId).split(" · ")[0])}</option>`).join("")}</select>
+    <select id="g2-group" style="${st}"><option value="">Tria segon grup…</option>${S.groups.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join("")}</select>
+    <button onclick="setMemberGroup2FromForm()" style="width:100%;padding:10px;background:${GREEN};border:none;border-radius:9px;color:#fff;font-size:17px;font-weight:800;cursor:pointer">Assignar segon grup</button></div>`);
+}
+function setMemberGroup2(id,gid){
+  if(!userIsWebmaster())return;
+  const m=S.membres.find(x=>Number(x.id)===Number(id));if(!m)return;
+  gid=Number(gid||0)||null;
+  if(gid&&Number(gid)===Number(m.groupId))return alert("Aquest ja és el grup principal del soci.");
+  if(!confirm(gid?`Assignar ${gname(gid)} com a segon grup de ${m.name}?`:`Treure el segon grup de ${m.name}?`))return;
+  if(gid)m.groupId2=gid;else delete m.groupId2;
+  save("membres");render();
+}
+function setMemberGroup2FromForm(){
+  const mid=document.getElementById("g2-member")?.value,gid=document.getElementById("g2-group")?.value;
+  if(!mid||!gid)return alert("Tria el soci i el segon grup.");
+  setMemberGroup2(mid,gid);
+}
 function renderAdminTecnic(){
   if(!userIsWebmaster())return cc(`<div style="font-size:17px;color:${MUTED};text-align:center;padding:1.5rem 0">Accés restringit a Admin tècnic</div>`);
   const future=S.outings.filter(o=>!isPastOuting(o)).length;
@@ -2087,6 +2119,7 @@ function renderAdminTecnic(){
   return strow([[S.membres.filter(m=>!m.pending).length,"socis"],[future,"sortides futures"],[pendingAtt,"assistències pendents"]])+
     cc(`${lbl("Estat de l'app")}<div style="font-size:17px;color:#1a1a18;line-height:1.65"><strong>Sincronització:</strong> ${esc(syncAgeLabel())}<br><strong>Error:</strong> ${S.syncErr?esc(S.syncErr):"cap"}<br><strong>Última sync:</strong> ${S.lastSyncAt?esc(S.lastSyncAt.slice(0,19).replace("T"," ")):"pendent"}</div>`)+
     cc(`${lbl("Eines")}<div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="exportBackup()" style="flex:1;padding:10px;background:${DARK};border:none;border-radius:9px;color:#fff;font-size:17px;font-weight:800;cursor:pointer">Exportar còpia</button><button onclick="copyDiagnostics()" style="flex:1;padding:10px;background:#fff;border:.5px solid ${BORDER};border-radius:9px;color:${DARK};font-size:17px;font-weight:800;cursor:pointer">Copiar diagnòstic</button></div>`)+
+    renderSecondGroupAdmin()+
     cc(`${lbl("Checklist beta")}<div style="font-size:16px;color:${MUTED};line-height:1.45;margin-bottom:8px">Toca cada element per alternar: pendent → funciona → revisar.</div>${checkHtml}`)+`<div style="height:14px"></div>`;
 }
 
@@ -2131,7 +2164,7 @@ function renderMembres(){
       <div style="display:flex;align-items:center;justify-content:space-between">
         <div style="flex:1">
           <div style="font-size:18px;font-weight:600;color:#1a1a18;margin-bottom:5px">
-            ${esc(m.name)}${m.isCap?` <span style="font-size:14px;color:${DARK};background:#eef0fa;padding:1px 6px;border-radius:10px;font-weight:600">🧭 Cap</span>`:""}${memberIsGeneralCap(m)?` <span style="font-size:14px;color:${GREEN};background:#e6f4ee;padding:1px 6px;border-radius:10px;font-weight:600">🌊 Cap generals</span>`:""}
+            ${esc(m.name)}${m.isCap?` <span style="font-size:14px;color:${DARK};background:#eef0fa;padding:1px 6px;border-radius:10px;font-weight:600">🧭 Cap</span>`:""}${memberIsGeneralCap(m)?` <span style="font-size:14px;color:${GREEN};background:#e6f4ee;padding:1px 6px;border-radius:10px;font-weight:600">🌊 Cap generals</span>`:""}${memberGroupIds(m).length>1?` <span style="font-size:14px;color:#b07a10;background:#fff8ee;padding:1px 6px;border-radius:10px;font-weight:600">👥 + ${esc(gname(m.groupId2).split(" · ")[0])}</span>`:""}
           </div>
           <div style="display:flex;gap:4px;align-items:center">
             ${secBadge(m.sections)}
@@ -2145,6 +2178,11 @@ function renderMembres(){
         <input id="edit-nom-${m.id}" value="${esc(m.name)}" placeholder="Nom i cognom" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:17px;background:${BG};outline:none;box-sizing:border-box;margin-bottom:8px">
         <select id="edit-grup-${m.id}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:17px;background:${BG};outline:none;margin-bottom:10px">
           ${S.groups.map(g=>`<option value="${g.id}" ${g.id===m.groupId?"selected":""}>${esc(g.name)}</option>`).join("")}
+        </select>
+        <div style="font-size:15px;color:${MUTED};margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Segon grup (opcional)</div>
+        <select id="edit-grup2-${m.id}" style="width:100%;padding:9px 10px;border-radius:8px;border:.5px solid ${BORDER};font-size:17px;background:${BG};outline:none;margin-bottom:10px">
+          <option value="">— Cap —</option>
+          ${S.groups.map(g=>`<option value="${g.id}" ${Number(g.id)===Number(m.groupId2||0)?"selected":""}>${esc(g.name)}</option>`).join("")}
         </select>
         <div style="margin-bottom:10px">
           <div style="font-size:15px;color:${MUTED};margin-bottom:7px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Seccions</div>
@@ -2311,13 +2349,13 @@ function addMembre(){if(S.role!=="patron")return;const n=cleanName(document.getE
 function startEditMembre(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id&&!x.pending);if(!m)return;go({editMemberId:id,editMemberSections:normalizeSections(m.sections),showMembreForm:false});}
 function cancelEditMembre(){go({editMemberId:null,editMemberSections:["social"]});}
 function togEditSec(sec){const s=S.editMemberSections.includes(sec)?S.editMemberSections.filter(x=>x!==sec):[...S.editMemberSections,sec];go({editMemberSections:normalizeSections(s)});}
-function saveEditMembre(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id&&!x.pending);if(!m)return;const nom=cleanName(document.getElementById("edit-nom-"+id)?.value||"");const gid=parseInt(document.getElementById("edit-grup-"+id)?.value)||m.groupId;const sections=normalizeSections(S.editMemberSections);if(!confirm(`Desar canvis per a "${nom||m.name}"?`))return;if(nom)m.name=nom;m.groupId=gid;m.sections=sections;save("membres");go({editMemberId:null,editMemberSections:["social"]});}
+function saveEditMembre(id){if(S.role!=="patron")return;const m=S.membres.find(x=>x.id===id&&!x.pending);if(!m)return;const nom=cleanName(document.getElementById("edit-nom-"+id)?.value||"");const gid=parseInt(document.getElementById("edit-grup-"+id)?.value)||m.groupId;const sections=normalizeSections(S.editMemberSections);if(!confirm(`Desar canvis per a "${nom||m.name}"?`))return;const gid2=parseInt(document.getElementById("edit-grup2-"+id)?.value)||null;if(nom)m.name=nom;m.groupId=gid;if(gid2&&gid2!==gid)m.groupId2=gid2;else delete m.groupId2;m.sections=sections;save("membres");go({editMemberId:null,editMemberSections:["social"]});}
 function delMembre(id){if(S.role!=="patron")return;if(!confirm("Eliminar el soci?"))return;S.membres=S.membres.filter(m=>m.id!==id);save("membres");render();}
 async function signup(oid,asHelm=false){
   if(!canWriteNow())return;
   const pre=S.outings.find(x=>x.id===oid);
   if(pre&&isOtherGroupOuting(pre)){
-    const mine=S.groups.find(g=>Number(g.id)===Number(S.userGroupId||S.capGroupId))?.name||"el teu grup";
+    const mine=userGroupIds().map(g=>gname(g)).filter(Boolean).join(" + ")||"el teu grup";
     if(!confirm(`⚠️ Aquesta sortida és del ${gname(pre.groupId)}, no del teu grup (${mine}).\n\nSegur que t'hi vols apuntar?`))return;
   }
   const lock=`signup:${oid}:${S.memberId||"anon"}`;
@@ -2329,11 +2367,11 @@ async function signup(oid,asHelm=false){
     if(!o.waitlist)o.waitlist=[];
     if(!o.helmsmanSignups)o.helmsmanSignups=[];
     const isGeneral=isGeneralOuting(o);
-    const isMyGroup=!isGeneral&&Number(S.userGroupId)===Number(o.groupId);
+    const isMyGroup=!isGeneral&&userInGroup(o.groupId);
     const isOpen=shouldBeOpen(o);
     const publicWaitlistOpen=canJoinPublicWaitlist(o);
     if(!isMyGroup&&!isOpen&&!publicWaitlistOpen)return;
-    const entry={name:S.userName,gid:S.userGroupId,mid:S.memberId,ts:nowIso()};
+    const entry={name:S.userName,gid:userEntryGid(o),mid:S.memberId,ts:nowIso()};
     markWaitlistPriority(entry,o);
     reconcileOutingWaitlist(o);
     // No pot ser timonel i vogador alhora, ni duplicar inscripció.
@@ -2375,8 +2413,7 @@ async function setOutingNoAttend(oid){
   return withActionLock(lock,()=>outingTxn(async()=>{
     await refreshOutingsBeforeAction();
     const o=S.outings.find(x=>String(x.id)===String(oid));
-    const ownGroup=Number(S.userGroupId||S.capGroupId||0);
-    if(!o||!(S.role==="soci"||S.role==="cap")||isPastOuting(o)||isGeneralOuting(o)||!ownGroup||ownGroup!==Number(o.groupId))return;
+    if(!o||!(S.role==="soci"||S.role==="cap")||isPastOuting(o)||isGeneralOuting(o)||!userInGroup(o.groupId))return;
     normalizeOutingEntries(o);
     const existing=o.noAttend.some(entryMatchesCurrent);
     if(existing){
@@ -2473,7 +2510,7 @@ async function patronAddMember(oid){
     const m=S.membres.find(x=>Number(x.id)===Number(mid));
     if(!m)return alert("No s'ha trobat aquest soci.");
 
-    const entry={name:m.name,gid:m.groupId,mid:m.id,ts:nowIso()};
+    const entry={name:m.name,gid:memberEntryGid(m,o),mid:m.id,ts:nowIso()};
     markWaitlistPriority(entry,o);
     const same=e=>Number(e.mid)===Number(m.id)||String(e.name||"")===String(m.name||"");
     const alreadyIn=o.signups.some(same);
@@ -2811,8 +2848,7 @@ function isGeneralOuting(o){return !!o?.openAllGroups||Number(o?.groupId)===0;}
 // Sortida d'un altre grup (per a soci/cap): es marca, va al bloc "Altres grups" i demana confirmació.
 function isOtherGroupOuting(o){
   if(!(S.role==="soci"||S.role==="cap")||!o||isGeneralOuting(o))return false;
-  const g=Number(o.groupId||0);
-  return g!==Number(S.userGroupId||0)&&g!==Number(S.capGroupId||0);
+  return !userInGroup(o.groupId);
 }
 function isFridayGeneralOuting(o){
   const d=parseLocalDate(o?.date);

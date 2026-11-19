@@ -82,7 +82,7 @@ const I18N_DATA=[["Aquest navegador no suporta xifrat segur.","Este navegador no
 ["Reserva","Reserva","Réserve","Reserve"],
 ["Vogador","Remero","Rameur","Rower"],
 ["Timonel","Timonel","Barreur","Cox"],
-["Tens {} sortida{} per confirmar l'assistència","Tienes {} salida{} por confirmar la asistencia","Vous avez {} sortie{} dont confirmer la présence","You have {} outing{} to confirm attendance"],
+["Tens {} sortida{} per confirmar l'assistència","Tienes {} salida{} por confirmar la asistencia","Vous avez {} sortie{} avec présence à confirmer","You have {} outing{} to confirm attendance"],
 ["Marca qui no s'ha presentat i tanca l'assistència.","Marca quién no se ha presentado y cierra la asistencia.","Indiquez qui ne s'est pas présenté et clôturez la présence.","Mark who didn't show up and close attendance."],
 ["Confirmar","Confirmar","Confirmer","Confirm"],
 ["No presentat","No presentado","Absent","No-show"],
@@ -640,7 +640,8 @@ const I18N_DATA=[["Aquest navegador no suporta xifrat segur.","Este navegador no
 ["regates","regatas","régates","regattas"],
 ["punts","puntos","points","points"],
 ["apuntat","apuntado","inscrit","signed up"],
-["pendent de dissabte 08:00","pendiente del sábado 08:00","en attente du samedi 08:00","pending Saturday 08:00"]];
+["pendent de dissabte 08:00","pendiente del sábado 08:00","en attente du samedi 08:00","pending Saturday 08:00"],
+["👥 Aquest avís s'enviarà només al teu grup.","👥 Este aviso se enviará solo a tu grupo.","👥 Cet avis sera envoyé seulement à votre groupe.","👥 This notice will only go to your group."]];
 const I18N=(()=>{
   if(LANG==="ca")return null;
   const col={es:1,fr:2,en:3}[LANG];
@@ -662,7 +663,7 @@ const I18N=(()=>{
 function tr(s,depth){
   if(!I18N||s==null)return s;
   const n=I18N.norm(s);if(!n||!/[A-Za-zÀ-ÿ]/.test(n))return s;
-  const c=I18N.cache.get(n);if(c!==undefined)return c===null?s:c;
+  const c=I18N.cache.get(n);if(c!==undefined){if(c===null)return s;const str=String(s);return str.match(/^\s*/)[0]+c+str.match(/\s*$/)[0];}
   let out=I18N.exact.get(n);
   if(out===undefined&&(depth||0)<2){
     for(const p of I18N.pats){
@@ -684,7 +685,8 @@ function tr(s,depth){
   }
   if(I18N.cache.size>8000)I18N.cache.clear();
   I18N.cache.set(n,out===undefined?null:out);
-  return out===undefined?s:out;
+  if(out===undefined)return s;
+  const str=String(s);return str.match(/^\s*/)[0]+out+str.match(/\s*$/)[0];
 }
 function trMsg(s){
   if(!I18N||typeof s!=="string")return s;
@@ -697,7 +699,7 @@ function i18nApply(node){
     const p=node.parentNode;
     if(!p||p.closest?.("[data-noi18n],script,style,textarea"))return;
     const v=node.nodeValue,t=tr(v);
-    if(t!==v)node.nodeValue=(v.match(/^\s*/)[0])+t+(v.match(/\s*$/)[0]);
+    if(t!==v)node.nodeValue=t;
     return;
   }
   if(node.nodeType!==1||node.closest("[data-noi18n],script,style"))return;

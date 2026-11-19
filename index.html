@@ -39,20 +39,696 @@ const supa=window.supabase.createClient(SUPA_URL,SUPA_KEY);
 const SUPA_KEYS=["membres","groups","avisos","outings","sessions","results","polls","events"];
 // ─────────────────────────────────────────────────────────────────────────────
 const DARK="#1b3a7a",RED="#c8102e",GREEN="#1b6b3a",BG="#f4f1eb",MUTED="#7a7872",BORDER="#ddd9d0";
-const DAYS=["Dg","Dl","Dt","Dc","Dj","Dv","Ds"];
-const MONTHS=["Gener","Febrer","Març","Abril","Maig","Juny","Juliol","Agost","Setembre","Octubre","Novembre","Desembre"];
+// ── Idiomes (traducció de la interfície) ─────────────────────────────────────
+// El català és l'idioma original. Per a la resta, I18N_DATA té [ca,es,fr,en] i
+// i18nApply() tradueix els textos de la interfície just després de cada render.
+// Els textos escrits pels usuaris (avisos) van dins de [data-noi18n] i no es toquen.
+const LANGS=[["ca","Català"],["es","Castellano"],["fr","Français"],["en","English"]];
+let LANG="ca";try{const l=localStorage.getItem("ldm:lang");if(LANGS.some(x=>x[0]===l))LANG=l;}catch(e){}
+const LOCALE={ca:"ca-ES",es:"es-ES",fr:"fr-FR",en:"en-GB"}[LANG];
+try{document.documentElement.lang=LANG;}catch(e){}
+function setLang(l){if(!LANGS.some(x=>x[0]===l)||l===LANG)return;try{localStorage.setItem("ldm:lang",l);}catch(e){}location.reload();}
+function langSelect(dark){return `<select data-noi18n onchange="setLang(this.value)" aria-label="Idioma" style="background:${dark?"rgba(255,255,255,.1)":"#fff"};border:${dark?"none":"1px solid #ddd9d0"};border-radius:6px;color:${dark?"rgba(255,255,255,.8)":"#1a1a18"};padding:5px 4px;font-size:15px;cursor:pointer;outline:none">${LANGS.map(([k,n])=>`<option value="${k}" style="color:#1a1a18"${k===LANG?" selected":""}>${dark?k.toUpperCase():"🌐 "+n}</option>`).join("")}</select>`;}
+const I18N_DATA=[["Aquest navegador no suporta xifrat segur.","Este navegador no admite cifrado seguro.","Ce navigateur ne prend pas en charge le chiffrement sécurisé.","This browser does not support secure encryption."],
+["Grup {}","Grupo {}","Groupe {}","Group {}"],
+["Grup E Matins","Grupo E Mañanas","Groupe E Matins","Group E Mornings"],
+["Grup","Grupo","Groupe","Group"],
+["Sense connexió: estàs veient dades guardades. No es poden fer canvis fins que torni la sincronització.","Sin conexión: estás viendo datos guardados. No se pueden hacer cambios hasta que vuelva la sincronización.","Hors ligne : vous voyez des données enregistrées. Aucune modification possible avant le retour de la synchronisation.","Offline: you are seeing saved data. No changes can be made until sync is back."],
+["Mode només lectura.","Modo solo lectura.","Mode lecture seule.","Read-only mode."],
+["Estàs veient dades guardades. Les accions es bloquegen fins que torni la sincronització.","Estás viendo datos guardados. Las acciones se bloquean hasta que vuelva la sincronización.","Vous voyez des données enregistrées. Les actions sont bloquées jusqu'au retour de la synchronisation.","You are seeing saved data. Actions are blocked until sync is back."],
+["Error de sincronització","Error de sincronización","Erreur de synchronisation","Sync error"],
+["Sense connexió","Sin conexión","Hors ligne","Offline"],
+["Algú altre ha fet canvis alhora. S'han conservat els dos; revisa que tot sigui correcte.","Otra persona ha hecho cambios a la vez. Se han conservado los dos; revisa que todo esté bien.","Quelqu'un d'autre a fait des modifications en même temps. Les deux ont été conservées ; vérifiez que tout est correct.","Someone else made changes at the same time. Both were kept; check that everything is right."],
+["Hi ha molta gent apuntant-se ara mateix. Torna-ho a provar.","Hay mucha gente apuntándose ahora mismo. Vuelve a intentarlo.","Beaucoup de monde s'inscrit en ce moment. Réessayez.","Lots of people are signing up right now. Please try again."],
+["No s'ha pogut sincronitzar","No se ha podido sincronizar","Impossible de synchroniser","Could not sync"],
+["Sincronitzant…","Sincronizando…","Synchronisation…","Syncing…"],
+["Error sync","Error sync","Erreur sync","Sync error"],
+["Pendent de sync","Pendiente de sync","Sync en attente","Sync pending"],
+["Sincronitzat ara","Sincronizado ahora","Synchronisé à l'instant","Synced just now"],
+["Sincronitzat fa {}s","Sincronizado hace {}s","Synchronisé il y a {}s","Synced {}s ago"],
+["Sincronitzat fa {} min","Sincronizado hace {} min","Synchronisé il y a {} min","Synced {} min ago"],
+["Actualitzar","Actualizar","Actualiser","Refresh"],
+["Tots els grups","Todos los grupos","Tous les groupes","All groups"],
+["tots els grups","todos los grupos","tous les groupes","all groups"],
+["Sortida","Salida","Sortie","Outing"],
+["Sortida oberta","Salida abierta","Sortie ouverte","Open outing"],
+["Patró","Patrón","Patron","Skipper"],
+["PATRÓ","PATRÓN","PATRON","SKIPPER"],
+["Sistema","Sistema","Système","System"],
+["últims moviments","últimos movimientos","derniers mouvements","latest changes"],
+["Sense moviments registrats","Sin movimientos registrados","Aucun mouvement enregistré","No changes recorded"],
+["Encara no hi ha historial.","Todavía no hay historial.","Pas encore d'historique.","No history yet."],
+["Historial de canvis","Historial de cambios","Historique des modifications","Change history"],
+["Reserva","Reserva","Réserve","Reserve"],
+["Vogador","Remero","Rameur","Rower"],
+["Timonel","Timonel","Barreur","Cox"],
+["Tens {} sortida{} per confirmar l'assistència","Tienes {} salida{} por confirmar la asistencia","Vous avez {} sortie{} dont confirmer la présence","You have {} outing{} to confirm attendance"],
+["Marca qui no s'ha presentat i tanca l'assistència.","Marca quién no se ha presentado y cierra la asistencia.","Indiquez qui ne s'est pas présenté et clôturez la présence.","Mark who didn't show up and close attendance."],
+["Confirmar","Confirmar","Confirmer","Confirm"],
+["No presentat","No presentado","Absent","No-show"],
+["Baixa / justificat","Baja / justificada","Excusé","Excused"],
+["Ha remat","Ha remado","A ramé","Rowed"],
+["Assistència actualitzada: {}.","Asistencia actualizada: {}.","Présence mise à jour : {}.","Attendance updated: {}."],
+["Assistència marcada: {}.","Asistencia marcada: {}.","Présence marquée : {}.","Attendance marked: {}."],
+["{} tanca l'assistència de {}.","{} cierra la asistencia de {}.","{} clôture la présence de {}.","{} closes attendance for {}."],
+["Assistència tancada correctament.","Asistencia cerrada correctamente.","Présence clôturée.","Attendance closed."],
+["{} reobre l'assistència de {}.","{} reabre la asistencia de {}.","{} rouvre la présence de {}.","{} reopens attendance for {}."],
+["Assistència reoberta.","Asistencia reabierta.","Présence rouverte.","Attendance reopened."],
+["Confirmar assistència","Confirmar asistencia","Confirmer la présence","Confirm attendance"],
+["Tancada · {} ha vingut · {} no · {} baixa","Cerrada · {} ha venido · {} no · {} baja","Clôturée · {} venu(s) · {} non · {} excusé(s)","Closed · {} came · {} no · {} excused"],
+["Pendent de tancar · {} persones","Pendiente de cerrar · {} personas","À clôturer · {} personnes","To close · {} people"],
+["Baixa","Baja","Excusé","Excused"],
+["Tots han remat","Todos han remado","Tous ont ramé","All rowed"],
+["Tots no","Todos no","Tous non","All no"],
+["Actualitzar assistència","Actualizar asistencia","Mettre à jour la présence","Update attendance"],
+["Reobrir","Reabrir","Rouvrir","Reopen"],
+["Tancar assistència","Cerrar asistencia","Clôturer la présence","Close attendance"],
+["Marca l'assistència real després de la sortida. Per defecte compta com a “Ha remat”; canvia només no presentats o baixes justificades.","Marca la asistencia real después de la salida. Por defecto cuenta como “Ha remado”; cambia solo los no presentados o las bajas justificadas.","Indiquez la présence réelle après la sortie. Par défaut, chacun compte comme « A ramé » ; changez seulement les absents ou les excusés.","Mark real attendance after the outing. By default everyone counts as “Rowed”; only change no-shows or excused absences."],
+["Tancada","Cerrada","Clôturée","Closed"],
+["Pendent","Pendiente","En attente","Pending"],
+["No presentats:","No presentados:","Absents :","No-shows:"],
+["Baixa / justificat:","Baja / justificada:","Excusés :","Excused:"],
+["Tothom consta com a assistència confirmada.","Todo el mundo consta con asistencia confirmada.","Tout le monde est noté présent.","Everyone is marked as attended."],
+["Assistència tancada","Asistencia cerrada","Présence clôturée","Attendance closed"],
+["Reobrir / editar assistència","Reabrir / editar asistencia","Rouvrir / modifier la présence","Reopen / edit attendance"],
+["Assistència real","Asistencia real","Présence réelle","Actual attendance"],
+["Quan hi hagi sortides passades amb apuntats, aquí podràs marcar qui ha remat, qui no s'ha presentat i les baixes justificades.","Cuando haya salidas pasadas con apuntados, aquí podrás marcar quién ha remado, quién no se ha presentado y las bajas justificadas.","Quand il y aura des sorties passées avec des inscrits, vous pourrez indiquer ici qui a ramé, qui ne s'est pas présenté et les excusés.","Once there are past outings with sign-ups, you can mark here who rowed, who didn't show up and who was excused."],
+["Assistència pendent","Asistencia pendiente","Présence en attente","Pending attendance"],
+["Hi ha {} assistència{} pendent{} més. Obre l'històric de Sortides per revisar-les.","Hay {0} asistencia{1} pendiente{2} más. Abre el histórico de Salidas para revisarlas.","Il reste {0} présence{1} en attente. Ouvrez l'historique des Sorties pour les vérifier.","{0} more attendance list(s) pending. Open the Outings history to review them."],
+["✅ No hi ha assistències pendents de tancar","✅ No hay asistencias pendientes de cerrar","✅ Aucune présence à clôturer","✅ No attendance left to close"],
+["Últimes assistències tancades","Últimas asistencias cerradas","Dernières présences clôturées","Latest closed attendance"],
+["Sortides","Salidas","Sorties","Outings"],
+["Crear sortida","Crear salida","Créer une sortie","Create outing"],
+["Apuntar soci","Apuntar socio","Inscrire un membre","Sign up member"],
+["Desapuntar soci","Borrar socio","Désinscrire un membre","Remove member"],
+["Promoció reserva/espera","Promoción reserva/espera","Promotion réserve/attente","Reserve/waitlist promotion"],
+["Afegir soci com a patró","Añadir socio como patrón","Ajouter un membre en tant que patron","Add member as skipper"],
+["Divendres generals","Viernes generales","Vendredis généraux","General Fridays"],
+["Avisos","Avisos","Avis","Notices"],
+["Crear avís general","Crear aviso general","Créer un avis général","Create general notice"],
+["Crear avís de grup","Crear aviso de grupo","Créer un avis de groupe","Create group notice"],
+["Editar avís","Editar aviso","Modifier l'avis","Edit notice"],
+["Enquestes","Encuestas","Sondages","Polls"],
+["Crear enquesta","Crear encuesta","Créer un sondage","Create poll"],
+["Votar","Votar","Voter","Vote"],
+["Tancar i reobrir","Cerrar y reabrir","Fermer et rouvrir","Close and reopen"],
+["Calendari","Calendario","Calendrier","Calendar"],
+["Crear esdeveniment","Crear evento","Créer un événement","Create event"],
+["Editar esdeveniment","Editar evento","Modifier l'événement","Edit event"],
+["Dia il·luminat","Día iluminado","Jour en surbrillance","Highlighted day"],
+["Permisos","Permisos","Autorisations","Permissions"],
+["Login patró","Login patrón","Connexion patron","Skipper login"],
+["Login soci","Login socio","Connexion membre","Member login"],
+["Login cap","Login jefe","Connexion chef","Leader login"],
+["Nacho: Estadístiques","Nacho: Estadísticas","Nacho : Statistiques","Nacho: Statistics"],
+["Nacho: Admin tècnic","Nacho: Admin técnico","Nacho : Admin technique","Nacho: Tech admin"],
+["Sincronització","Sincronización","Synchronisation","Sync"],
+["Dos mòbils alhora","Dos móviles a la vez","Deux téléphones en même temps","Two phones at once"],
+["Mode només lectura","Modo solo lectura","Mode lecture seule","Read-only mode"],
+["Checklist actualitzada.","Checklist actualizada.","Checklist mise à jour.","Checklist updated."],
+["Còpia de seguretat exportada.","Copia de seguridad exportada.","Sauvegarde exportée.","Backup exported."],
+["Diagnòstic copiat.","Diagnóstico copiado.","Diagnostic copié.","Diagnostics copied."],
+["No s'ha pogut copiar el diagnòstic.","No se ha podido copiar el diagnóstico.","Impossible de copier le diagnostic.","Could not copy diagnostics."],
+["Competició","Competición","Compétition","Competition"],
+["Social","Social","Loisir","Social"],
+["General","General","Général","General"],
+["Estàs apuntat com a timonel","Estás apuntado como timonel","Vous êtes inscrit comme barreur","You're signed up as cox"],
+["Estàs en reserva","Estás en reserva","Vous êtes en réserve","You're on reserve"],
+["Estàs apuntat com a vogador","Estás apuntado como remero","Vous êtes inscrit comme rameur","You're signed up as rower"],
+["Estàs en llista d'espera · posició {}","Estás en lista de espera · posición {}","Vous êtes en liste d'attente · position {}","You're on the waiting list · position {}"],
+["Has indicat que no pots venir","Has indicado que no puedes venir","Vous avez indiqué que vous ne pouvez pas venir","You said you can't come"],
+["No estàs apuntat","No estás apuntado","Vous n'êtes pas inscrit","You're not signed up"],
+["Club de Rem · Sant Feliu de Guíxols","Club de Remo · Sant Feliu de Guíxols","Club d'aviron · Sant Feliu de Guíxols","Rowing Club · Sant Feliu de Guíxols"],
+["⚓ PATRÓ","⚓ PATRÓN","⚓ PATRON","⚓ SKIPPER"],
+["🚣 SOCI / CAP DE GRUP","🚣 SOCIO / JEFE DE GRUPO","🚣 MEMBRE / CHEF DE GROUPE","🚣 MEMBER / GROUP LEADER"],
+["+ Crear compte nou","+ Crear cuenta nueva","+ Créer un compte","+ Create new account"],
+["ENTRAR","ENTRAR","ENTRER","LOG IN"],
+["Enrere","Atrás","Retour","Back"],
+["Codi del patró","Código del patrón","Code du patron","Skipper code"],
+["Clau d'accés","Clave de acceso","Mot de passe","Password"],
+["Nom i cognom","Nombre y apellido","Prénom et nom","First and last name"],
+["Escriu el teu nom i la teva clau","Escribe tu nombre y tu clave","Saisissez votre nom et votre mot de passe","Enter your name and password"],
+["Escriu el nom tal com et vas registrar.","Escribe el nombre tal como te registraste.","Saisissez le nom tel que vous l'avez enregistré.","Type your name exactly as you registered."],
+["Si és el teu primer accés, deixa la clau en blanc.","Si es tu primer acceso, deja la clave en blanco.","Si c'est votre première connexion, laissez le mot de passe vide.","If this is your first login, leave the password blank."],
+["Benvingut/da,","Bienvenido/a,","Bienvenue,","Welcome,"],
+["Hola,","Hola,","Bonjour,","Hello,"],
+["Primera vegada al dispositiu.","Primera vez en el dispositivo.","Première fois sur cet appareil.","First time on this device."],
+["Crea la teva clau d'accés personal (mínim 6 caràcters).","Crea tu clave de acceso personal (mínimo 6 caracteres).","Créez votre mot de passe personnel (6 caractères minimum).","Create your personal password (at least 6 characters)."],
+["Nova clau","Nueva clave","Nouveau mot de passe","New password"],
+["Confirma la clau","Confirma la clave","Confirmez le mot de passe","Confirm password"],
+["CREAR CLAU I ENTRAR","CREAR CLAVE Y ENTRAR","CRÉER LE MOT DE PASSE ET ENTRER","CREATE PASSWORD AND LOG IN"],
+["No ets tu? Canvia de soci","¿No eres tú? Cambia de socio","Ce n'est pas vous ? Changer de membre","Not you? Switch member"],
+["Nom i cognom *","Nombre y apellido *","Prénom et nom *","First and last name *"],
+["🏆 Competició","🏆 Competición","🏆 Compétition","🏆 Competition"],
+["⚓ Social","⚓ Social","⚓ Loisir","⚓ Social"],
+["Crea la teva clau (mínim 6 car.) *","Crea tu clave (mínimo 6 car.) *","Créez votre mot de passe (6 car. min.) *","Create your password (min. 6 chars) *"],
+["Confirma la clau *","Confirma la clave *","Confirmez le mot de passe *","Confirm password *"],
+["ENVIAR SOL·LICITUD","ENVIAR SOLICITUD","ENVOYER LA DEMANDE","SEND REQUEST"],
+["Crear compte nou","Crear cuenta nueva","Créer un compte","Create new account"],
+["Seccions *","Secciones *","Sections *","Sections *"],
+["Seccions","Secciones","Sections","Sections"],
+["El patró haurà d'aprovar el teu compte","El patrón tendrá que aprobar tu cuenta","Le patron devra approuver votre compte","The skipper will need to approve your account"],
+["Tornar a l'inici","Volver al inicio","Retour à l'accueil","Back to start"],
+["Sol·licitud enviada!","¡Solicitud enviada!","Demande envoyée !","Request sent!"],
+["El patró rebrà la teva petició i t'avisarà quan el compte estigui aprovat.","El patrón recibirá tu petición y te avisará cuando la cuenta esté aprobada.","Le patron recevra votre demande et vous préviendra quand le compte sera approuvé.","The skipper will receive your request and let you know when your account is approved."],
+["Codi incorrecte","Código incorrecto","Code incorrect","Wrong code"],
+["No s'ha pogut validar la clau","No se ha podido validar la clave","Impossible de valider le mot de passe","Could not check the password"],
+["Nom o clau incorrecta","Nombre o clave incorrecta","Nom ou mot de passe incorrect","Wrong name or password"],
+["Escriu el teu nom","Escribe tu nombre","Saisissez votre nom","Enter your name"],
+["Escriu la teva clau","Escribe tu clave","Saisissez votre mot de passe","Enter your password"],
+["El teu compte encara està pendent d'aprovació del patró","Tu cuenta todavía está pendiente de aprobación del patrón","Votre compte attend encore l'approbation du patron","Your account is still waiting for the skipper's approval"],
+["La clau ha de tenir mínim {} caràcters","La clave debe tener mínimo {} caracteres","Le mot de passe doit avoir au moins {} caractères","Password must be at least {} characters"],
+["Les claus no coincideixen","Las claves no coinciden","Les mots de passe ne correspondent pas","Passwords don't match"],
+["Clau incorrecta","Clave incorrecta","Mot de passe incorrect","Wrong password"],
+["El nom és obligatori","El nombre es obligatorio","Le nom est obligatoire","Name is required"],
+["Selecciona almenys una secció","Selecciona al menos una sección","Sélectionnez au moins une section","Select at least one section"],
+["No s'ha pogut crear la clau","No se ha podido crear la clave","Impossible de créer le mot de passe","Could not create the password"],
+["Rebutjar la sol·licitud?","¿Rechazar la solicitud?","Refuser la demande ?","Reject the request?"],
+["Reset de clau de {}?\nHaurà de crear una nova clau al proper accés.","¿Resetear la clave de {}?\nTendrá que crear una clave nueva en el próximo acceso.","Réinitialiser le mot de passe de {} ?\nIl faudra en créer un nouveau à la prochaine connexion.","Reset password for {}?\nThey will have to create a new one at next login."],
+["Mar no disponible","Mar no disponible","Mer non disponible","Sea not available"],
+["Mar moguda","Mar movida","Mer agitée","Rough sea"],
+["Mar moderada","Mar moderada","Mer modérée","Moderate sea"],
+["Mar tranquil·la","Mar tranquila","Mer calme","Calm sea"],
+["Carregant meteo del port...","Cargando meteo del puerto...","Chargement de la météo du port...","Loading harbour weather..."],
+["Meteo no disponible","Meteo no disponible","Météo non disponible","Weather not available"],
+["Molt fort","Muy fuerte","Très fort","Very strong"],
+["Fort","Fuerte","Fort","Strong"],
+["Moderat","Moderado","Modéré","Moderate"],
+["Fluix","Flojo","Faible","Light"],
+["Avui","Hoy","Aujourd'hui","Today"],
+["· 🌧️ {} mm","· 🌧️ {} mm","· 🌧️ {} mm","· 🌧️ {} mm"],
+["Estat del mar no disponible ara mateix.","Estado del mar no disponible ahora mismo.","État de la mer indisponible pour le moment.","Sea state not available right now."],
+["· Pluja {} mm","· Lluvia {} mm","· Pluie {} mm","· Rain {} mm"],
+["Amagar detall per franges","Ocultar detalle por franjas","Masquer le détail par créneaux","Hide detail by time slot"],
+["Veure detall per franges","Ver detalle por franjas","Voir le détail par créneaux","Show detail by time slot"],
+["vent i mar ▾","viento y mar ▾","vent et mer ▾","wind and sea ▾"],
+["vent fins a {} kn","viento hasta {} kn","vent jusqu'à {} nd","wind up to {} kn"],
+["vent ara {} kn","viento ahora {} kn","vent actuel {} nd","wind now {} kn"],
+["ona fins a {} m","ola hasta {} m","vagues jusqu'à {} m","waves up to {} m"],
+["Reviseu les condicions: {}{}{}. Consulteu amb el patró.","Revisad las condiciones: {}{}{}. Consultad con el patrón.","Vérifiez les conditions : {}{}{}. Consultez le patron.","Check the conditions: {}{}{}. Ask the skipper."],
+["📍 Port de Sant Feliu de Guíxols","📍 Puerto de Sant Feliu de Guíxols","📍 Port de Sant Feliu de Guíxols","📍 Sant Feliu de Guíxols harbour"],
+["Vent i estat del mar","Viento y estado del mar","Vent et état de la mer","Wind and sea state"],
+["Vent ara","Viento ahora","Vent actuel","Wind now"],
+["💨 Vent màxim","💨 Viento máximo","💨 Vent max","💨 Max wind"],
+["🌊 Ona màxima","🌊 Ola máxima","🌊 Vagues max","🌊 Max waves"],
+["Regata competició","Regata competición","Régate de compétition","Competition regatta"],
+["Competi","Compe","Compét","Comp"],
+["Regata social","Regata social","Régate loisir","Social regatta"],
+["Altres","Otros","Autres","Other"],
+["Regata","Regata","Régate","Regatta"],
+["Nou esdeveniment","Nuevo evento","Nouvel événement","New event"],
+["Desar canvis","Guardar cambios","Enregistrer","Save changes"],
+["Títol *","Título *","Titre *","Title *"],
+["Lloc","Lugar","Lieu","Place"],
+["Notes o detalls","Notas o detalles","Notes ou détails","Notes or details"],
+["Cancel·lar","Cancelar","Annuler","Cancel"],
+["Esdeveniment","Evento","Événement","Event"],
+["Sense hora ni lloc","Sin hora ni lugar","Sans heure ni lieu","No time or place"],
+["✏️ Editar","✏️ Editar","✏️ Modifier","✏️ Edit"],
+["Eliminar","Eliminar","Supprimer","Delete"],
+["Veure a Resultats","Ver en Resultados","Voir dans Résultats","See in Results"],
+["{} events","{} eventos","{} événements","{} events"],
+["Els dies il·luminats tenen esdeveniments del club. Les sortides tenen secció pròpia.","Los días iluminados tienen eventos del club. Las salidas tienen sección propia.","Les jours en surbrillance ont des événements du club. Les sorties ont leur propre section.","Highlighted days have club events. Outings have their own section."],
+["+ Nou esdeveniment","+ Nuevo evento","+ Nouvel événement","+ New event"],
+["Esdeveniments del dia","Eventos del día","Événements du jour","Events of the day"],
+["Clica un dia amb punt de color per veure'n el detall.","Pulsa un día con punto de color para ver el detalle.","Touchez un jour avec un point de couleur pour voir le détail.","Tap a day with a coloured dot to see details."],
+["👥 {} · no és el teu grup","👥 {} · no es tu grupo","👥 {} · ce n'est pas votre groupe","👥 {} · not your group"],
+["quan el cap o el patró l'obrin","cuando el jefe o el patrón la abran","quand le chef ou le patron l'ouvriront","when the leader or skipper opens it"],
+["⏳ Oberta a tots. La sortida està plena: només et pots apuntar a la llista d'espera.","⏳ Abierta a todos. La salida está llena: solo te puedes apuntar a la lista de espera.","⏳ Ouverte à tous. La sortie est complète : vous pouvez seulement vous inscrire en liste d'attente.","⏳ Open to all. The outing is full: you can only join the waiting list."],
+["🔓 Oberta a tots. Si s'allibera una plaça, primer puja la llista d'espera prioritària del grup.","🔓 Abierta a todos. Si se libera una plaza, primero sube la lista de espera prioritaria del grupo.","🔓 Ouverte à tous. Si une place se libère, la liste d'attente prioritaire du groupe passe d'abord.","🔓 Open to all. If a seat frees up, the group's priority waiting list moves up first."],
+["🔒 Programada per a {}. S'obrirà {}.","🔒 Programada para {}. Se abrirá {}.","🔒 Prévue pour {}. Elle ouvrira {}.","🔒 Scheduled for {}. It will open {}."],
+["🔒 Reservada al {}. S'obrirà a tots {}, hi hagi places lliures o només llista d'espera.","🔒 Reservada al {}. Se abrirá a todos {}, haya plazas libres o solo lista de espera.","🔒 Réservée au {}. Elle ouvrira à tous {}, qu'il reste des places ou seulement la liste d'attente.","🔒 Reserved for {}. It opens to all {}, whether there are free seats or only a waiting list."],
+["Ha indicat que no pot venir","Ha indicado que no puede venir","A indiqué ne pas pouvoir venir","Said they can't come"],
+["Llista d'espera prioritària del grup","Lista de espera prioritaria del grupo","Liste d'attente prioritaire du groupe","Group priority waiting list"],
+["Llista d'espera","Lista de espera","Liste d'attente","Waiting list"],
+["Plaça de reserva","Plaza de reserva","Place de réserve","Reserve seat"],
+["Del grup","Del grupo","Du groupe","From the group"],
+["D'un altre grup","De otro grupo","D'un autre groupe","From another group"],
+["Tim","Tim","Bar","Cox"],
+["🔓 Oberta a tots","🔓 Abierta a todos","🔓 Ouverte à tous","🔓 Open to all"],
+["⏳ Oberta · només espera","⏳ Abierta · solo espera","⏳ Ouverte · attente seulement","⏳ Open · waitlist only"],
+["🔒 Tots els grups","🔒 Todos los grupos","🔒 Tous les groupes","🔒 All groups"],
+["🔒 Reservada {}","🔒 Reservada {}","🔒 Réservée {}","🔒 Reserved {}"],
+["🤎 Reserva {}/{}","🤎 Reserva {}/{}","🤎 Réserve {}/{}","🤎 Reserve {}/{}"],
+["⛵ Timonels {}/{}","⛵ Timoneles {}/{}","⛵ Barreurs {}/{}","⛵ Coxes {}/{}"],
+["❌ No poden venir {}","❌ No pueden venir {}","❌ Ne peuvent pas venir {}","❌ Can't come {}"],
+["⏳ Espera {}","⏳ Espera {}","⏳ Attente {}","⏳ Waitlist {}"],
+["Oberta a tots els grups","Abierta a todos los grupos","Ouverte à tous les groupes","Open to all groups"],
+["Altres grups","Otros grupos","Autres groupes","Other groups"],
+["Encara no hi ha vogadors apuntats","Todavía no hay remeros apuntados","Pas encore de rameurs inscrits","No rowers signed up yet"],
+["Sense reserva assignada","Sin reserva asignada","Pas de réserve assignée","No reserve assigned"],
+["· obligatori","· obligatorio","· obligatoire","· required"],
+["Cal timonel per fer la sortida","Hace falta timonel para hacer la salida","Un barreur est nécessaire pour la sortie","A cox is needed for this outing"],
+["Sense timonel assignat","Sin timonel asignado","Pas de barreur assigné","No cox assigned"],
+["⛵ Timonels {}/{}{}","⛵ Timoneles {}/{}{}","⛵ Barreurs {}/{}{}","⛵ Coxes {}/{}{}"],
+["· Ordre d'inscripció","· Orden de inscripción","· Ordre d'inscription","· Sign-up order"],
+["· Prioritat si és abans de l'obertura","· Prioridad si es antes de la apertura","· Priorité si avant l'ouverture","· Priority if before opening"],
+["No hi ha ningú en espera","No hay nadie en espera","Personne en attente","Nobody on the waiting list"],
+["Ningú no ha indicat que no pot venir","Nadie ha indicado que no puede venir","Personne n'a indiqué ne pas pouvoir venir","Nobody has said they can't come"],
+["❌ No poden venir ({})","❌ No pueden venir ({})","❌ Ne peuvent pas venir ({})","❌ Can't come ({})"],
+["Veure llista","Ver lista","Voir la liste","See list"],
+["Noms de vogadors, reserva, timonels i respostes","Nombres de remeros, reserva, timoneles y respuestas","Noms des rameurs, réserve, barreurs et réponses","Rower names, reserve, coxes and replies"],
+["🚣 Vogadors {}/{}","🚣 Remeros {}/{}","🚣 Rameurs {}/{}","🚣 Rowers {}/{}"],
+["⏳ Llista d'espera ({}){}","⏳ Lista de espera ({}){}","⏳ Liste d'attente ({}){}","⏳ Waiting list ({}){}"],
+["⛵ Timonel","⛵ Timonel","⛵ Barreur","⛵ Cox"],
+["✋ M'hi apunto","✋ Me apunto","✋ Je m'inscris","✋ Sign me up"],
+["⏳ Llista d'espera","⏳ Lista de espera","⏳ Liste d'attente","⏳ Waiting list"],
+["Desapuntar-me","Borrarme","Me désinscrire","Leave outing"],
+["⏳ Llista d'espera · pos.{}","⏳ Lista de espera · pos.{}","⏳ Liste d'attente · pos.{}","⏳ Waiting list · pos.{}"],
+["Sortir","Salir","Quitter","Leave"],
+["✓ No puc venir","✓ No puedo venir","✓ Je ne peux pas venir","✓ I can't come"],
+["✕ No puc venir","✕ No puedo venir","✕ Je ne peux pas venir","✕ I can't come"],
+["S'obrirà a tots {}","Se abrirá a todos {}","Ouvrira à tous {}","Opens to all {}"],
+["Reservada al {} fins a l'obertura general","Reservada al {} hasta la apertura general","Réservée au {} jusqu'à l'ouverture générale","Reserved for {} until general opening"],
+["🔓 Obrir","🔓 Abrir","🔓 Ouvrir","🔓 Open"],
+["🔒 Tancar a tots","🔒 Cerrar a todos","🔒 Fermer à tous","🔒 Close to all"],
+["+ Afegir soci","+ Añadir socio","+ Ajouter un membre","+ Add member"],
+["Afegir soci a la sortida","Añadir socio a la salida","Ajouter un membre à la sortie","Add member to outing"],
+["— Selecciona soci —","— Selecciona socio —","— Choisir un membre —","— Select member —"],
+["Afegir","Añadir","Ajouter","Add"],
+["S'obrirà {}","Se abrirá {}","Ouvrira {}","Opens {}"],
+["Reservada al {} fins a {}","Reservada al {} hasta {}","Réservée au {} jusqu'à {}","Reserved for {} until {}"],
+["Detalls ▾","Detalles ▾","Détails ▾","Details ▾"],
+["Sortida passada","Salida pasada","Sortie passée","Past outing"],
+["· {} esperant","· {} esperando","· {} en attente","· {} waiting"],
+["Places ocupades","Plazas ocupadas","Places occupées","Seats taken"],
+["Opció {}{}","Opción {}{}","Option {}{}","Option {}{}"],
+["Editar enquesta","Editar encuesta","Modifier le sondage","Edit poll"],
+["Opcions","Opciones","Options","Options"],
+["+ Afegir opció","+ Añadir opción","+ Ajouter une option","+ Add option"],
+["Pregunta *","Pregunta *","Question *","Question *"],
+["Pots corregir la pregunta o les opcions. Els vots es conserven per posició; si elimines una opció, els seus vots deixaran de comptar.","Puedes corregir la pregunta o las opciones. Los votos se conservan por posición; si eliminas una opción, sus votos dejarán de contar.","Vous pouvez corriger la question ou les options. Les votes sont conservés par position ; si vous supprimez une option, ses votes ne compteront plus.","You can fix the question or options. Votes are kept by position; if you delete an option, its votes stop counting."],
+["Oberta","Abierta","Ouverte","Open"],
+["✓ El teu vot: {}","✓ Tu voto: {}","✓ Votre vote : {}","✓ Your vote: {}"],
+["Encara no hi ha cap vot.","Todavía no hay ningún voto.","Pas encore de vote.","No votes yet."],
+["Votants","Votantes","Votants","Voters"],
+["✓ Votat","✓ Votado","✓ Voté","✓ Voted"],
+["Votar aquesta opció","Votar esta opción","Voter pour cette option","Vote for this option"],
+["Amagar votants","Ocultar votantes","Masquer les votants","Hide voters"],
+["Veure votants","Ver votantes","Voir les votants","Show voters"],
+["La votació està tancada. Els resultats queden visibles i pots desplegar els votants.","La votación está cerrada. Los resultados quedan visibles y puedes desplegar los votantes.","Le vote est clos. Les résultats restent visibles et vous pouvez afficher les votants.","Voting is closed. Results stay visible and you can expand the voters."],
+["Toca una opció per votar o canviar el vot. Els vots no són anònims.","Toca una opción para votar o cambiar el voto. Los votos no son anónimos.","Touchez une option pour voter ou changer de vote. Les votes ne sont pas anonymes.","Tap an option to vote or change your vote. Votes are not anonymous."],
+["Entra com a soci per votar. Pots veure els resultats i desplegar els votants.","Entra como socio para votar. Puedes ver los resultados y desplegar los votantes.","Connectez-vous comme membre pour voter. Vous pouvez voir les résultats et afficher les votants.","Log in as a member to vote. You can see the results and expand the voters."],
+["Tancar votació","Cerrar votación","Clore le vote","Close vote"],
+["Reobrir votació","Reabrir votación","Rouvrir le vote","Reopen vote"],
+["Editar","Editar","Modifier","Edit"],
+["{} vot{} · {}","{} voto{} · {}","{} vote{} · {}","{} vote{} · {}"],
+["🚣 La meva propera sortida","🚣 Mi próxima salida","🚣 Ma prochaine sortie","🚣 My next outing"],
+["No tens cap sortida propera. Quan t'apuntis a una sortida, apareixerà aquí.","No tienes ninguna salida próxima. Cuando te apuntes a una salida, aparecerá aquí.","Vous n'avez aucune sortie prochaine. Quand vous vous inscrirez à une sortie, elle apparaîtra ici.","You have no upcoming outing. When you sign up for one, it will appear here."],
+["Veure sortides","Ver salidas","Voir les sorties","See outings"],
+["Veure","Ver","Voir","View"],
+["Com funcionen les sortides?","¿Cómo funcionan las salidas?","Comment fonctionnent les sorties ?","How do outings work?"],
+["Places, reserva i llista d'espera","Plazas, reserva y lista de espera","Places, réserve et liste d'attente","Seats, reserve and waiting list"],
+["Sortides de grup:","Salidas de grupo:","Sorties de groupe :","Group outings:"],
+["primer estan reservades al grup corresponent. Quan arriba l'obertura general, qualsevol soci es pot apuntar a plaça o a llista d'espera.","primero están reservadas al grupo correspondiente. Cuando llega la apertura general, cualquier socio se puede apuntar a plaza o a lista de espera.","elles sont d'abord réservées au groupe concerné. À l'ouverture générale, tout membre peut s'inscrire sur une place ou en liste d'attente.","they are first reserved for their group. At general opening, any member can take a seat or join the waiting list."],
+["Reserva:","Reserva:","Réserve :","Reserve:"],
+["en les sortides de grup pot haver-hi una plaça de reserva. Si queda lliure una plaça normal, la reserva puja automàticament.","en las salidas de grupo puede haber una plaza de reserva. Si queda libre una plaza normal, la reserva sube automáticamente.","les sorties de groupe peuvent avoir une place de réserve. Si une place normale se libère, la réserve monte automatiquement.","group outings may have a reserve seat. If a normal seat frees up, the reserve moves up automatically."],
+["Llista d'espera:","Lista de espera:","Liste d'attente :","Waiting list:"],
+["si la sortida està plena, et pots apuntar a llista d'espera. La llista del grup creada abans de l'obertura general manté prioritat.","si la salida está llena, te puedes apuntar a la lista de espera. La lista del grupo creada antes de la apertura general mantiene prioridad.","si la sortie est complète, vous pouvez vous inscrire en liste d'attente. La liste du groupe créée avant l'ouverture générale garde la priorité.","if the outing is full, you can join the waiting list. The group's list from before general opening keeps priority."],
+["Sortides obertes:","Salidas abiertas:","Sorties ouvertes :","Open outings:"],
+["són per a tots els grups des del principi i no tenen reserva de grup.","son para todos los grupos desde el principio y no tienen reserva de grupo.","elles sont pour tous les groupes dès le départ et n'ont pas de réserve de groupe.","are for all groups from the start and have no group reserve."],
+["📌 Avís important · {}","📌 Aviso importante · {}","📌 Avis important · {}","📌 Important notice · {}"],
+["Cap avís pendent","Ningún aviso pendiente","Aucun avis en attente","No pending notices"],
+["📢 Avisos","📢 Avisos","📢 Avis","📢 Notices"],
+["Veure avisos","Ver avisos","Voir les avis","See notices"],
+["⏳ Només espera","⏳ Solo espera","⏳ Attente seulement","⏳ Waitlist only"],
+["🔓 Oberta","🔓 Abierta","🔓 Ouverte","🔓 Open"],
+["🔒 Programada","🔒 Programada","🔒 Prévue","🔒 Scheduled"],
+["🔒 Grup","🔒 Grupo","🔒 Groupe","🔒 Group"],
+["Reserva {}/{}","Reserva {}/{}","Réserve {}/{}","Reserve {}/{}"],
+["Reservada fins a {}","Reservada hasta {}","Réservée jusqu'à {}","Reserved until {}"],
+["Noms només a Sortides › Veure apuntats","Nombres solo en Salidas › Ver apuntados","Noms seulement dans Sorties › Voir les inscrits","Names only in Outings › See sign-ups"],
+["Cap sortida programada","Ninguna salida programada","Aucune sortie prévue","No outings scheduled"],
+["⛵ Sortides","⛵ Salidas","⛵ Sorties","⛵ Outings"],
+["Les sortides es gestionen a la seva pròpia secció i no formen part del calendari d'esdeveniments.","Las salidas se gestionan en su propia sección y no forman parte del calendario de eventos.","Les sorties sont gérées dans leur propre section et ne font pas partie du calendrier des événements.","Outings are managed in their own section and are not part of the events calendar."],
+["Cap enquesta oberta","Ninguna encuesta abierta","Aucun sondage ouvert","No open polls"],
+["📊 Enquestes","📊 Encuestas","📊 Sondages","📊 Polls"],
+["Veure enquestes","Ver encuestas","Voir les sondages","See polls"],
+["📅 Calendari del club","📅 Calendario del club","📅 Calendrier du club","📅 Club calendar"],
+["Nova sessió","Nueva sesión","Nouvelle séance","New session"],
+["Tipus *","Tipo *","Type *","Type *"],
+["Minuts","Minutos","Minutes","Minutes"],
+["Desar","Guardar","Enregistrer","Save"],
+["· {} min","· {} min","· {} min","· {} min"],
+["Historial","Historial","Historique","History"],
+["+ Afegir","+ Añadir","+ Ajouter","+ Add"],
+["Cap sessió","Ninguna sesión","Aucune séance","No sessions"],
+["Nova sortida","Nueva salida","Nouvelle sortie","New outing"],
+["Títol, ex. Sortida oberta","Título, ej. Salida abierta","Titre, ex. Sortie ouverte","Title, e.g. Open outing"],
+["Si tries “Oberta a tots els grups”, la sortida no queda reservada a cap grup concret.","Si eliges “Abierta a todos los grupos”, la salida no queda reservada a ningún grupo concreto.","Si vous choisissez « Ouverte à tous les groupes », la sortie n'est réservée à aucun groupe.","If you choose “Open to all groups”, the outing isn't reserved for any group."],
+["Places:","Plazas:","Places :","Seats:"],
+["Crear","Crear","Créer","Create"],
+["+ Nova sortida","+ Nueva salida","+ Nouvelle sortie","+ New outing"],
+["El teu grup","Tu grupo","Votre groupe","Your group"],
+["El teu grup · {}","Tu grupo · {}","Votre groupe · {}","Your group · {}"],
+["Cap sortida programada del teu grup","Ninguna salida programada de tu grupo","Aucune sortie prévue pour votre groupe","No outings scheduled for your group"],
+["👥 Sortides d'altres grups obertes · {} {}","👥 Salidas abiertas de otros grupos · {} {}","👥 Sorties ouvertes d'autres groupes · {} {}","👥 Open outings from other groups · {} {}"],
+["Aquestes sortides no són del teu grup. Apunta-t'hi només si hi vols anar de veritat.","Estas salidas no son de tu grupo. Apúntate solo si de verdad quieres ir.","Ces sorties ne sont pas celles de votre groupe. Inscrivez-vous seulement si vous voulez vraiment y aller.","These outings aren't your group's. Only sign up if you really want to go."],
+["Amagar històric","Ocultar histórico","Masquer l'historique","Hide history"],
+["Veure històric","Ver histórico","Voir l'historique","Show history"],
+["‹ Anteriors","‹ Anteriores","‹ Précédentes","‹ Previous"],
+["Següents ›","Siguientes ›","Suivantes ›","Next ›"],
+["Històric de sortides","Histórico de salidas","Historique des sorties","Outing history"],
+["Nova regata","Nueva regata","Nouvelle régate","New regatta"],
+["Nom *","Nombre *","Nom *","Name *"],
+["Port/Lloc","Puerto/Lugar","Port/Lieu","Harbour/Place"],
+["Posició","Posición","Position","Position"],
+["victòries","victorias","victoires","wins"],
+["Classificació general","Clasificación general","Classement général","Overall standings"],
+["{} punts · {} regates","{} puntos · {} regatas","{} points · {} régates","{} points · {} regattas"],
+["Temporada 2026","Temporada 2026","Saison 2026","2026 season"],
+["Cap resultat","Ningún resultado","Aucun résultat","No results"],
+["Nova votació","Nueva votación","Nouveau vote","New vote"],
+["Les votacions mostren resultats i votants, com a WhatsApp. Els socis poden canviar el vot mentre estigui oberta.","Las votaciones muestran resultados y votantes, como en WhatsApp. Los socios pueden cambiar el voto mientras esté abierta.","Les votes affichent résultats et votants, comme sur WhatsApp. Les membres peuvent changer leur vote tant qu'il est ouvert.","Votes show results and voters, like WhatsApp. Members can change their vote while it's open."],
+["Publicar votació","Publicar votación","Publier le vote","Publish vote"],
+["📊 Nova votació","📊 Nueva votación","📊 Nouveau vote","📊 New vote"],
+["Votacions obertes","Votaciones abiertas","Votes ouverts","Open votes"],
+["Tancades","Cerradas","Clos","Closed"],
+["Cap votació","Ninguna votación","Aucun vote","No votes"],
+["Nou avís del cap de grup","Nuevo aviso del jefe de grupo","Nouvel avis du chef de groupe","New notice from group leader"],
+["Nou avís del patró","Nuevo aviso del patrón","Nouvel avis du patron","New notice from skipper"],
+["teu grup","tu grupo","votre groupe","your group"],
+["👥 Aquest avís s'enviarà només al {}.","👥 Este aviso se enviará solo al {}.","👥 Cet avis sera envoyé seulement au {}.","👥 This notice will only go to {}."],
+["General · Tothom","General · Todos","Général · Tout le monde","General · Everyone"],
+["Un grup concret","Un grupo concreto","Un groupe précis","A specific group"],
+["Afegir negreta","Añadir negrita","Ajouter du gras","Add bold"],
+["Escriu el missatge...","Escribe el mensaje...","Écrivez le message...","Write the message..."],
+["Emojis i","Emojis y","Émojis et","Emojis and"],
+["Fixar a dalt (important)","Fijar arriba (importante)","Épingler en haut (important)","Pin to top (important)"],
+["Publicar","Publicar","Publier","Publish"],
+["📢 Nou avís","📢 Nuevo aviso","📢 Nouvel avis","📢 New notice"],
+["Grup concret","Grupo concreto","Groupe précis","Specific group"],
+["Fixar a dalt","Fijar arriba","Épingler en haut","Pin to top"],
+["Cap de grup","Jefe de grupo","Chef de groupe","Group leader"],
+["{} Avís {}","{} Aviso {}","{} Avis {}","{} Notice {}"],
+["Desfixar","Desfijar","Désépingler","Unpin"],
+["📌 Fixar","📌 Fijar","📌 Épingler","📌 Pin"],
+["Cap avís publicat","Ningún aviso publicado","Aucun avis publié","No notices published"],
+["He remat","He remado","J'ai ramé","I rowed"],
+["Han remat","Han remado","Ont ramé","Rowed"],
+["Baixes","Bajas","Excusés","Excused"],
+["No presentats","No presentados","Absents","No-shows"],
+["{} Pendents","{} Pendientes","{} En attente","{} Pending"],
+["Assistència","Asistencia","Présence","Attendance"],
+["{} Assistències tancades","{} Asistencias cerradas","{} Présences clôturées","{} Attendance closed"],
+["Participació del club","Participación del club","Participation du club","Club participation"],
+["Encara no hi ha assistències confirmades.","Todavía no hay asistencias confirmadas.","Pas encore de présences confirmées.","No confirmed attendance yet."],
+["Assistència per grup","Asistencia por grupo","Présence par groupe","Attendance by group"],
+["Visió agregada per grup. Les baixes justificades no penalitzen el percentatge principal.","Visión agregada por grupo. Las bajas justificadas no penalizan el porcentaje principal.","Vue agrégée par groupe. Les absences excusées ne pénalisent pas le pourcentage principal.","Combined view by group. Excused absences don't lower the main percentage."],
+["Cap soci.","Ningún socio.","Aucun membre.","No members."],
+["⏳ Pendent de tancar","⏳ Pendiente de cerrar","⏳ À clôturer","⏳ To close"],
+["❌ No presentat","❌ No presentado","❌ Absent","❌ No-show"],
+["➖ Baixa / justificat","➖ Baja / justificada","➖ Excusé","➖ Excused"],
+["✅ Ha remat","✅ Ha remado","✅ A ramé","✅ Rowed"],
+["Revisar","Revisar","À vérifier","Review"],
+["sortida esborrada","salida borrada","sortie supprimée","deleted outing"],
+["(última hora)","(última hora)","(dernière minute)","(last minute)"],
+["Desapuntades: {}","Bajas: {}","Désinscriptions : {}","Withdrawals: {}"],
+["Encara no ha sortit a cap sortida.","Todavía no ha ido a ninguna salida.","N'a encore participé à aucune sortie.","Hasn't been on any outing yet."],
+["{} ✅ Ha remat · ❌ No presentat sense avisar · ➖ Baixa justificada · ⏳ Assistència pendent de tancar · ↩️ Desapuntades (i % sobre les vegades que s'ha apuntat) · ⏰ Desapuntades a menys de {} h · ⚠️ A revisar (2+ no presentats, 3+ desapuntades d'última hora o més de la meitat de desapuntades). Toca un nom per veure les seves sortides.","{} ✅ Ha remado · ❌ No presentado sin avisar · ➖ Baja justificada · ⏳ Asistencia pendiente de cerrar · ↩️ Bajas (y % sobre las veces que se ha apuntado) · ⏰ Bajas a menos de {} h · ⚠️ A revisar (2+ no presentados, 3+ bajas de última hora o más de la mitad de bajas). Toca un nombre para ver sus salidas.","{} ✅ A ramé · ❌ Absent sans prévenir · ➖ Excusé · ⏳ Présence à clôturer · ↩️ Désinscriptions (et % des inscriptions) · ⏰ Désinscriptions moins de {} h avant · ⚠️ À vérifier (2+ absences, 3+ désinscriptions de dernière minute ou plus de la moitié de désinscriptions). Touchez un nom pour voir ses sorties.","{} ✅ Rowed · ❌ No-show without notice · ➖ Excused · ⏳ Attendance not closed yet · ↩️ Withdrawals (and % of sign-ups) · ⏰ Withdrawals less than {} h before · ⚠️ Review (2+ no-shows, 3+ last-minute withdrawals or more than half withdrawn). Tap a name to see their outings."],
+["ningú","nadie","personne","nobody"],
+["Encara no hi ha assistències tancades d'aquest grup als últims {} dies.","Todavía no hay asistencias cerradas de este grupo en los últimos {} días.","Pas encore de présences clôturées pour ce groupe ces {} derniers jours.","No closed attendance for this group in the last {} days."],
+["{} · {} socis","{} · {} socios","{} · {} membres","{} · {} members"],
+["🟢 {} regulars","🟢 {} regulares","🟢 {} réguliers","🟢 {} regular"],
+["🟡 {} ocasionals","🟡 {} ocasionales","🟡 {} occasionnels","🟡 {} occasional"],
+["⚪ {} mai","⚪ {} nunca","⚪ {} jamais","⚪ {} never"],
+["🟢 Regulars:","🟢 Regulares:","🟢 Réguliers :","🟢 Regular:"],
+["🟡 Ocasionals:","🟡 Ocasionales:","🟡 Occasionnels :","🟡 Occasional:"],
+["⚪ Mai:","⚪ Nunca:","⚪ Jamais :","⚪ Never:"],
+["{} sortides del grup amb assistència tancada.","{} salidas del grupo con asistencia cerrada.","{} sorties du groupe avec présence clôturée.","{} group outings with closed attendance."],
+["Socis per grup i regularitat","Socios por grupo y regularidad","Membres par groupe et régularité","Members by group and regularity"],
+["{} socis actius. Últims {} dies:","{} socios activos. Últimos {} días:","{} membres actifs. {} derniers jours :","{} active members. Last {} days:"],
+["= ha remat a {}% o més de les sortides del seu grup;","= ha remado en el {}% o más de las salidas de su grupo;","= a ramé à {} % ou plus des sorties de son groupe ;","= rowed in {}% or more of their group's outings;"],
+["= menys;","= menos;","= moins ;","= fewer;"],
+["= cap. Entre parèntesis, vegades que ha remat.","= ninguna. Entre paréntesis, veces que ha remado.","= aucune. Entre parenthèses, nombre de fois où il a ramé.","= none. In brackets, times rowed."],
+["Accés restringit","Acceso restringido","Accès restreint","Restricted access"],
+["Total club","Total club","Total club","Club total"],
+["Agregat de totes les sortides: de grup i obertes.","Agregado de todas las salidas: de grupo y abiertas.","Toutes les sorties : de groupe et ouvertes.","All outings combined: group and open."],
+["Les meves dades","Mis datos","Mes données","My data"],
+["Les teves assistències personals confirmades.","Tus asistencias personales confirmadas.","Vos présences personnelles confirmées.","Your confirmed personal attendance."],
+["El meu grup","Mi grupo","Mon groupe","My group"],
+["Agregat del {}.","Agregado del {}.","Total du {}.","Total for {}."],
+["Agregat de totes les sortides del club: de grup i obertes.","Agregado de todas las salidas del club: de grupo y abiertas.","Toutes les sorties du club : de groupe et ouvertes.","All club outings combined: group and open."],
+["Sortides obertes","Salidas abiertas","Sorties ouvertes","Open outings"],
+["Agregat de totes les sortides obertes del club.","Agregado de todas las salidas abiertas del club.","Toutes les sorties ouvertes du club.","All open club outings combined."],
+["Assistència per soci","Asistencia por socio","Présence par membre","Attendance by member"],
+["Tots els socis, primer els que tenen més no presentats.","Todos los socios, primero los que tienen más no presentados.","Tous les membres, d'abord ceux qui ont le plus d'absences.","All members, most no-shows first."],
+["Socis del {}, primer els que tenen més no presentats.","Socios del {}, primero los que tienen más no presentados.","Membres du {}, d'abord ceux qui ont le plus d'absences.","Members of {}, most no-shows first."],
+["Com llegir aquestes dades","Cómo leer estos datos","Comment lire ces données","How to read this data"],
+["Criteris de càlcul i assistència","Criterios de cálculo y asistencia","Critères de calcul et de présence","Calculation and attendance criteria"],
+["Apuntar-se no compta com haver remat.","Apuntarse no cuenta como haber remado.","S'inscrire ne compte pas comme avoir ramé.","Signing up doesn't count as having rowed."],
+["és l'agregat de totes les sortides: les de grup i les obertes.","es el agregado de todas las salidas: las de grupo y las abiertas.","regroupe toutes les sorties : de groupe et ouvertes.","combines all outings: group and open."],
+["són només les sortides obertes a tots els grups, com els divendres o les creades manualment com a obertes.","son solo las salidas abiertas a todos los grupos, como los viernes o las creadas manualmente como abiertas.","sont seulement les sorties ouvertes à tous les groupes, comme le vendredi ou celles créées manuellement comme ouvertes.","are only outings open to all groups, like Fridays or ones created manually as open."],
+["Les estadístiques només compten assistències tancades pels caps corresponents. El rànquing de participació només compta","Las estadísticas solo cuentan asistencias cerradas por los jefes correspondientes. El ranking de participación solo cuenta","Les statistiques ne comptent que les présences clôturées par les chefs concernés. Le classement de participation ne compte que","Statistics only count attendance closed by the relevant leaders. The participation ranking only counts"],
+[", no les inscripcions. El percentatge és",", no las inscripciones. El porcentaje es",", pas les inscriptions. Le pourcentage est",", not sign-ups. The percentage is"],
+["Han remat / (Han remat + No presentats)","Han remado / (Han remado + No presentados)","Ont ramé / (Ont ramé + Absents)","Rowed / (Rowed + No-shows)"],
+["; les baixes justificades es mostren a part.","; las bajas justificadas se muestran aparte.","; les absences excusées sont affichées à part.","; excused absences are shown separately."],
+["Treure","Quitar","Retirer","Remove"],
+["Ningú té segon grup.","Nadie tiene segundo grupo.","Personne n'a de deuxième groupe.","Nobody has a second group."],
+["Segon grup","Segundo grupo","Deuxième groupe","Second group"],
+["Un soci amb segon grup veu i s'apunta a les sortides dels dos grups com a pròpies, amb la mateixa prioritat. Surt a les estadístiques dels dos grups.","Un socio con segundo grupo ve y se apunta a las salidas de los dos grupos como propias, con la misma prioridad. Sale en las estadísticas de los dos grupos.","Un membre avec un deuxième groupe voit les sorties des deux groupes comme les siennes et s'y inscrit avec la même priorité. Il apparaît dans les statistiques des deux groupes.","A member with a second group sees and signs up for both groups' outings as their own, with the same priority. They appear in both groups' stats."],
+["Tria soci…","Elige socio…","Choisir un membre…","Choose member…"],
+["Tria segon grup…","Elige segundo grupo…","Choisir le deuxième groupe…","Choose second group…"],
+["Assignar segon grup","Asignar segundo grupo","Attribuer le deuxième groupe","Assign second group"],
+["Aquest ja és el grup principal del soci.","Este ya es el grupo principal del socio.","C'est déjà le groupe principal du membre.","This is already the member's main group."],
+["Assignar {} com a segon grup de {}?","¿Asignar {} como segundo grupo de {}?","Attribuer {} comme deuxième groupe de {} ?","Assign {} as second group for {}?"],
+["Treure el segon grup de {}?","¿Quitar el segundo grupo de {}?","Retirer le deuxième groupe de {} ?","Remove {}'s second group?"],
+["Tria el soci i el segon grup.","Elige el socio y el segundo grupo.","Choisissez le membre et le deuxième groupe.","Choose the member and the second group."],
+["Accés restringit a Admin tècnic","Acceso restringido a Admin técnico","Accès réservé à l'admin technique","Restricted to tech admin"],
+["sortides futures","salidas futuras","sorties à venir","upcoming outings"],
+["assistències pendents","asistencias pendientes","présences en attente","pending attendance"],
+["Estat de l'app","Estado de la app","État de l'app","App status"],
+["Sincronització:","Sincronización:","Synchronisation :","Sync:"],
+["Error:","Error:","Erreur :","Error:"],
+["Última sync:","Última sync:","Dernière sync :","Last sync:"],
+["Eines","Herramientas","Outils","Tools"],
+["Exportar còpia","Exportar copia","Exporter une copie","Export backup"],
+["Copiar diagnòstic","Copiar diagnóstico","Copier le diagnostic","Copy diagnostics"],
+["Toca cada element per alternar: pendent → funciona → revisar.","Toca cada elemento para alternar: pendiente → funciona → revisar.","Touchez chaque élément pour alterner : en attente → fonctionne → à vérifier.","Tap each item to toggle: pending → works → review."],
+["Accés restringit al patró","Acceso restringido al patrón","Accès réservé au patron","Skipper only"],
+["✓ Aprovar","✓ Aprobar","✓ Approuver","✓ Approve"],
+["Rebutjar","Rechazar","Refuser","Reject"],
+["⏳ Sol·licituds pendents","⏳ Solicitudes pendientes","⏳ Demandes en attente","⏳ Pending requests"],
+["Nou soci","Nuevo socio","Nouveau membre","New member"],
+["Afegir soci","Añadir socio","Ajouter un membre","Add member"],
+["Socis actius","Socios activos","Membres actifs","Active members"],
+["🏆 Competi","🏆 Compe","🏆 Compét","🏆 Comp"],
+["🧭 Cap","🧭 Jefe","🧭 Chef","🧭 Leader"],
+["🌊 Cap generals","🌊 Jefe generales","🌊 Chef sorties générales","🌊 General leader"],
+["sense clau","sin clave","sans mot de passe","no password"],
+["La secció Competició també activa Social automàticament.","La sección Competición también activa Social automáticamente.","La section Compétition active aussi Loisir automatiquement.","The Competition section also turns on Social automatically."],
+["Si canvies el grup, continuarà sent cap del grup nou.","Si cambias el grupo, seguirá siendo jefe del grupo nuevo.","Si vous changez le groupe, il restera chef du nouveau groupe.","If you change the group, they'll stay leader of the new group."],
+["✏️ Editar membre","✏️ Editar miembro","✏️ Modifier le membre","✏️ Edit member"],
+["Segon grup (opcional)","Segundo grupo (opcional)","Deuxième groupe (facultatif)","Second group (optional)"],
+["— Cap —","— Ninguno —","— Aucun —","— None —"],
+["És cap de grup","Es jefe de grupo","Est chef de groupe","Is group leader"],
+["Fer cap de grup","Hacer jefe de grupo","Nommer chef de groupe","Make group leader"],
+["Cap generals","Jefe generales","Chef sorties générales","General leader"],
+["Fer cap generals","Hacer jefe generales","Nommer chef sorties générales","Make general leader"],
+["🔑 Reset clau","🔑 Reset clave","🔑 Réinit. mot de passe","🔑 Reset password"],
+["⚠️ Sense clau","⚠️ Sin clave","⚠️ Sans mot de passe","⚠️ No password"],
+["{} · {} soci{}","{} · {} socio{}","{} · {} membre{}","{} · {} member{}"],
+["🛠 Eines de prova","🛠 Herramientas de prueba","🛠 Outils de test","🛠 Test tools"],
+["⚡ Forçar generació sortides setmana vinent","⚡ Forzar generación salidas semana que viene","⚡ Forcer la génération des sorties de la semaine prochaine","⚡ Force-generate next week's outings"],
+["+ Afegir soci nou","+ Añadir socio nuevo","+ Ajouter un nouveau membre","+ Add new member"],
+["Segur que vols sortir?","¿Seguro que quieres salir?","Voulez-vous vraiment vous déconnecter ?","Are you sure you want to log out?"],
+["Es tancarà la sessió en aquest dispositiu.","Se cerrará la sesión en este dispositivo.","La session sera fermée sur cet appareil.","You'll be logged out on this device."],
+["Soci afegit","Socio añadido","Membre ajouté","Member added"],
+["Quan entri per primera vegada, podrà crear la seva clau d’accés.","Cuando entre por primera vez, podrá crear su clave de acceso.","À sa première connexion, il pourra créer son mot de passe.","On first login they can create their password."],
+["D’acord","De acuerdo","D'accord","OK"],
+["Sortides revisades/generades: {}, {} i {}","Salidas revisadas/generadas: {}, {} y {}","Sorties vérifiées/générées : {}, {} et {}","Outings checked/generated: {}, {} and {}"],
+["Ja existeixen sortides per {}, {} i {}","Ya existen salidas para {}, {} y {}","Des sorties existent déjà pour {}, {} et {}","Outings already exist for {}, {} and {}"],
+["Carregant...","Cargando...","Chargement...","Loading..."],
+["Inici","Inicio","Accueil","Home"],
+["Entrena","Entreno","Entraîn.","Training"],
+["Stats","Stats","Stats","Stats"],
+["Membres","Miembros","Membres","Members"],
+["Entrenaments","Entrenamientos","Entraînements","Training"],
+["Resultats","Resultados","Résultats","Results"],
+["Votacions","Votaciones","Votes","Votes"],
+["Estadístiques","Estadísticas","Statistiques","Statistics"],
+["Admin tècnic","Admin técnico","Admin technique","Tech admin"],
+["{} · Cap {}","{} · Jefe {}","{} · Chef {}","{} · Leader {}"],
+["Cap","Jefe","Chef","Leader"],
+["Refresca la pàgina","Recarga la página","Actualisez la page","Reload the page"],
+["Error inesperat","Error inesperado","Erreur inattendue","Unexpected error"],
+["↻ Refresca","↻ Recargar","↻ Actualiser","↻ Reload"],
+["Desar canvis per a \"{}\"?","¿Guardar cambios para \"{}\"?","Enregistrer les modifications pour « {} » ?","Save changes for \"{}\"?"],
+["Eliminar el soci?","¿Eliminar el socio?","Supprimer le membre ?","Delete the member?"],
+["el teu grup","tu grupo","votre groupe","your group"],
+["⚠️ Aquesta sortida és del {}, no del teu grup ({}).\n\nSegur que t'hi vols apuntar?","⚠️ Esta salida es del {}, no de tu grupo ({}).\n\n¿Seguro que te quieres apuntar?","⚠️ Cette sortie est celle du {}, pas de votre groupe ({}).\n\nVoulez-vous vraiment vous inscrire ?","⚠️ This outing belongs to {}, not your group ({}).\n\nAre you sure you want to sign up?"],
+["Ja hi ha el màxim de timonels","Ya hay el máximo de timoneles","Le nombre maximum de barreurs est atteint","The maximum number of coxes is reached"],
+["{} s'apunta de timonel a {}.","{} se apunta de timonel a {}.","{} s'inscrit comme barreur à {}.","{} signs up as cox for {}."],
+["T'has apuntat com a timonel.","Te has apuntado como timonel.","Vous êtes inscrit comme barreur.","You signed up as cox."],
+["{} s'apunta a {}.","{} se apunta a {}.","{} s'inscrit à {}.","{} signs up for {}."],
+["T'has apuntat correctament.","Te has apuntado correctamente.","Inscription réussie.","You're signed up."],
+["{} ocupa la plaça de reserva de {}.","{} ocupa la plaza de reserva de {}.","{} prend la place de réserve de {}.","{} takes the reserve seat for {}."],
+["Has entrat com a reserva.","Has entrado como reserva.","Vous êtes en réserve.","You're in as reserve."],
+["amb prioritat de grup","con prioridad de grupo","avec priorité de groupe","with group priority"],
+["{} entra a la llista d'espera de {}{}.","{} entra en la lista de espera de {}{}.","{} entre en liste d'attente pour {}{}.","{} joins the waiting list for {}{}."],
+["Has entrat a la llista d'espera.","Has entrado en la lista de espera.","Vous êtes en liste d'attente.","You're on the waiting list."],
+["{} esborra la resposta de no assistència a {}.","{} borra la respuesta de no asistencia a {}.","{} efface sa réponse d'absence pour {}.","{} clears their can't-come reply for {}."],
+["Has esborrat la resposta.","Has borrado la respuesta.","Réponse effacée.","Reply cleared."],
+["{} es desapunta de timonel de {}.","{} se borra de timonel de {}.","{} se désinscrit comme barreur de {}.","{} withdraws as cox from {}."],
+["{} allibera la plaça de {}.","{} libera la plaza de {}.","{} libère sa place pour {}.","{} frees their seat for {}."],
+["{} surt de la llista d'espera de {}.","{} sale de la lista de espera de {}.","{} quitte la liste d'attente de {}.","{} leaves the waiting list for {}."],
+["{} indica que no pot venir a {}.","{} indica que no puede venir a {}.","{} indique ne pas pouvoir venir à {}.","{} says they can't come to {}."],
+["Has indicat que no pots venir.","Has indicado que no puedes venir.","Vous avez indiqué ne pas pouvoir venir.","You said you can't come."],
+["{} es desapunta de {}.","{} se borra de {}.","{} se désinscrit de {}.","{} withdraws from {}."],
+["T'has desapuntat correctament.","Te has borrado correctamente.","Désinscription réussie.","You've left the outing."],
+["Selecciona un soci.","Selecciona un socio.","Choisissez un membre.","Select a member."],
+["No s'ha trobat aquesta sortida. Actualitza i torna-ho a provar.","No se ha encontrado esta salida. Actualiza y vuelve a intentarlo.","Sortie introuvable. Actualisez et réessayez.","Outing not found. Refresh and try again."],
+["Aquesta sortida ja és passada.","Esta salida ya ha pasado.","Cette sortie est déjà passée.","This outing is already past."],
+["No s'ha trobat aquest soci.","No se ha encontrado este socio.","Membre introuvable.","Member not found."],
+["apuntat com a timonel","apuntado como timonel","inscrit comme barreur","signed up as cox"],
+["a la llista d'espera","en la lista de espera","en liste d'attente","on the waiting list"],
+["{} ja consta {} en aquesta sortida.","{} ya consta {} en esta salida.","{} figure déjà {} pour cette sortie.","{} is already {} for this outing."],
+["Aquesta sortida no admet timonels.","Esta salida no admite timoneles.","Cette sortie n'accepte pas de barreurs.","This outing doesn't take coxes."],
+["Ja hi ha el màxim de timonels.","Ya hay el máximo de timoneles.","Le nombre maximum de barreurs est atteint.","The maximum number of coxes is reached."],
+["El patró apunta {} de timonel a {}.","El patrón apunta a {} de timonel en {}.","Le patron inscrit {} comme barreur à {}.","The skipper signs up {} as cox for {}."],
+["El patró apunta {} a {}.","El patrón apunta a {} en {}.","Le patron inscrit {} à {}.","The skipper signs up {} for {}."],
+["El patró apunta {} a la plaça de reserva de {}.","El patrón apunta a {} en la plaza de reserva de {}.","Le patron met {} sur la place de réserve de {}.","The skipper puts {} in the reserve seat for {}."],
+["El patró posa {} a la llista d'espera de {}{}.","El patrón pone a {} en la lista de espera de {}{}.","Le patron met {} en liste d'attente pour {}{}.","The skipper puts {} on the waiting list for {}{}."],
+["Soci afegit a la sortida.","Socio añadido a la salida.","Membre ajouté à la sortie.","Member added to the outing."],
+["No s'ha pogut identificar la llista.","No se ha podido identificar la lista.","Impossible d'identifier la liste.","Could not identify the list."],
+["No s'ha trobat aquest soci. Actualitza i torna-ho a provar.","No se ha encontrado este socio. Actualiza y vuelve a intentarlo.","Membre introuvable. Actualisez et réessayez.","Member not found. Refresh and try again."],
+["un soci","un socio","un membre","a member"],
+["El patró elimina la resposta de no assistència de {} a {}.","El patrón elimina la respuesta de no asistencia de {} a {}.","Le patron supprime la réponse d'absence de {} pour {}.","The skipper removes {}'s can't-come reply for {}."],
+["El patró desapunta {} de timonel a {}.","El patrón borra a {} de timonel en {}.","Le patron désinscrit {} comme barreur de {}.","The skipper removes {} as cox from {}."],
+["El patró treu {} de la llista d'espera de {}.","El patrón quita a {} de la lista de espera de {}.","Le patron retire {} de la liste d'attente de {}.","The skipper removes {} from the waiting list for {}."],
+["El patró desapunta {} de {}.","El patrón borra a {} de {}.","Le patron désinscrit {} de {}.","The skipper removes {} from {}."],
+["Soci retirat de la sortida.","Socio retirado de la salida.","Membre retiré de la sortie.","Member removed from the outing."],
+["{} obre a tothom la inscripció de {}.","{} abre a todos la inscripción de {}.","{} ouvre à tous l'inscription à {}.","{} opens sign-up for {} to everyone."],
+["Sortida oberta a tothom.","Salida abierta a todos.","Sortie ouverte à tous.","Outing open to everyone."],
+["Aquesta sortida ja ha arribat a l'hora d'obertura automàtica. Només es pot tancar una obertura manual abans d'hora.","Esta salida ya ha llegado a la hora de apertura automática. Solo se puede cerrar una apertura manual antes de hora.","Cette sortie a déjà atteint l'heure d'ouverture automatique. Seule une ouverture manuelle anticipée peut être refermée.","This outing has already reached its automatic opening time. Only an early manual opening can be closed."],
+["El patró tanca a tothom la inscripció de {}. Torna a quedar reservada fins a l'obertura automàtica.","El patrón cierra a todos la inscripción de {}. Vuelve a quedar reservada hasta la apertura automática.","Le patron ferme à tous l'inscription à {}. Elle redevient réservée jusqu'à l'ouverture automatique.","The skipper closes sign-up for {} to everyone. It's reserved again until automatic opening."],
+["Obertura manual tancada.","Apertura manual cerrada.","Ouverture manuelle fermée.","Manual opening closed."],
+["Cancel·lar la sortida?","¿Cancelar la salida?","Annuler la sortie ?","Cancel the outing?"],
+["El patró cancel·la {}.","El patrón cancela {}.","Le patron annule {}.","The skipper cancels {}."],
+["oberta a tots els grups","abierta a todos los grupos","ouverte à tous les groupes","open to all groups"],
+["El patró crea {}{}.","El patrón crea {}{}.","Le patron crée {}{}.","The skipper creates {}{}."],
+["Sortida oberta creada.","Salida abierta creada.","Sortie ouverte créée.","Open outing created."],
+["Sortida creada.","Salida creada.","Sortie créée.","Outing created."],
+["Eliminar aquest avís?","¿Eliminar este aviso?","Supprimer cet avis ?","Delete this notice?"],
+["La pregunta és obligatòria","La pregunta es obligatoria","La question est obligatoire","Question is required"],
+["Calen almenys dues opcions","Hacen falta al menos dos opciones","Il faut au moins deux options","At least two options are needed"],
+["No s'ha pogut desar l'enquesta. Torna-ho a provar.","No se ha podido guardar la encuesta. Vuelve a intentarlo.","Impossible d'enregistrer le sondage. Réessayez.","Could not save the poll. Try again."],
+["No s'ha pogut desar l'enquesta.","No se ha podido guardar la encuesta.","Impossible d'enregistrer le sondage.","Could not save the poll."],
+["Enquesta actualitzada i desada.","Encuesta actualizada y guardada.","Sondage mis à jour et enregistré.","Poll updated and saved."],
+["Eliminar aquesta enquesta?","¿Eliminar esta encuesta?","Supprimer ce sondage ?","Delete this poll?"],
+["El títol és obligatori","El título es obligatorio","Le titre est obligatoire","Title is required"],
+["Eliminar aquest esdeveniment?","¿Eliminar este evento?","Supprimer cet événement ?","Delete this event?"],
+["avui a les {}","hoy a las {}","aujourd'hui à {}","today at {}"],
+["demà a les {}","mañana a las {}","demain à {}","tomorrow at {}"],
+["ahir a les {}","ayer a las {}","hier à {}","yesterday at {}"],
+["{} a les {}","{} a las {}","{} à {}","{} at {}"],
+["Has entrat a la sortida","Has entrado en la salida","Vous êtes inscrit à la sortie","You're in the outing"],
+["com a reserva","como reserva","en réserve","as reserve"],
+["S'ha alliberat una plaça i has entrat automàticament a {}{}.","Se ha liberado una plaza y has entrado automáticamente en {}{}.","Une place s'est libérée et vous êtes entré automatiquement dans {}{}.","A seat freed up and you automatically got into {}{}."],
+["{} entra automàticament des de la llista d'espera a {}{}.","{} entra automáticamente desde la lista de espera en {}{}.","{} entre automatiquement depuis la liste d'attente dans {}{}.","{} automatically moves up from the waiting list into {}{}."],
+["Dv {} {}","Vi {} {}","Ve {} {}","Fri {} {}"],
+["Reserva {}","Reserva {}","Réserve {}","Reserve {}"],
+["cap","ninguno","aucune","none"],
+["regular","regular","régulier","regular"],
+["ocasional","ocasional","occasionnel","occasional"],
+["mai","nunca","jamais","never"],
+["socis","socios","membres","members"],
+["👤 Patró","👤 Patrón","👤 Patron","👤 Skipper"]];
+const I18N=(()=>{
+  if(LANG==="ca")return null;
+  const col={es:1,fr:2,en:3}[LANG];
+  const norm=s=>String(s).replace(/\s+/g," ").trim();
+  const reEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+  const exact=new Map(),pats=[];
+  for(const row of I18N_DATA){
+    const k=norm(row[0]),v=row[col];if(!k||v==null)continue;
+    if(k.includes("{}")){
+      const parts=k.split("{}");
+      const lit=parts.join("").replace(/[^A-Za-zÀ-ÿ]/g,"");
+      if(lit.length<3)continue;
+      pats.push({re:new RegExp("^"+parts.map(reEsc).join("([\\s\\S]*?)")+"$"),v,key:parts.reduce((a,b)=>b.length>a.length?b:a,"")});
+    }else exact.set(k,v);
+  }
+  pats.sort((a,b)=>b.key.length-a.key.length);
+  return {exact,pats,norm,cache:new Map()};
+})();
+function tr(s,depth){
+  if(!I18N||s==null)return s;
+  const n=I18N.norm(s);if(!n||!/[A-Za-zÀ-ÿ]/.test(n))return s;
+  const c=I18N.cache.get(n);if(c!==undefined)return c===null?s:c;
+  let out=I18N.exact.get(n);
+  if(out===undefined&&(depth||0)<2){
+    for(const p of I18N.pats){
+      if(p.key&&!n.includes(p.key))continue;
+      const m=n.match(p.re);if(!m)continue;
+      const caps=m.slice(1).map(x=>tr(x,(depth||0)+1));
+      let i=0;out=p.v.replace(/\{(\d*)\}/g,(_,d)=>caps[d===""?i++:+d]??"");
+      break;
+    }
+  }
+  if(out===undefined&&(depth||0)<2){
+    // Prefix d'emoji/símbols ("✅ Text") o parts separades per " · " ("Nom · Grup E").
+    const pm=n.match(/^([^A-Za-zÀ-ÿ¿¡]+)([A-Za-zÀ-ÿ][\s\S]*)$/);
+    if(pm){const t=tr(pm[2],(depth||0)+1);if(t!==pm[2])out=pm[1]+t;}
+    if(out===undefined&&n.includes(" · ")){
+      const parts=n.split(" · "),tp=parts.map(x=>x?tr(x,(depth||0)+1):x);
+      if(tp.some((x,i)=>x!==parts[i]))out=tp.join(" · ");
+    }else if(out===undefined&&/ ·$/.test(n)){const t=tr(n.slice(0,-2),(depth||0)+1);if(t!==n.slice(0,-2))out=t+" ·";}
+  }
+  if(I18N.cache.size>8000)I18N.cache.clear();
+  I18N.cache.set(n,out===undefined?null:out);
+  return out===undefined?s:out;
+}
+function trMsg(s){
+  if(!I18N||typeof s!=="string")return s;
+  const t=tr(s);if(t!==s)return t;
+  return s.split("\n").map(l=>tr(l)).join("\n");
+}
+function i18nApply(node){
+  if(!I18N||!node)return;
+  if(node.nodeType===3){
+    const p=node.parentNode;
+    if(!p||p.closest?.("[data-noi18n],script,style,textarea"))return;
+    const v=node.nodeValue,t=tr(v);
+    if(t!==v)node.nodeValue=(v.match(/^\s*/)[0])+t+(v.match(/\s*$/)[0]);
+    return;
+  }
+  if(node.nodeType!==1||node.closest("[data-noi18n],script,style"))return;
+  const els=[node,...node.querySelectorAll("[placeholder],[title],[aria-label]")];
+  for(const el of els)for(const a of ["placeholder","title","aria-label"]){
+    if(!el.hasAttribute||!el.hasAttribute(a)||el.closest("[data-noi18n]"))continue;
+    const v=el.getAttribute(a),t=tr(v);if(t!==v)el.setAttribute(a,t);
+  }
+  const w=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);
+  const list=[];while(w.nextNode())list.push(w.currentNode);
+  for(const tn of list)i18nApply(tn);
+}
+if(I18N){
+  const _alert=window.alert.bind(window),_confirm=window.confirm.bind(window),_prompt=window.prompt.bind(window);
+  window.alert=m=>_alert(trMsg(m));
+  window.confirm=m=>_confirm(trMsg(m));
+  window.prompt=(m,d)=>_prompt(trMsg(m),d);
+  const obs=new MutationObserver(recs=>{
+    for(const r of recs)for(const n of r.addedNodes)i18nApply(n);
+  });
+  const start=()=>{obs.observe(document.body,{childList:true,subtree:true});i18nApply(document.body);};
+  if(document.body)start();else document.addEventListener("DOMContentLoaded",start);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+const DAYS={ca:["Dg","Dl","Dt","Dc","Dj","Dv","Ds"],es:["Do","Lu","Ma","Mi","Ju","Vi","Sá"],fr:["Di","Lu","Ma","Me","Je","Ve","Sa"],en:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]}[LANG];
+const MONTHS={ca:["Gener","Febrer","Març","Abril","Maig","Juny","Juliol","Agost","Setembre","Octubre","Novembre","Desembre"],es:["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"],fr:["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"],en:["January","February","March","April","May","June","July","August","September","October","November","December"]}[LANG];
 const PTS={1:35,2:28,3:22,4:18,5:15};
 const POS={1:"1r",2:"2n",3:"3r",4:"4t",5:"è"};
 const PCOL={1:"#c8a44a",2:"#888780",3:"#8b6c3c"};
 function wDir(d){
   const v=Number(d);
   if(!Number.isFinite(v))return "";
-  return ["Tramuntana","Gregal","Llevant","Xaloc","Migjorn","Garbí","Ponent","Mestral"][Math.round(v/45)%8];
+  return ({ca:["Tramuntana","Gregal","Llevant","Xaloc","Migjorn","Garbí","Ponent","Mestral"],es:["Tramontana","Gregal","Levante","Siroco","Mediodía","Lebeche","Poniente","Mistral"],fr:["Tramontane","Grégal","Levant","Sirocco","Vent du sud","Labech","Ponant","Mistral"],en:["North","Northeast","East","Southeast","South","Southwest","West","Northwest"]}[LANG])[Math.round(v/45)%8];
 }
 function compassDir(d){
   const v=Number(d);
   if(!Number.isFinite(v))return "";
-  return ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSO","SO","OSO","O","ONO","NO","NNO"][Math.round(v/22.5)%16];
+  return (LANG==="en"?["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"]:["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSO","SO","OSO","O","ONO","NO","NNO"])[Math.round(v/22.5)%16];
 }
 function wIcon(c){if(c===0)return"☀️";if(c<=3)return"⛅";if(c<=65)return"🌧️";if(c<=82)return"🌦️";return"⛈️";}
 
@@ -543,9 +1219,10 @@ const secBadge=secs=>{const c=[];if(secs.includes("competicio"))c.push(`<span st
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
 function richText(v){
   // Format bàsic i segur per avisos: primer escapem HTML i després permetem només **negreta** i salts de línia.
-  return esc(v||"")
+  // data-noi18n: el text de l'avís és de l'usuari i no es tradueix.
+  return '<span data-noi18n>'+esc(v||"")
     .replace(/\*\*([^*]+?)\*\*/g,"<strong>$1</strong>")
-    .replace(/\n/g,"<br>");
+    .replace(/\n/g,"<br>")+'</span>';
 }
 function insertAvisBold(textareaId){
   const el=document.getElementById(textareaId);
@@ -650,7 +1327,7 @@ function normalizeAllOutingEntries(){
   return changed;
 }
 // Data curta per a la primera fila de cada sortida, p. ex. "dc. 14/10".
-function outingShortDate(o){if(!o?.date)return "";const d=new Date(o.date+"T12:00:00");if(isNaN(d))return "";return `${d.toLocaleDateString("ca-ES",{weekday:"short"})} ${d.getDate()}/${d.getMonth()+1}`;}
+function outingShortDate(o){if(!o?.date)return "";const d=new Date(o.date+"T12:00:00");if(isNaN(d))return "";return `${d.toLocaleDateString(LOCALE,{weekday:"short"})} ${d.getDate()}/${d.getMonth()+1}`;}
 function outingDisplayTitle(o){
   if(!o)return "Sortida";
   if(isGeneralOuting(o)){
@@ -669,7 +1346,7 @@ function outingDisplayTitle(o){
   }
   return o.title||"Sortida";
 }
-function outingLabel(o){return `${outingDisplayTitle(o)} · ${new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"})} · ${o.time} h`;}
+function outingLabel(o){return `${outingDisplayTitle(o)} · ${new Date(o.date).toLocaleDateString(LOCALE,{weekday:"short",day:"numeric",month:"short"})} · ${o.time} h`;}
 function actorLabel(){return S.role==="patron"?"Patró":(S.userName||"Sistema");}
 function pushAviso(a){S.avisos.unshift({id:mkId(),date:td(),createdAt:nowIso(),pin:false,...a});}
 function addOutingLog(o,type,text,extra={}){
@@ -772,7 +1449,7 @@ function renderAttendancePanel(o,opts={}){
   const openAttr=opts.open?" open":"";
   const standalone=!!opts.standalone;
   const title=opts.title||"Confirmar assistència";
-  const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
+  const dateStr=new Date(o.date).toLocaleDateString(LOCALE,{weekday:"short",day:"numeric",month:"short"});
   const summary=att.closed
     ?`Tancada · ${counts.present} ha vingut · ${counts.absent} no · ${counts.excused} baixa`
     :`Pendent de tancar · ${people.length} persones`;
@@ -816,7 +1493,7 @@ function renderClosedAttendanceSummary(o){
   if(!canManageAttendance(o))return "";
   const att=ensureAttendance(o),counts=attendanceCounts(o);
   if(!att.closed)return renderAttendancePanel(o,{standalone:true});
-  const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
+  const dateStr=new Date(o.date).toLocaleDateString(LOCALE,{weekday:"short",day:"numeric",month:"short"});
   const absentNames=attendancePeople(o).filter(p=>(att.status?.[p.attKey]||"present")==="absent").map(p=>p.name);
   const excusedNames=attendancePeople(o).filter(p=>(att.status?.[p.attKey]||"present")==="excused").map(p=>p.name);
   const detailRows=`${absentNames.length?`<div style="font-size:16px;color:${RED};line-height:1.45;margin-top:8px"><strong>No presentats:</strong> ${absentNames.map(esc).join(", ")}</div>`:""}${excusedNames.length?`<div style="font-size:16px;color:#b07a10;line-height:1.45;margin-top:5px"><strong>Baixa / justificat:</strong> ${excusedNames.map(esc).join(", ")}</div>`:""}`||`<div style="font-size:16px;color:${MUTED};line-height:1.45;margin-top:8px">Tothom consta com a assistència confirmada.</div>`;
@@ -983,6 +1660,7 @@ function renderLogin(){
     ${btnP("⚓ PATRÓ","go({loginStep:'patron-pin',pinErr:false,pinErrMsg:''})")}
     ${btnS("🚣 SOCI / CAP DE GRUP","startSociLogin()")}
     ${btnT("+ Crear compte nou","go({loginStep:'register',regErr:'',regSections:['social']})")}
+    <div style="text-align:center;margin-top:14px">${langSelect(false)}</div>
   </div>`);
 
   // ── PIN DEL PATRÓ ─────────────────────────────────────────────────────────
@@ -1286,7 +1964,7 @@ function renderMeteo(){
   }).join("");
 
   const selDate=parseLocalDate(sel)||new Date(sel);
-  const selTitle=selDate.toLocaleDateString("ca-ES",{weekday:"long",day:"numeric",month:"long"});
+  const selTitle=selDate.toLocaleDateString(LOCALE,{weekday:"long",day:"numeric",month:"long"});
   const marineNote=S.marine?"":"<div style='font-size:15px;color:rgba(255,255,255,.48);margin-top:8px'>Estat del mar no disponible ara mateix.</div>";
   const daySummary=`${min!==null&&min!==undefined?Math.round(min)+'° / ':''}${max!==null&&max!==undefined?Math.round(max)+'°':''}${rainDay!==null&&rainDay!==undefined&&Number(rainDay)>0?` · Pluja ${num(rainDay,1)} mm`:''}`;
   const windMain=Number.isFinite(maxWind)?`${maxWind} kn ${bestWind?.wdeg!==null&&bestWind?.wdeg!==undefined?wDir(bestWind.wdeg):''}`:"—";
@@ -1373,7 +2051,7 @@ function renderClubCalendar(){
   const y=S.calYear,mo=S.calMonth,dim=new Date(y,mo+1,0).getDate();
   let sdow=new Date(y,mo,1).getDay();sdow=sdow===0?6:sdow-1;
   const byDate=eventsByDate(),tod=td();
-  const hdr=["Dl","Dt","Dc","Dj","Dv","Ds","Dg"].map(d=>`<div style="font-size:14px;color:${MUTED};text-align:center;padding:3px 0">${d}</div>`).join("");
+  const hdr=[1,2,3,4,5,6,0].map(i=>DAYS[i]).map(d=>`<div style="font-size:14px;color:${MUTED};text-align:center;padding:3px 0">${d}</div>`).join("");
   let cells="";for(let i=0;i<sdow;i++)cells+=`<div></div>`;
   for(let d=1;d<=dim;d++){
     const ds=`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
@@ -1405,7 +2083,7 @@ function renderClubAgenda(){
   const form=S.role==="patron"&&S.showEventForm?renderEventForm():"";
   let selectedBlock="";
   if(selectedDate&&selected.length){
-    const dateLabel=new Date(selectedDate+"T12:00:00").toLocaleDateString("ca-ES",{weekday:"long",day:"numeric",month:"long"});
+    const dateLabel=new Date(selectedDate+"T12:00:00").toLocaleDateString(LOCALE,{weekday:"long",day:"numeric",month:"long"});
     selectedBlock=`<div style="margin:12px 14px 4px;display:flex;align-items:center;justify-content:space-between"><div>${lbl("Esdeveniments del dia")}<div style="font-size:17px;color:#1a1a18;font-weight:700;text-transform:capitalize">${dateLabel}</div></div><span style="background:#fff;border:.5px solid ${BORDER};border-radius:20px;font-size:15px;color:${MUTED};padding:3px 9px">${selected.length}</span></div>`+selected.map(renderEventCard).join("");
   }else if(!S.showEventForm){
     selectedBlock=cc(`<div style="font-size:17px;color:${MUTED};text-align:center;padding:.6rem 0">Clica un dia amb punt de color per veure'n el detall.</div>`);
@@ -1443,7 +2121,7 @@ function renderOutingCard(o){
   const amWait=o.waitlist.some(entryMatchesCurrent);
   const canAccess=isGeneral?publicWaitlistOpen:(isMyGroup||isOpen||publicWaitlistOpen);
   const writeBlocked=readOnlyMode();
-  const dateStr=new Date(o.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
+  const dateStr=new Date(o.date).toLocaleDateString(LOCALE,{weekday:"short",day:"numeric",month:"short"});
   const ps=personalOutingState(o);
   const personalStatus=ps?`<div style="font-size:16px;color:${ps.col};background:${ps.bg};border:.5px solid ${ps.active?ps.col:BORDER};border-radius:10px;padding:8px 10px;margin-top:8px;font-weight:850;line-height:1.3;display:flex;align-items:center;gap:6px"><span>${ps.icon}</span><span>${ps.text}</span></div>`:"";
 
@@ -1737,7 +2415,7 @@ function renderMyNextOuting(){
     return cc(`${lbl("🚣 La meva propera sortida")}<div style="font-size:17px;color:${MUTED};line-height:1.45">No tens cap sortida propera. Quan t'apuntis a una sortida, apareixerà aquí.</div><div style="display:flex;justify-content:flex-end;margin-top:9px"><button onclick="go({screen:'entrena',section:'social'})" style="border:none;background:${BG};border-radius:8px;color:${DARK};font-size:15px;font-weight:800;padding:6px 9px;cursor:pointer">Veure sortides</button></div>`);
   }
   const ps=personalOutingState(next);
-  const dateStr=new Date(next.date).toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
+  const dateStr=new Date(next.date).toLocaleDateString(LOCALE,{weekday:"short",day:"numeric",month:"short"});
   return `<div style="background:#fff;border-radius:14px;margin:10px 14px 0;border:.5px solid ${BORDER};overflow:hidden">
     <div style="height:4px;background:${ps?.active?GREEN:DARK}"></div>
     <div style="padding:12px 14px">
@@ -1783,7 +2461,7 @@ function renderHomeOutingMini(o){
   const maxHelm=o.helmsmen||cfg?.helmsmen||0;
   const isClub=!o.groupId;
   const grp=isClub?"Club":gname(o.groupId).split(" · ")[0];
-  const dateStr=new Date((o.date||td())+"T12:00:00").toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"});
+  const dateStr=new Date((o.date||td())+"T12:00:00").toLocaleDateString(LOCALE,{weekday:"short",day:"numeric",month:"short"});
   const open=openTriggerReached(o);
   const noSpots=open&&!hasOpenGeneralSpots(o);
   const status=open?(noSpots?"⏳ Només espera":"🔓 Oberta"):(isGeneralOuting(o)?"🔒 Programada":"🔒 Grup");
@@ -2336,7 +3014,7 @@ function render(){
   const btnC=hasC?`<button onclick="go({section:'competicio',showForm:false})" style="flex:1;padding:7px;font-size:17px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="competicio"?DARK:"transparent"};color:${S.section==="competicio"?"#fff":MUTED}">🏆 Competició</button>`:"";
   const btnS=hasS?`<button onclick="go({section:'social',showForm:false})" style="flex:1;padding:7px;font-size:17px;font-weight:600;border:none;border-radius:8px;cursor:pointer;background:${S.section==="social"?DARK:"transparent"};color:${S.section==="social"?"#fff":MUTED}">⚓ Social</button>`:"";
   const st=hasBoth&&S.screen!=="inici"&&S.screen!=="vots"&&S.screen!=="estadistiques"&&S.screen!=="admin"&&S.screen!=="membres"&&S.screen!=="avisos"?`<div style="display:flex;margin:12px 14px 0;background:#e2dfd6;border-radius:10px;padding:3px">${btnC}${btnS}</div>`:"";
-  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:13px;opacity:.5;letter-spacing:.05em;white-space:nowrap">LLOP DE MAR</div><div style="font-size:21px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:15px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${esc(userSub)}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:16px;cursor:pointer">Sortir</button></div></div>${st}${renderSyncStatus()}${renderReadOnlyBanner()}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,editAvisId:null,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`:`go({screen:'${k}',showForm:false,showAvisForm:false,editAvisId:null,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`;return`<button onclick="${clk}" style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:${nav.length>6?9:nav.length>5?11:13}px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:${nav.length>6?20:22}px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:14px;font-weight:700;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:14px;font-weight:700;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="estadistiques"&&attPending>0&&S.screen!=="estadistiques"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:#e8a020;color:#fff;font-size:14px;font-weight:700;min-width:18px;height:18px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${attPending}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:14px;font-weight:700;min-width:18px;height:18px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${renderToast()}${S.showLogoutConfirm?renderLogoutModal():""}${S.showMemberAdded?renderMemberAddedModal():""}`;
+  root.innerHTML=`<div style="background:linear-gradient(135deg,${DARK},#122860);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:10px;min-width:0"><div style="background:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid ${RED};flex-shrink:0">${emblema.replace('width="50" height="50"','width="28" height="28"')}</div><div style="min-width:0"><div style="font-size:13px;opacity:.5;letter-spacing:.05em;white-space:nowrap">LLOP DE MAR</div><div style="font-size:21px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titles[S.screen]||"Inici"}</div>${userSub?`<div style="font-size:15px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">👤 ${esc(userSub)}</div>`:""}</div></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${rb}${langSelect(true)}<button onclick="doLogout()" style="background:rgba(255,255,255,.1);border:none;border-radius:6px;color:rgba(255,255,255,.6);padding:5px 10px;font-size:16px;cursor:pointer"><span data-noi18n>${LANG==="en"?"Log out":tr("Sortir")}</span></button></div></div>${st}${renderSyncStatus()}${renderReadOnlyBanner()}<div style="padding-bottom:70px">${(screens[S.screen]||renderInici)()}</div><div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;border-top:.5px solid ${BORDER};background:#fff;z-index:100">${nav.map(([k,ic,lb,sec])=>{const isActive=S.screen===k&&(!sec||S.section===sec);const clk=sec?`go({screen:'${k}',section:'${sec}',showForm:false,showAvisForm:false,editAvisId:null,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`:`go({screen:'${k}',showForm:false,showAvisForm:false,editAvisId:null,showMembreForm:false,editMemberId:null,editMemberSections:['social'],showOutingHistory:false,showEventForm:false,editEventId:null,eventErr:''})`;return`<button onclick="${clk}" style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;font-size:${nav.length>6?9:nav.length>5?11:13}px;color:${isActive?DARK:MUTED};gap:2px;border:none;background:none;font-weight:${isActive?700:400};position:relative"><span style="font-size:${nav.length>6?20:22}px">${ic}</span>${lb}${k==="vots"&&opc>0&&S.screen!=="vots"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:14px;font-weight:700;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center">${opc}</span>`:""}${k==="membres"&&pendingCount>0&&S.screen!=="membres"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${RED};color:#fff;font-size:14px;font-weight:700;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center">${pendingCount}</span>`:""}${k==="estadistiques"&&attPending>0&&S.screen!=="estadistiques"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:#e8a020;color:#fff;font-size:14px;font-weight:700;min-width:18px;height:18px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${attPending}</span>`:""}${k==="avisos"&&avisUnread>0&&S.screen!=="avisos"?`<span style="position:absolute;top:5px;right:calc(50% - 18px);background:${GREEN};color:#fff;font-size:14px;font-weight:700;min-width:18px;height:18px;padding:0 4px;border-radius:9px;display:flex;align-items:center;justify-content:center">${avisUnread}</span>`:""}</button>`}).join("")}</div>${renderToast()}${S.showLogoutConfirm?renderLogoutModal():""}${S.showMemberAdded?renderMemberAddedModal():""}`;
   }catch(err){
     console.error("❌ Error en render():",err);
     root.innerHTML=`<div style="min-height:100vh;background:linear-gradient(160deg,${DARK} 60%,#122860);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:2rem;text-align:center"><div style="color:#fff;font-size:22px;font-weight:700">Error inesperat</div><div style="color:rgba(255,255,255,.5);font-size:17px">${esc(err.message||"Refresca la pàgina")}</div><button onclick="location.reload()" style="background:${RED};border:none;border-radius:12px;color:#fff;padding:12px 24px;font-size:19px;font-weight:700;cursor:pointer;margin-top:8px">↻ Refresca</button></div>`;
@@ -2893,7 +3571,7 @@ function formatNaturalOpenLabel(o){
   if(diff===0)return `avui a les ${hora}`;
   if(diff===1)return `demà a les ${hora}`;
   if(diff===-1)return `ahir a les ${hora}`;
-  return `${openDate.toLocaleDateString("ca-ES",{weekday:"short",day:"numeric",month:"short"})} a les ${hora}`;
+  return `${openDate.toLocaleDateString(LOCALE,{weekday:"short",day:"numeric",month:"short"})} a les ${hora}`;
 }
 
 function outingCapacity(o){

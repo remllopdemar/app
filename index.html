@@ -512,7 +512,7 @@ const I18N_DATA=[["Aquest navegador no suporta xifrat segur.","Este navegador no
 ["Nou soci","Nuevo socio","Nouveau membre","New member"],
 ["Afegir soci","Añadir socio","Ajouter un membre","Add member"],
 ["Socis actius","Socios activos","Membres actifs","Active members"],
-["🔍 Cerca per nom o grup","🔍 Buscar por nombre o grupo","🔍 Rechercher par nom ou groupe","🔍 Search by name or group"],
+["🔍 Cerca per nom","🔍 Buscar por nombre","🔍 Rechercher par nom","🔍 Search by name"],
 ["Cap soci coincideix amb la cerca","Ningún socio coincide con la búsqueda","Aucun membre ne correspond à la recherche","No members match your search"],
 ["🏆 Competi","🏆 Comp.","🏆 Compét.","🏆 Comp."],
 ["🧭 Cap","🧭 Jefe","🧭 Chef","🧭 Leader"],
@@ -2815,14 +2815,16 @@ function renderAdminTecnic(){
 
 // ── Cercador de socis (pàgina Membres, patró) ───────────────────────────────
 function normSearch(t){return String(t||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim();}
-function memberSearchText(m){const gs=[gname(m.groupId),m.groupId2?gname(m.groupId2):""];return normSearch([m.name,...gs,...gs.map(g=>g?tr(g):"")].join(" "));}
+function memberSearchText(m){return normSearch(m.name);}
+function memberGroupHead(g,n){return `${g} · ${n} soci${n!==1?"s":""}`;}
 function searchWordsMatch(t,q){const tw=(" "+t).split(/[^a-z0-9]+/);return normSearch(q).split(" ").filter(Boolean).every(w=>tw.some(x=>x.startsWith(w)));}
 function memberMatchesSearch(m,q){return searchWordsMatch(memberSearchText(m),q);}
 function filterMembres(v){
-  S.memberQuery=v;const q=normSearch(v),ws=q?q.split(" "):[];let any=false;
+  S.memberQuery=v;const q=normSearch(v);let any=false;
   document.querySelectorAll("[data-mgrup]").forEach(g=>{let n=0;
     g.querySelectorAll("[data-msearch]").forEach(c=>{const ok=searchWordsMatch(c.getAttribute("data-msearch"),q);c.style.display=ok?"block":"none";if(ok)n++;});
-    g.style.display=n?"block":"none";if(n)any=true;});
+    g.style.display=n?"block":"none";if(n)any=true;
+    const h=g.querySelector("[data-mhead]");if(h)h.textContent=memberGroupHead(h.getAttribute("data-mhead"),n);});
   const e=document.getElementById("m-cerca-buit");if(e)e.style.display=q&&!any?"block":"none";
 }
 function renderMembres(){
@@ -2862,11 +2864,11 @@ function renderMembres(){
 
   const mq=normSearch(S.memberQuery||"");
   const cerca=`<div style="margin:12px 14px 0;position:relative">
-    <input id="m-cerca" type="search" autocomplete="off" value="${esc(S.memberQuery||"")}" oninput="filterMembres(this.value)" placeholder="🔍 Cerca per nom o grup" style="width:100%;padding:11px 12px;border-radius:10px;border:1px solid ${BORDER};font-size:18px;background:#fff;outline:none;box-sizing:border-box">
+    <input id="m-cerca" type="search" autocomplete="off" value="${esc(S.memberQuery||"")}" oninput="filterMembres(this.value)" placeholder="🔍 Cerca per nom" style="width:100%;padding:11px 12px;border-radius:10px;border:1px solid ${BORDER};font-size:18px;background:#fff;outline:none;box-sizing:border-box">
     <div id="m-cerca-buit" style="display:${mq&&!active.some(m=>memberMatchesSearch(m,mq))?"block":"none"};font-size:17px;color:${MUTED};text-align:center;padding:14px 0 4px">Cap soci coincideix amb la cerca</div>
   </div>`;
   const llista=byG.map(({g,ms})=>`<div data-mgrup style="margin-bottom:4px;display:${!mq||ms.some(m=>memberMatchesSearch(m,mq))?"block":"none"}">
-    <div style="font-size:15px;font-weight:600;color:${MUTED};text-transform:uppercase;letter-spacing:.05em;margin:14px 14px 6px">${esc(g.name)} · ${ms.length} soci${ms.length!==1?"s":""}</div>
+    <div style="font-size:15px;font-weight:600;color:${MUTED};text-transform:uppercase;letter-spacing:.05em;margin:14px 14px 6px" data-mhead="${esc(g.name)}">${esc(memberGroupHead(g.name,mq?ms.filter(m=>memberMatchesSearch(m,mq)).length:ms.length))}</div>
     ${ms.map(m=>`<div data-msearch="${esc(memberSearchText(m))}" style="background:#fff;border-radius:12px;margin:0 14px 6px;padding:12px 14px;border:.5px solid ${BORDER};display:${!mq||memberMatchesSearch(m,mq)?"block":"none"}">
       <div style="display:flex;align-items:center;justify-content:space-between">
         <div style="flex:1">

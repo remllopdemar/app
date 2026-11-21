@@ -604,6 +604,7 @@ const I18N_DATA=[["Aquest navegador no suporta xifrat segur.","Este navegador no
 ["{} obre a tothom la inscripció de {}.","{} abre a todos la inscripción de {}.","{} ouvre à tous l'inscription à {}.","{} opens sign-up for {} to everyone.","{} apre a tutti l'iscrizione a {}.","{} abre a todos a inscrição em {}."],
 ["Sortida oberta a tothom.","Salida abierta a todos.","Sortie ouverte à tous.","Outing open to everyone.","Uscita aperta a tutti.","Saída aberta a todos."],
 ["Aquesta sortida ja ha arribat a l'hora d'obertura automàtica. Només es pot tancar una obertura manual abans d'hora.","Esta salida ya ha llegado a la hora de apertura automática. Solo se puede cerrar una apertura manual antes de hora.","Cette sortie a déjà atteint l'heure d'ouverture automatique. Seule une ouverture manuelle anticipée peut être refermée.","This outing has already reached its automatic opening time. Only an early manual opening can be closed.","Questa uscita ha già raggiunto l'ora di apertura automatica. Si può chiudere solo un'apertura manuale anticipata.","Esta saída já chegou à hora de abertura automática. Só se pode fechar uma abertura manual antecipada."],
+["{} tanca a tothom la inscripció de {}. Torna a quedar reservada fins a l'obertura automàtica.","{} cierra a todos la inscripción de {}. Vuelve a quedar reservada hasta la apertura automática.","{} ferme à tous l'inscription à {}. Elle redevient réservée jusqu'à l'ouverture automatique.","{} closes sign-up for {} to everyone. It's reserved again until automatic opening.","{} chiude a tutti l'iscrizione a {}. Torna riservata fino all'apertura automatica.","{} fecha a todos a inscrição em {}. Volta a ficar reservada até à abertura automática."],
 ["El patró tanca a tothom la inscripció de {}. Torna a quedar reservada fins a l'obertura automàtica.","El patrón cierra a todos la inscripción de {}. Vuelve a quedar reservada hasta la apertura automática.","Le patron ferme à tous l'inscription à {}. Elle redevient réservée jusqu'à l'ouverture automatique.","The skipper closes sign-up for {} to everyone. It's reserved again until automatic opening.","Il patrone chiude a tutti l'iscrizione a {}. Torna riservata fino all'apertura automatica.","O patrão fecha a todos a inscrição em {}. Volta a ficar reservada até à abertura automática."],
 ["Obertura manual tancada.","Apertura manual cerrada.","Ouverture manuelle fermée.","Manual opening closed.","Apertura manuale chiusa.","Abertura manual fechada."],
 ["Cancel·lar la sortida?","¿Cancelar la salida?","Annuler la sortie ?","Cancel the outing?","Annullare l'uscita?","Cancelar a saída?"],
@@ -2262,7 +2263,7 @@ function renderOutingCard(o){
   }
   if((isMyCap||isPatron)&&!isPast&&!openTrigger&&!o.isOpen&&!writeBlocked)
     acts.push(`<button onclick="openOut(${o.id})" style="padding:9px 12px;background:${GREEN};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:16px;cursor:pointer">🔓 Obrir</button>`);
-  if(isPatron&&!isPast&&o.isOpen&&!autoOpenReached(o)&&!writeBlocked)
+  if((isMyCap||isPatron)&&!isPast&&o.isOpen&&!autoOpenReached(o)&&!writeBlocked)
     acts.push(`<button onclick="closeOut(${o.id})" style="padding:9px 12px;background:#fff;border:.5px solid ${RED};border-radius:8px;color:${RED};font-size:16px;font-weight:700;cursor:pointer">🔒 Tancar a tots</button>`);
   if(isPatron&&!isPast&&!writeBlocked)
     acts.push(`<button onclick="go({patronAddOuting:${o.id}})" style="padding:9px 12px;background:#fff;border:.5px solid ${DARK};border-radius:8px;color:${DARK};font-size:16px;font-weight:600;cursor:pointer">+ Afegir soci</button>`);
@@ -3343,20 +3344,22 @@ async function openOut(oid){
   }));
 }
 async function closeOut(oid){
-  if(S.role!=="patron")return;
   if(!canWriteNow())return;
   const lock=`close:${oid}`;
   return withActionLock(lock,()=>outingTxn(async()=>{
     await refreshOutingsBeforeAction();
     const o=S.outings.find(x=>x.id===oid);
     if(!o||isPastOuting(o)||!o.isOpen)return;
+    const isPatron=S.role==="patron";
+    const isOwnCap=!isGeneralOuting(o)&&S.role==="cap"&&S.capGroupId===o.groupId;
+    if(!isPatron&&!isOwnCap)return;
     if(autoOpenReached(o)){
       alert("Aquesta sortida ja ha arribat a l'hora d'obertura automàtica. Només es pot tancar una obertura manual abans d'hora.");
       return;
     }
     o.isOpen=false;
     delete o.openedAt;
-    addOutingLog(o,"outing_closed_manual",`El patró tanca a tothom la inscripció de ${outingLabel(o)}. Torna a quedar reservada fins a l'obertura automàtica.`);
+    addOutingLog(o,"outing_closed_manual",`${actorLabel()} tanca a tothom la inscripció de ${outingLabel(o)}. Torna a quedar reservada fins a l'obertura automàtica.`);
     if(await commitOutings()===TXN_RETRY)return TXN_RETRY;
     showToast("ok","Obertura manual tancada.");
   }));

@@ -3147,7 +3147,7 @@ async function setOutingNoAttend(oid){
     o.helmsmanSignups=o.helmsmanSignups.filter(e=>!entryMatchesCurrent(e));
     o.signups=o.signups.filter(e=>!entryMatchesCurrent(e));
     o.waitlist=o.waitlist.filter(e=>!entryMatchesCurrent(e));
-    o.noAttend.push({name:S.userName,gid:ownGroup,mid:S.memberId,ts:nowIso()});
+    o.noAttend.push({name:S.userName,gid:Number(o.groupId),mid:S.memberId,ts:nowIso()});
     if(wasIn)reconcileOutingWaitlist(o);
     if(wasHelm)addOutingLog(o,"helm_unsignup",`${S.userName} es desapunta de timonel de ${outingLabel(o)}.`);
     if(wasIn)addOutingLog(o,"unsignup",`${S.userName} allibera la plaça de ${outingLabel(o)}.`);

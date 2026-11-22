@@ -2681,8 +2681,8 @@ function memberAttendanceHistory(m){
   });
   return out.sort((a,b)=>sortOutings(b.o,a.o));
 }
-// Desapuntades fetes pel mateix soci (no les que fa el patró). "Última hora" = menys de 24 h abans de la sortida.
-const UNSIGNUP_LATE_HOURS=24;
+// Desapuntades fetes pel mateix soci (no les que fa el patró). "Última hora" = menys d'1 h abans de la sortida (criteri de Nacho, 2026-11-22).
+const UNSIGNUP_LATE_HOURS=1;
 function memberUnsignupStats(m){
   const out={total:0,late:0,items:[]};if(!m)return out;
   const nk=normalizeNameKey(m.name),seen=new Set();

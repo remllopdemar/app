@@ -1,0 +1,1025 @@
+<!doctype html>
+<html lang="ca">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Guia de l'app · Llop de Mar</title>
+<meta name="description" content="Guia per als socis de l'app del Club de Rem Llop de Mar: entrar, apuntar-se a les sortides, avisos, enquestes i calendari.">
+<link rel="icon" type="image/png" sizes="48x48" href="./Assets/favicon-48.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./Assets/apple-touch-icon.png">
+<!-- Guia per als socis. Mantenir-la al dia quan canviïn els fluxos de l'app (6 idiomes: ca/es/fr/en/it/pt).
+     Les captures són a guia/<idioma>/ i es fan amb dades fictícies. -->
+<style>
+:root{--dark:#1b3a7a;--red:#c8102e;--bg:#f4f1eb;--muted:#6b6963;--border:#ddd9d0;--ink:#1a1a18}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:70px}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%}
+header.top{position:sticky;top:0;z-index:5;background:linear-gradient(135deg,var(--dark),#122860);color:#fff;padding:10px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+header.top img{width:36px;height:36px;border-radius:50%;background:#fff;border:2px solid var(--red)}
+header.top .t{font-weight:700;letter-spacing:.04em;flex:1;min-width:120px;line-height:1.15}
+header.top .t small{display:block;font-weight:400;opacity:.65;font-size:13px;letter-spacing:.02em}
+.langs{display:flex;gap:4px;flex-wrap:wrap}
+.langs button{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;padding:5px 8px;font:600 14px/1 inherit;cursor:pointer}
+.langs button[aria-pressed="true"]{background:#fff;color:var(--dark)}
+main{max-width:720px;margin:0 auto;padding:8px 16px 40px}
+h1{font-size:28px;line-height:1.2;color:var(--dark);margin:18px 0 8px}
+h2{font-size:23px;color:var(--dark);margin:38px 0 8px;padding-top:12px;border-top:2px solid var(--border)}
+h3{font-size:19px;margin:24px 0 6px}
+p,ul,ol,dl{margin:8px 0}
+li{margin:4px 0}
+.lead{font-size:18px}
+.tip{background:#fff;border-left:4px solid var(--red);border-radius:8px;padding:10px 14px}
+.open{margin:14px 0 0}
+.btn{display:inline-block;background:var(--red);color:#fff;text-decoration:none;font-weight:700;padding:10px 16px;border-radius:10px}
+.toc{background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin:16px 0;display:flex;flex-direction:column;gap:2px}
+.toc a{color:var(--dark);text-decoration:none;padding:3px 0}
+.toc a:hover{text-decoration:underline}
+table{border-collapse:collapse;width:100%;background:#fff;border-radius:10px;overflow:hidden;margin:10px 0;font-size:16px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+th{background:#eef0fa;color:var(--dark)}
+tr:last-child td{border-bottom:none}
+figure.shot{margin:14px auto;text-align:center}
+figure.shot img{display:block;width:100%;height:auto;margin:0 auto;border:1px solid var(--border);background:#fff}
+figure.phone{max-width:290px}
+figure.phone img{border-radius:18px;box-shadow:0 6px 22px rgba(0,0,0,.14)}
+figure.card{max-width:360px}
+figure.card img{border-radius:14px;box-shadow:0 3px 12px rgba(0,0,0,.08)}
+figcaption{font-size:14px;color:var(--muted);margin-top:6px}
+dt{font-weight:700;margin-top:14px}
+dd{margin:2px 0 0}
+footer{margin-top:40px;padding-top:14px;border-top:1px solid var(--border);font-size:14px;color:var(--muted)}
+footer a{color:var(--dark)}
+@media (min-width:760px){figure.phone+figure.phone{margin-top:-4px}}
+@media print{header.top,.open,footer a{display:none}body{background:#fff;font-size:12pt}h2{break-before:page}figure.shot{break-inside:avoid}figure.phone{max-width:200px}figure.card{max-width:260px}figure img{box-shadow:none!important}article[hidden]{display:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<img src="./Assets/icon-192.png" alt="">
+<div class="t">LLOP DE MAR<small id="ttl">Guia de l'app</small></div>
+<nav class="langs" aria-label="Idioma"><button type="button" data-lang="ca" title="Català">CA</button><button type="button" data-lang="es" title="Castellano">ES</button><button type="button" data-lang="fr" title="Français">FR</button><button type="button" data-lang="en" title="English">EN</button><button type="button" data-lang="it" title="Italiano">IT</button><button type="button" data-lang="pt" title="Português">PT</button></nav>
+</header>
+<main>
+<article lang="ca" id="lang-ca" hidden>
+<p class="open"><a class="btn" href="./">Obrir l'app →</a></p>
+<h1>Guia de l'app del club</h1>
+<p class="lead">Amb l'app del Llop de Mar t'apuntes a les sortides, veus els avisos, votes a les enquestes i consultes el temps i el calendari. Funciona des del navegador del mòbil, sense instal·lar res.</p>
+<p class="tip"><b>Consell:</b> obre l'app i desa-la a la pantalla d'inici del mòbil (al menú del navegador, «Afegir a la pantalla d'inici»). La tindràs com una app més.</p>
+
+<nav class="toc"><b>Contingut</b>
+<a href="#ca-entrar">1. Entrar a l'app</a>
+<a href="#ca-inici">2. La pantalla Inici</a>
+<a href="#ca-sortides">3. Sortides</a>
+<a href="#ca-despres">4. Després de la sortida</a>
+<a href="#ca-altres">5. Avisos, enquestes i calendari</a>
+<a href="#ca-caps">6. Per als caps de grup</a>
+<a href="#ca-faq">7. Preguntes freqüents</a>
+</nav>
+
+<h2 id="ca-entrar">1. Entrar a l'app</h2>
+<p>A la pantalla d'entrada pots triar l'<b>idioma</b> (català, castellano, français, English, italiano o português). L'app el recorda en aquest mòbil.</p>
+<figure class="shot phone"><img src="guia/ca/01-login.webp" alt="Pantalla d'entrada amb el selector d'idioma" loading="lazy"><figcaption>Pantalla d'entrada amb el selector d'idioma</figcaption></figure>
+
+<h3>Si el club ja t'ha donat d'alta</h3>
+<ol>
+<li>Toca <b>🚣 SOCI / CAP DE GRUP</b>.</li>
+<li>Escriu el teu <b>Nom i cognom</b> tal com et va registrar el club. Com que és la primera vegada, <b>deixa la clau en blanc</b> i toca <b>ENTRAR</b>.</li>
+<li>Crea la teva clau personal (mínim 6 caràcters): escriu-la a <b>Nova clau</b>, repeteix-la a <b>Confirma la clau</b> i toca <b>CREAR CLAU I ENTRAR</b>.</li>
+</ol>
+<figure class="shot phone"><img src="guia/ca/02-nom-clau.webp" alt="Escriu el teu nom i la clau" loading="lazy"><figcaption>Escriu el teu nom i la clau</figcaption></figure>
+<figure class="shot phone"><img src="guia/ca/03-primera-clau.webp" alt="Primera vegada: crear la clau" loading="lazy"><figcaption>Primera vegada: crear la clau</figcaption></figure>
+
+<h3>Si encara no tens compte</h3>
+<ol>
+<li>A la pantalla d'entrada toca <b>+ Crear compte nou</b>.</li>
+<li>Escriu el <b>Nom i cognom</b> i tria el teu <b>grup</b> (A, B, C, D, E o F; és obligatori).</li>
+<li>Marca la secció: <b>⚓ Social</b>, <b>🏆 Competició</b> o totes dues.</li>
+<li>Crea la clau (mínim 6 caràcters), confirma-la i toca <b>ENVIAR SOL·LICITUD</b>.</li>
+</ol>
+<figure class="shot phone"><img src="guia/ca/04-registre.webp" alt="Formulari per crear un compte nou" loading="lazy"><figcaption>Formulari per crear un compte nou</figcaption></figure>
+<p>El patró ha d'aprovar el compte. Quan l'aprovi, entra amb el teu nom i la clau que has creat.</p>
+
+<h3>Les properes vegades</h3>
+<p>El mòbil recorda qui va entrar l'última vegada: toca <b>🚣 SOCI / CAP DE GRUP</b> i només cal escriure la clau. Si el mòbil és d'una altra persona, toca <b>No ets tu? Canvia de soci</b>.</p>
+<figure class="shot phone"><img src="guia/ca/03b-tornar.webp" alt="Entrada ràpida: només la clau" loading="lazy"><figcaption>Entrada ràpida: només la clau</figcaption></figure>
+<p>No cal tancar la sessió. Si fas servir un mòbil compartit, toca <b>Sortir</b> a dalt a la dreta.</p>
+
+<h2 id="ca-inici">2. La pantalla Inici</h2>
+<p>És el primer que veus en entrar:</p>
+<ul>
+<li><b>🚣 La meva propera sortida</b>: on estàs apuntat i com (vogador, timonel, reserva o llista d'espera amb la teva posició).</li>
+<li><b>Avisos</b>: els dos últims avisos que et toquen.</li>
+<li><b>Vent i estat del mar</b> al port per als dies de sortida. Toca un dia per veure'l per franges. És una previsió, no una mesura en directe.</li>
+<li>Les properes sortides, les enquestes obertes i el calendari del club.</li>
+</ul>
+<figure class="shot phone"><img src="guia/ca/05-inici.webp" alt="Pantalla Inici" loading="lazy"><figcaption>Pantalla Inici</figcaption></figure>
+<figure class="shot card"><img src="guia/ca/15-temps.webp" alt="Previsió de vent i mar" loading="lazy"><figcaption>Previsió de vent i mar</figcaption></figure>
+
+<h2 id="ca-sortides">3. Sortides</h2>
+<p>Les sortides de la setmana següent apareixen cada <b>dissabte a les 8:00</b>. Hi ha sortides de grup el dilluns i el dimecres, i sortides obertes a tothom el divendres.</p>
+
+<h3>Horaris i obertura</h3>
+<p>Cada grup té la seva hora. Si ets del grup, t'hi pots apuntar des del dissabte. A l'hora d'obertura general la sortida s'obre a tots els socis.</p>
+<table>
+<tr><th>Grup</th><th>Hora</th><th>S'obre a tothom</th></tr>
+<tr><td>F</td><td>8:00</td><td>El dia abans a les 20:00</td></tr>
+<tr><td>E Matins</td><td>9:15</td><td>El dia abans a les 20:00</td></tr>
+<tr><td>D</td><td>16:30</td><td>El mateix dia a les 7:30</td></tr>
+<tr><td>C</td><td>17:45</td><td>El mateix dia a les 7:30</td></tr>
+<tr><td>B</td><td>19:00</td><td>El mateix dia a les 7:30</td></tr>
+<tr><td>A</td><td>20:15</td><td>El mateix dia a les 7:30</td></tr>
+<tr><td>Divendres (oberta)</td><td>17:30 i 18:45</td><td>Dilluns a les 7:30</td></tr>
+</table>
+<p>Les sortides de divendres són per a tots els grups: 12 places de vogador i fins a 4 de timonel cadascuna.</p>
+
+<h3>La pestanya Sortides</h3>
+<p>Ves a <b>Sortides</b> (a baix). A dalt hi ha <b>El teu grup</b>: les sortides del teu grup, les obertes a tothom i aquelles on ja estàs apuntat.</p>
+<figure class="shot phone"><img src="guia/ca/06-sortides.webp" alt="Pestanya Sortides" loading="lazy"><figcaption>Pestanya Sortides</figcaption></figure>
+<p>Les sortides d'altres grups que ja s'han obert estan plegades a sota, al botó taronja <b>Sortides d'altres grups obertes</b>. Tenen la vora taronja i, si t'hi apuntes, l'app et demana confirmació. Apunta-t'hi només si hi vols anar de veritat.</p>
+<figure class="shot card"><img src="guia/ca/10-altres-boto.webp" alt="Botó de sortides d'altres grups" loading="lazy"><figcaption>Botó de sortides d'altres grups</figcaption></figure>
+<figure class="shot card"><img src="guia/ca/11-altre-grup.webp" alt="Sortida d'un altre grup, amb vora taronja" loading="lazy"><figcaption>Sortida d'un altre grup, amb vora taronja</figcaption></figure>
+
+<h3>Com t'hi apuntes</h3>
+<ol>
+<li>Busca la sortida i toca <b>✋ M'hi apunto</b>.</li>
+<li>Si vols fer de timonel i la sortida en necessita, toca <b>⛵ Timonel</b> en lloc de M'hi apunto. No pots ser vogador i timonel alhora.</li>
+<li>Toca <b>Veure llista</b> per veure qui hi va.</li>
+</ol>
+<figure class="shot card"><img src="guia/ca/07-dimecres.webp" alt="Sortida del teu grup, encara reservada al grup" loading="lazy"><figcaption>Sortida del teu grup, encara reservada al grup</figcaption></figure>
+
+<h3>Si no pots venir</h3>
+<ul>
+<li>Si estàs apuntat, toca <b>Desapuntar-me</b> com més aviat millor: la plaça passa a qui espera. Les baixes de menys de 24 hores queden registrades com a baixes d'última hora.</li>
+<li>A les sortides del teu grup també hi ha <b>✕ No puc venir</b>. Serveix perquè el cap sàpiga que aquell dia no hi seràs. Si estaves apuntat, et desapunta. Si canvies d'idea, torna-hi a tocar i s'esborra la resposta.</li>
+</ul>
+<figure class="shot card"><img src="guia/ca/08-apuntat.webp" alt="Sortida on ja estàs apuntat" loading="lazy"><figcaption>Sortida on ja estàs apuntat</figcaption></figure>
+
+<h3>Plaça de reserva i llista d'espera</h3>
+<ul>
+<li><b>Reserva:</b> les sortides de grup tenen una plaça de reserva per a la gent del grup. Si queda lliure una plaça normal, la reserva hi puja sola.</li>
+<li><b>Llista d'espera:</b> si la sortida és plena, el botó canvia a <b>⏳ Llista d'espera</b>. Toca'l i quedes a la cua, amb la teva posició. Per sortir-ne, toca <b>Sortir</b> a sota de la teva posició.</li>
+<li>Si algú es desapunta, el primer de la llista entra automàticament. Qui s'ha apuntat abans de l'obertura general té prioritat si és del grup.</li>
+</ul>
+<figure class="shot card"><img src="guia/ca/09-plena.webp" alt="Sortida plena: només queda la llista d'espera" loading="lazy"><figcaption>Sortida plena: només queda la llista d'espera</figcaption></figure>
+
+<h3>Què vol dir cada etiqueta</h3>
+<table>
+<tr><th>Etiqueta</th><th>Què vol dir</th></tr>
+<tr><td>🔒 Reservada</td><td>Només s'hi pot apuntar el grup de la sortida, fins a l'obertura general</td></tr>
+<tr><td>🔒 Programada</td><td>Sortida de divendres que encara no s'ha obert (s'obre dilluns a les 7:30)</td></tr>
+<tr><td>🔓 Oberta a tots</td><td>Qualsevol soci s'hi pot apuntar</td></tr>
+<tr><td>⏳ Oberta · només espera</td><td>És plena: només pots entrar a la llista d'espera</td></tr>
+<tr><td>Sortida passada</td><td>Han passat 15 minuts de l'hora de sortida i ja no s'hi pot fer cap canvi</td></tr>
+</table>
+<p>Tens dubtes? A la pestanya Sortides hi ha l'apartat <b>Com funcionen les sortides?</b> amb un resum.</p>
+
+<h3>Segon grup</h3>
+<p>Si rems habitualment amb dos grups, demana al patró que t'assigni un <b>segon grup</b>. Veuràs les sortides dels dos grups com a pròpies, amb la mateixa prioritat.</p>
+
+<h2 id="ca-despres">4. Després de la sortida</h2>
+<p>El cap de grup confirma qui ha vingut. Si estaves apuntat i no vens sense haver-te desapuntat, compta com a <b>No presentat</b>. A la pestanya <b>Stats</b>, a <b>Les meves dades</b>, hi veus les teves assistències i el rànquing de participació del club.</p>
+
+<h2 id="ca-altres">5. Avisos, enquestes i calendari</h2>
+<h3>Avisos</h3>
+<p>A la pestanya <b>Avisos</b> hi ha els missatges del patró i del teu cap de grup. Només hi veus els que et toquen: generals, de la teva secció o del teu grup. Els marcats amb 📌 són importants i surten a dalt de tot.</p>
+<figure class="shot phone"><img src="guia/ca/12-avisos.webp" alt="Pestanya Avisos" loading="lazy"><figcaption>Pestanya Avisos</figcaption></figure>
+<h3>Enquestes</h3>
+<p>A <b>Enquestes</b>, toca <b>Votar aquesta opció</b>. Pots canviar el vot mentre l'enquesta estigui oberta. Els vots no són anònims: els noms es veuen a <b>Veure votants</b>.</p>
+<figure class="shot phone"><img src="guia/ca/13-enquestes.webp" alt="Pestanya Enquestes" loading="lazy"><figcaption>Pestanya Enquestes</figcaption></figure>
+<h3>Calendari</h3>
+<p>A <b>Calendari</b> hi ha les regates i els esdeveniments del club. Les sortides habituals no hi surten. Toca un dia marcat per veure'n el detall.</p>
+<figure class="shot phone"><img src="guia/ca/14-calendari.webp" alt="Calendari del club" loading="lazy"><figcaption>Calendari del club</figcaption></figure>
+
+<h2 id="ca-caps">6. Per als caps de grup</h2>
+<ul>
+<li>Pots <b>🔓 Obrir</b> a tothom la sortida del teu grup abans d'hora, i tornar-la a tancar amb <b>🔒 Tancar als de fora del grup</b> mentre no hagi arribat l'obertura general.</li>
+<li>Pots publicar avisos per al teu grup a la pestanya Avisos.</li>
+<li>Després de cada sortida, a Inici et surt l'avís <b>Tens 1 sortida per confirmar l'assistència</b>. Toca <b>Confirmar</b>, marca ✅ Ha remat, ❌ No presentat o ➖ Baixa / justificat, i toca <b>Tancar assistència</b>. Només les llistes tancades compten a les estadístiques.</li>
+</ul>
+<figure class="shot card"><img src="guia/ca/16-cap-avis.webp" alt="Avís per confirmar l'assistència" loading="lazy"><figcaption>Avís per confirmar l'assistència</figcaption></figure>
+
+<h2 id="ca-faq">7. Preguntes freqüents</h2>
+<dl>
+<dt>Escric el nom i em diu «Nom o clau incorrecta».</dt>
+<dd>Escriu el nom tal com et vas registrar (els accents i les majúscules no importen). Si has demanat el compte fa poc, potser el patró encara no l'ha aprovat.</dd>
+<dt>He oblidat la clau.</dt>
+<dd>Demana al patró que te la reiniciï. Després entra amb el teu nom, deixa la clau en blanc i en crearàs una de nova.</dd>
+<dt>No veig la pestanya Sortides.</dt>
+<dd>Si només ets de competició, la pestanya es diu <b>Entrena</b>. Si ets de les dues seccions, canvia entre <b>🏆 Competició</b> i <b>⚓ Social</b> a dalt de la pantalla.</dd>
+<dt>Em surt «Mode només lectura».</dt>
+<dd>L'app no s'ha pogut connectar i et mostra les dades guardades. Comprova la connexió i toca <b>Actualitzar</b>. Mentre surti aquest avís no et pots apuntar ni desapuntar.</dd>
+<dt>No puc apuntar-me a una sortida.</dt>
+<dd>Pot ser que encara estigui reservada a un altre grup, que sigui un divendres abans de dilluns a les 7:30, o que ja hagin passat 15 minuts de l'hora de sortida.</dd>
+<dt>Com canvio l'idioma?</dt>
+<dd>Toca <b>Sortir</b>, tria l'idioma a la pantalla d'entrada i torna a entrar.</dd>
+</dl>
+
+<footer><span>Actualitzada el 22/11/2026</span> · <a href="./">Obrir l'app</a> · <a href="#" onclick="window.print();return false">Imprimir</a></footer>
+</article>
+<article lang="es" id="lang-es" hidden>
+<p class="open"><a class="btn" href="./">Abrir la app →</a></p>
+<h1>Guía de la app del club</h1>
+<p class="lead">Con la app del Llop de Mar te apuntas a las salidas, ves los avisos, votas en las encuestas y consultas el tiempo y el calendario. Funciona desde el navegador del móvil, sin instalar nada.</p>
+<p class="tip"><b>Consejo:</b> abre la app y guárdala en la pantalla de inicio del móvil (en el menú del navegador, «Añadir a pantalla de inicio»). La tendrás como una app más.</p>
+
+<nav class="toc"><b>Contenido</b>
+<a href="#es-entrar">1. Entrar en la app</a>
+<a href="#es-inici">2. La pantalla Inicio</a>
+<a href="#es-sortides">3. Salidas</a>
+<a href="#es-despres">4. Después de la salida</a>
+<a href="#es-altres">5. Avisos, encuestas y calendario</a>
+<a href="#es-caps">6. Para los jefes de grupo</a>
+<a href="#es-faq">7. Preguntas frecuentes</a>
+</nav>
+
+<h2 id="es-entrar">1. Entrar en la app</h2>
+<p>En la pantalla de entrada puedes elegir el <b>idioma</b> (català, castellano, français, English, italiano o português). La app lo recuerda en este móvil.</p>
+<figure class="shot phone"><img src="guia/es/01-login.webp" alt="Pantalla de entrada con el selector de idioma" loading="lazy"><figcaption>Pantalla de entrada con el selector de idioma</figcaption></figure>
+
+<h3>Si el club ya te ha dado de alta</h3>
+<ol>
+<li>Toca <b>🚣 SOCIO / JEFE DE GRUPO</b>.</li>
+<li>Escribe tu <b>Nombre y apellido</b> tal como te registró el club. Como es la primera vez, <b>deja la clave en blanco</b> y toca <b>ENTRAR</b>.</li>
+<li>Crea tu clave personal (mínimo 6 caracteres): escríbela en <b>Nueva clave</b>, repítela en <b>Confirma la clave</b> y toca <b>CREAR CLAVE Y ENTRAR</b>.</li>
+</ol>
+<figure class="shot phone"><img src="guia/es/02-nom-clau.webp" alt="Escribe tu nombre y la clave" loading="lazy"><figcaption>Escribe tu nombre y la clave</figcaption></figure>
+<figure class="shot phone"><img src="guia/es/03-primera-clau.webp" alt="Primera vez: crear la clave" loading="lazy"><figcaption>Primera vez: crear la clave</figcaption></figure>
+
+<h3>Si aún no tienes cuenta</h3>
+<ol>
+<li>En la pantalla de entrada toca <b>+ Crear cuenta nueva</b>.</li>
+<li>Escribe el <b>Nombre y apellido</b> y elige tu <b>grupo</b> (A, B, C, D, E o F; es obligatorio).</li>
+<li>Marca la sección: <b>⚓ Social</b>, <b>🏆 Competición</b> o las dos.</li>
+<li>Crea la clave (mínimo 6 caracteres), confírmala y toca <b>ENVIAR SOLICITUD</b>.</li>
+</ol>
+<figure class="shot phone"><img src="guia/es/04-registre.webp" alt="Formulario para crear una cuenta nueva" loading="lazy"><figcaption>Formulario para crear una cuenta nueva</figcaption></figure>
+<p>El patrón tiene que aprobar la cuenta. Cuando la apruebe, entra con tu nombre y la clave que has creado.</p>
+
+<h3>Las próximas veces</h3>
+<p>El móvil recuerda quién entró la última vez: toca <b>🚣 SOCIO / JEFE DE GRUPO</b> y solo tienes que escribir la clave. Si el móvil es de otra persona, toca <b>¿No eres tú? Cambia de socio</b>.</p>
+<figure class="shot phone"><img src="guia/es/03b-tornar.webp" alt="Entrada rápida: solo la clave" loading="lazy"><figcaption>Entrada rápida: solo la clave</figcaption></figure>
+<p>No hace falta cerrar la sesión. Si usas un móvil compartido, toca <b>Salir</b> arriba a la derecha.</p>
+
+<h2 id="es-inici">2. La pantalla Inicio</h2>
+<p>Es lo primero que ves al entrar:</p>
+<ul>
+<li><b>🚣 Mi próxima salida</b>: dónde estás apuntado y cómo (remero, timonel, reserva o lista de espera con tu posición).</li>
+<li><b>Avisos</b>: los dos últimos avisos que te tocan.</li>
+<li><b>Viento y estado del mar</b> en el puerto para los días de salida. Toca un día para verlo por franjas. Es una previsión, no una medida en directo.</li>
+<li>Las próximas salidas, las encuestas abiertas y el calendario del club.</li>
+</ul>
+<figure class="shot phone"><img src="guia/es/05-inici.webp" alt="Pantalla Inicio" loading="lazy"><figcaption>Pantalla Inicio</figcaption></figure>
+<figure class="shot card"><img src="guia/es/15-temps.webp" alt="Previsión de viento y mar" loading="lazy"><figcaption>Previsión de viento y mar</figcaption></figure>
+
+<h2 id="es-sortides">3. Salidas</h2>
+<p>Las salidas de la semana siguiente aparecen cada <b>sábado a las 8:00</b>. Hay salidas de grupo el lunes y el miércoles, y salidas abiertas a todos el viernes.</p>
+
+<h3>Horarios y apertura</h3>
+<p>Cada grupo tiene su hora. Si eres del grupo, puedes apuntarte desde el sábado. A la hora de apertura general la salida se abre a todos los socios.</p>
+<table>
+<tr><th>Grupo</th><th>Hora</th><th>Se abre a todos</th></tr>
+<tr><td>F</td><td>8:00</td><td>El día antes a las 20:00</td></tr>
+<tr><td>E Mañanas</td><td>9:15</td><td>El día antes a las 20:00</td></tr>
+<tr><td>D</td><td>16:30</td><td>El mismo día a las 7:30</td></tr>
+<tr><td>C</td><td>17:45</td><td>El mismo día a las 7:30</td></tr>
+<tr><td>B</td><td>19:00</td><td>El mismo día a las 7:30</td></tr>
+<tr><td>A</td><td>20:15</td><td>El mismo día a las 7:30</td></tr>
+<tr><td>Viernes (abierta)</td><td>17:30 y 18:45</td><td>Lunes a las 7:30</td></tr>
+</table>
+<p>Las salidas del viernes son para todos los grupos: 12 plazas de remero y hasta 4 de timonel cada una.</p>
+
+<h3>La pestaña Salidas</h3>
+<p>Ve a <b>Salidas</b> (abajo). Arriba está <b>Tu grupo</b>: las salidas de tu grupo, las abiertas a todos y aquellas en las que ya estás apuntado.</p>
+<figure class="shot phone"><img src="guia/es/06-sortides.webp" alt="Pestaña Salidas" loading="lazy"><figcaption>Pestaña Salidas</figcaption></figure>
+<p>Las salidas de otros grupos que ya se han abierto están plegadas debajo, en el botón naranja <b>Salidas abiertas de otros grupos</b>. Tienen el borde naranja y, si te apuntas, la app te pide confirmación. Apúntate solo si de verdad quieres ir.</p>
+<figure class="shot card"><img src="guia/es/10-altres-boto.webp" alt="Botón de salidas de otros grupos" loading="lazy"><figcaption>Botón de salidas de otros grupos</figcaption></figure>
+<figure class="shot card"><img src="guia/es/11-altre-grup.webp" alt="Salida de otro grupo, con borde naranja" loading="lazy"><figcaption>Salida de otro grupo, con borde naranja</figcaption></figure>
+
+<h3>Cómo apuntarte</h3>
+<ol>
+<li>Busca la salida y toca <b>✋ Me apunto</b>.</li>
+<li>Si quieres hacer de timonel y la salida lo necesita, toca <b>⛵ Timonel</b> en vez de Me apunto. No puedes ser remero y timonel a la vez.</li>
+<li>Toca <b>Ver lista</b> para ver quién va.</li>
+</ol>
+<figure class="shot card"><img src="guia/es/07-dimecres.webp" alt="Salida de tu grupo, todavía reservada al grupo" loading="lazy"><figcaption>Salida de tu grupo, todavía reservada al grupo</figcaption></figure>
+
+<h3>Si no puedes venir</h3>
+<ul>
+<li>Si estás apuntado, toca <b>Desapuntarme</b> cuanto antes: la plaza pasa a quien espera. Las bajas de menos de 24 horas quedan registradas como bajas de última hora.</li>
+<li>En las salidas de tu grupo también está <b>✕ No puedo venir</b>. Sirve para que el jefe de grupo sepa que ese día no estarás. Si estabas apuntado, te desapunta. Si cambias de idea, vuelve a tocarlo y se borra la respuesta.</li>
+</ul>
+<figure class="shot card"><img src="guia/es/08-apuntat.webp" alt="Salida en la que ya estás apuntado" loading="lazy"><figcaption>Salida en la que ya estás apuntado</figcaption></figure>
+
+<h3>Plaza de reserva y lista de espera</h3>
+<ul>
+<li><b>Reserva:</b> las salidas de grupo tienen una plaza de reserva para la gente del grupo. Si queda libre una plaza normal, la reserva sube sola.</li>
+<li><b>Lista de espera:</b> si la salida está llena, el botón cambia a <b>⏳ Lista de espera</b>. Tócalo y quedas en la cola, con tu posición. Para salir, toca <b>Salir</b> debajo de tu posición.</li>
+<li>Si alguien se desapunta, el primero de la lista entra automáticamente. Quien se apuntó antes de la apertura general tiene prioridad si es del grupo.</li>
+</ul>
+<figure class="shot card"><img src="guia/es/09-plena.webp" alt="Salida llena: solo queda la lista de espera" loading="lazy"><figcaption>Salida llena: solo queda la lista de espera</figcaption></figure>
+
+<h3>Qué significa cada etiqueta</h3>
+<table>
+<tr><th>Etiqueta</th><th>Qué significa</th></tr>
+<tr><td>🔒 Reservada</td><td>Solo puede apuntarse el grupo de la salida, hasta la apertura general</td></tr>
+<tr><td>🔒 Programada</td><td>Salida del viernes que aún no se ha abierto (se abre el lunes a las 7:30)</td></tr>
+<tr><td>🔓 Abierta a todos</td><td>Cualquier socio puede apuntarse</td></tr>
+<tr><td>⏳ Abierta · solo espera</td><td>Está llena: solo puedes entrar en la lista de espera</td></tr>
+<tr><td>Salida pasada</td><td>Han pasado 15 minutos de la hora de salida y ya no se puede cambiar nada</td></tr>
+</table>
+<p>¿Tienes dudas? En la pestaña Salidas está el apartado <b>¿Cómo funcionan las salidas?</b> con un resumen.</p>
+
+<h3>Segundo grupo</h3>
+<p>Si remas habitualmente con dos grupos, pide al patrón que te asigne un <b>segundo grupo</b>. Verás las salidas de los dos grupos como propias, con la misma prioridad.</p>
+
+<h2 id="es-despres">4. Después de la salida</h2>
+<p>El jefe de grupo confirma quién ha venido. Si estabas apuntado y no vienes sin haberte desapuntado, cuenta como <b>No presentado</b>. En la pestaña <b>Stats</b>, en <b>Mis datos</b>, ves tus asistencias y el ranking de participación del club.</p>
+
+<h2 id="es-altres">5. Avisos, encuestas y calendario</h2>
+<h3>Avisos</h3>
+<p>En la pestaña <b>Avisos</b> están los mensajes del patrón y de tu jefe de grupo. Solo ves los que te tocan: generales, de tu sección o de tu grupo. Los marcados con 📌 son importantes y salen arriba del todo.</p>
+<figure class="shot phone"><img src="guia/es/12-avisos.webp" alt="Pestaña Avisos" loading="lazy"><figcaption>Pestaña Avisos</figcaption></figure>
+<h3>Encuestas</h3>
+<p>En <b>Encuestas</b>, toca <b>Votar esta opción</b>. Puedes cambiar el voto mientras la encuesta esté abierta. Los votos no son anónimos: los nombres se ven en <b>Ver votantes</b>.</p>
+<figure class="shot phone"><img src="guia/es/13-enquestes.webp" alt="Pestaña Encuestas" loading="lazy"><figcaption>Pestaña Encuestas</figcaption></figure>
+<h3>Calendario</h3>
+<p>En <b>Agenda</b> (calendario) están las regatas y los eventos del club. Las salidas habituales no aparecen. Toca un día marcado para ver el detalle.</p>
+<figure class="shot phone"><img src="guia/es/14-calendari.webp" alt="Calendario del club" loading="lazy"><figcaption>Calendario del club</figcaption></figure>
+
+<h2 id="es-caps">6. Para los jefes de grupo</h2>
+<ul>
+<li>Puedes <b>🔓 Abrir</b> a todos la salida de tu grupo antes de hora, y volver a cerrarla con <b>🔒 Cerrar a los de fuera del grupo</b> mientras no haya llegado la apertura general.</li>
+<li>Puedes publicar avisos para tu grupo en la pestaña Avisos.</li>
+<li>Después de cada salida, en Inicio te sale el aviso <b>Tienes 1 salida por confirmar la asistencia</b>. Toca <b>Confirmar</b>, marca ✅ Ha remado, ❌ No presentado o ➖ Baja / justificada, y toca <b>Cerrar asistencia</b>. Solo las listas cerradas cuentan en las estadísticas.</li>
+</ul>
+<figure class="shot card"><img src="guia/es/16-cap-avis.webp" alt="Aviso para confirmar la asistencia" loading="lazy"><figcaption>Aviso para confirmar la asistencia</figcaption></figure>
+
+<h2 id="es-faq">7. Preguntas frecuentes</h2>
+<dl>
+<dt>Escribo el nombre y me dice «Nombre o clave incorrecta».</dt>
+<dd>Escribe el nombre tal como te registraste (los acentos y las mayúsculas no importan). Si pediste la cuenta hace poco, quizá el patrón aún no la ha aprobado.</dd>
+<dt>He olvidado la clave.</dt>
+<dd>Pide al patrón que te la reinicie. Después entra con tu nombre, deja la clave en blanco y crearás una nueva.</dd>
+<dt>No veo la pestaña Salidas.</dt>
+<dd>Si solo eres de competición, la pestaña se llama <b>Entreno</b>. Si eres de las dos secciones, cambia entre <b>🏆 Competición</b> y <b>⚓ Social</b> arriba de la pantalla.</dd>
+<dt>Me sale «Modo solo lectura».</dt>
+<dd>La app no se ha podido conectar y te muestra los datos guardados. Comprueba la conexión y toca <b>Actualizar</b>. Mientras salga este aviso no puedes apuntarte ni desapuntarte.</dd>
+<dt>No puedo apuntarme a una salida.</dt>
+<dd>Puede que aún esté reservada a otro grupo, que sea un viernes antes del lunes a las 7:30, o que ya hayan pasado 15 minutos de la hora de salida.</dd>
+<dt>¿Cómo cambio el idioma?</dt>
+<dd>Toca <b>Salir</b>, elige el idioma en la pantalla de entrada y vuelve a entrar.</dd>
+</dl>
+
+<footer><span>Actualizada el 22/11/2026</span> · <a href="./">Abrir la app</a> · <a href="#" onclick="window.print();return false">Imprimir</a></footer>
+</article>
+<article lang="fr" id="lang-fr" hidden>
+<p class="open"><a class="btn" href="./">Ouvrir l'app →</a></p>
+<h1>Guide de l'app du club</h1>
+<p class="lead">Avec l'app du Llop de Mar, vous vous inscrivez aux sorties, lisez les avis, votez aux sondages et consultez la météo et le calendrier. Elle fonctionne dans le navigateur du téléphone, sans rien installer.</p>
+<p class="tip"><b>Conseil :</b> ouvrez l'app et ajoutez-la à l'écran d'accueil du téléphone (menu du navigateur, « Ajouter à l'écran d'accueil »). Vous l'aurez comme une app normale.</p>
+
+<nav class="toc"><b>Sommaire</b>
+<a href="#fr-entrar">1. Entrer dans l'app</a>
+<a href="#fr-inici">2. L'écran Accueil</a>
+<a href="#fr-sortides">3. Sorties</a>
+<a href="#fr-despres">4. Après la sortie</a>
+<a href="#fr-altres">5. Avis, sondages et calendrier</a>
+<a href="#fr-caps">6. Pour les chefs de groupe</a>
+<a href="#fr-faq">7. Questions fréquentes</a>
+</nav>
+
+<h2 id="fr-entrar">1. Entrer dans l'app</h2>
+<p>Sur l'écran d'entrée, vous pouvez choisir la <b>langue</b> (català, castellano, français, English, italiano ou português). L'app la retient sur ce téléphone.</p>
+<figure class="shot phone"><img src="guia/fr/01-login.webp" alt="Écran d'entrée avec le choix de la langue" loading="lazy"><figcaption>Écran d'entrée avec le choix de la langue</figcaption></figure>
+
+<h3>Si le club vous a déjà inscrit</h3>
+<ol>
+<li>Touchez <b>🚣 MEMBRE / CHEF DE GROUPE</b>.</li>
+<li>Saisissez vos <b>Prénom et nom</b> tels que le club les a enregistrés. Comme c'est la première fois, <b>laissez le mot de passe vide</b> et touchez <b>ENTRER</b>.</li>
+<li>Créez votre mot de passe personnel (6 caractères minimum) : saisissez-le dans <b>Nouveau mot de passe</b>, répétez-le dans <b>Confirmez le mot de passe</b> et touchez <b>CRÉER LE MOT DE PASSE ET ENTRER</b>.</li>
+</ol>
+<figure class="shot phone"><img src="guia/fr/02-nom-clau.webp" alt="Saisissez votre nom et votre mot de passe" loading="lazy"><figcaption>Saisissez votre nom et votre mot de passe</figcaption></figure>
+<figure class="shot phone"><img src="guia/fr/03-primera-clau.webp" alt="Première fois : créer le mot de passe" loading="lazy"><figcaption>Première fois : créer le mot de passe</figcaption></figure>
+
+<h3>Si vous n'avez pas encore de compte</h3>
+<ol>
+<li>Sur l'écran d'entrée, touchez <b>+ Créer un compte</b>.</li>
+<li>Saisissez vos <b>Prénom et nom</b> et choisissez votre <b>groupe</b> (A, B, C, D, E ou F ; obligatoire).</li>
+<li>Cochez la section : <b>⚓ Loisir</b>, <b>🏆 Compétition</b> ou les deux.</li>
+<li>Créez le mot de passe (6 caractères minimum), confirmez-le et touchez <b>ENVOYER LA DEMANDE</b>.</li>
+</ol>
+<figure class="shot phone"><img src="guia/fr/04-registre.webp" alt="Formulaire de création de compte" loading="lazy"><figcaption>Formulaire de création de compte</figcaption></figure>
+<p>Le patron doit approuver le compte. Une fois approuvé, entrez avec votre nom et le mot de passe que vous avez créé.</p>
+
+<h3>Les fois suivantes</h3>
+<p>Le téléphone se souvient de la dernière personne entrée : touchez <b>🚣 MEMBRE / CHEF DE GROUPE</b> et saisissez seulement le mot de passe. Si le téléphone appartient à quelqu'un d'autre, touchez <b>Ce n'est pas vous ? Changer de membre</b>.</p>
+<figure class="shot phone"><img src="guia/fr/03b-tornar.webp" alt="Entrée rapide : seulement le mot de passe" loading="lazy"><figcaption>Entrée rapide : seulement le mot de passe</figcaption></figure>
+<p>Inutile de vous déconnecter. Sur un téléphone partagé, touchez <b>Quitter</b> en haut à droite.</p>
+
+<h2 id="fr-inici">2. L'écran Accueil</h2>
+<p>C'est le premier écran après l'entrée :</p>
+<ul>
+<li><b>🚣 Ma prochaine sortie</b> : où vous êtes inscrit et comment (rameur, barreur, réserve ou liste d'attente avec votre position).</li>
+<li><b>Avis</b> : les deux derniers avis qui vous concernent.</li>
+<li><b>Vent et état de la mer</b> au port pour les jours de sortie. Touchez un jour pour le voir par créneaux. C'est une prévision, pas une mesure en direct.</li>
+<li>Les prochaines sorties, les sondages ouverts et le calendrier du club.</li>
+</ul>
+<figure class="shot phone"><img src="guia/fr/05-inici.webp" alt="Écran Accueil" loading="lazy"><figcaption>Écran Accueil</figcaption></figure>
+<figure class="shot card"><img src="guia/fr/15-temps.webp" alt="Prévision de vent et de mer" loading="lazy"><figcaption>Prévision de vent et de mer</figcaption></figure>
+
+<h2 id="fr-sortides">3. Sorties</h2>
+<p>Les sorties de la semaine suivante apparaissent chaque <b>samedi à 8 h</b>. Il y a des sorties de groupe le lundi et le mercredi, et des sorties ouvertes à tous le vendredi.</p>
+
+<h3>Horaires et ouverture</h3>
+<p>Chaque groupe a son heure. Si vous êtes du groupe, vous pouvez vous inscrire dès le samedi. À l'heure d'ouverture générale, la sortie s'ouvre à tous les membres.</p>
+<table>
+<tr><th>Groupe</th><th>Heure</th><th>Ouverte à tous</th></tr>
+<tr><td>F</td><td>8:00</td><td>La veille à 20:00</td></tr>
+<tr><td>E Matins</td><td>9:15</td><td>La veille à 20:00</td></tr>
+<tr><td>D</td><td>16:30</td><td>Le jour même à 7:30</td></tr>
+<tr><td>C</td><td>17:45</td><td>Le jour même à 7:30</td></tr>
+<tr><td>B</td><td>19:00</td><td>Le jour même à 7:30</td></tr>
+<tr><td>A</td><td>20:15</td><td>Le jour même à 7:30</td></tr>
+<tr><td>Vendredi (ouverte)</td><td>17:30 et 18:45</td><td>Lundi à 7:30</td></tr>
+</table>
+<p>Les sorties du vendredi sont pour tous les groupes : 12 places de rameur et jusqu'à 4 de barreur chacune.</p>
+
+<h3>L'onglet Sorties</h3>
+<p>Allez dans <b>Sorties</b> (en bas). En haut se trouve <b>Votre groupe</b> : les sorties de votre groupe, celles ouvertes à tous et celles où vous êtes déjà inscrit.</p>
+<figure class="shot phone"><img src="guia/fr/06-sortides.webp" alt="Onglet Sorties" loading="lazy"><figcaption>Onglet Sorties</figcaption></figure>
+<p>Les sorties d'autres groupes déjà ouvertes sont repliées en dessous, sous le bouton orange <b>Sorties ouvertes d'autres groupes</b>. Elles ont un bord orange et, si vous vous inscrivez, l'app demande une confirmation. Inscrivez-vous seulement si vous comptez vraiment y aller.</p>
+<figure class="shot card"><img src="guia/fr/10-altres-boto.webp" alt="Bouton des sorties d'autres groupes" loading="lazy"><figcaption>Bouton des sorties d'autres groupes</figcaption></figure>
+<figure class="shot card"><img src="guia/fr/11-altre-grup.webp" alt="Sortie d'un autre groupe, avec bord orange" loading="lazy"><figcaption>Sortie d'un autre groupe, avec bord orange</figcaption></figure>
+
+<h3>Comment s'inscrire</h3>
+<ol>
+<li>Trouvez la sortie et touchez <b>✋ Je m'inscris</b>.</li>
+<li>Pour être barreur, si la sortie en a besoin, touchez <b>⛵ Barreur</b> au lieu de Je m'inscris. On ne peut pas être rameur et barreur en même temps.</li>
+<li>Touchez <b>Voir la liste</b> pour voir qui vient.</li>
+</ol>
+<figure class="shot card"><img src="guia/fr/07-dimecres.webp" alt="Sortie de votre groupe, encore réservée au groupe" loading="lazy"><figcaption>Sortie de votre groupe, encore réservée au groupe</figcaption></figure>
+
+<h3>Si vous ne pouvez pas venir</h3>
+<ul>
+<li>Si vous êtes inscrit, touchez <b>Me désinscrire</b> le plus tôt possible : la place passe à la personne suivante. Les désinscriptions à moins de 24 heures sont enregistrées comme désinscriptions de dernière minute.</li>
+<li>Pour les sorties de votre groupe, il y a aussi <b>✕ Je ne peux pas venir</b>. Le chef de groupe sait ainsi que vous serez absent ce jour-là. Si vous étiez inscrit, cela vous désinscrit. Si vous changez d'avis, touchez-le à nouveau et la réponse s'efface.</li>
+</ul>
+<figure class="shot card"><img src="guia/fr/08-apuntat.webp" alt="Sortie où vous êtes déjà inscrit" loading="lazy"><figcaption>Sortie où vous êtes déjà inscrit</figcaption></figure>
+
+<h3>Place de réserve et liste d'attente</h3>
+<ul>
+<li><b>Réserve :</b> les sorties de groupe ont une place de réserve pour les membres du groupe. Si une place normale se libère, la réserve y passe automatiquement.</li>
+<li><b>Liste d'attente :</b> si la sortie est complète, le bouton devient <b>⏳ Liste d'attente</b>. Touchez-le et vous entrez dans la file, avec votre position. Pour en sortir, touchez <b>Quitter</b> sous votre position.</li>
+<li>Si quelqu'un se désinscrit, le premier de la liste entre automatiquement. Ceux du groupe inscrits avant l'ouverture générale sont prioritaires.</li>
+</ul>
+<figure class="shot card"><img src="guia/fr/09-plena.webp" alt="Sortie complète : il ne reste que la liste d'attente" loading="lazy"><figcaption>Sortie complète : il ne reste que la liste d'attente</figcaption></figure>
+
+<h3>Que veut dire chaque étiquette</h3>
+<table>
+<tr><th>Étiquette</th><th>Signification</th></tr>
+<tr><td>🔒 Réservée</td><td>Seul le groupe de la sortie peut s'inscrire, jusqu'à l'ouverture générale</td></tr>
+<tr><td>🔒 Prévue</td><td>Sortie du vendredi pas encore ouverte (ouverture le lundi à 7:30)</td></tr>
+<tr><td>🔓 Ouverte à tous</td><td>Tout membre peut s'inscrire</td></tr>
+<tr><td>⏳ Ouverte · attente seulement</td><td>Complète : seule la liste d'attente est possible</td></tr>
+<tr><td>Sortie passée</td><td>15 minutes après l'heure de départ, plus aucun changement n'est possible</td></tr>
+</table>
+<p>Un doute ? Dans l'onglet Sorties, la rubrique <b>Comment fonctionnent les sorties ?</b> donne un résumé.</p>
+
+<h3>Deuxième groupe</h3>
+<p>Si vous ramez régulièrement avec deux groupes, demandez au patron de vous attribuer un <b>deuxième groupe</b>. Vous verrez les sorties des deux groupes comme les vôtres, avec la même priorité.</p>
+
+<h2 id="fr-despres">4. Après la sortie</h2>
+<p>Le chef de groupe confirme qui est venu. Si vous étiez inscrit et ne venez pas sans vous être désinscrit, cela compte comme <b>Absent</b>. Dans l'onglet <b>Stats</b>, sous <b>Mes données</b>, vous voyez vos présences et le classement de participation du club.</p>
+
+<h2 id="fr-altres">5. Avis, sondages et calendrier</h2>
+<h3>Avis</h3>
+<p>L'onglet <b>Avis</b> contient les messages du patron et de votre chef de groupe. Vous ne voyez que ceux qui vous concernent : généraux, de votre section ou de votre groupe. Ceux marqués 📌 sont importants et apparaissent en haut.</p>
+<figure class="shot phone"><img src="guia/fr/12-avisos.webp" alt="Onglet Avis" loading="lazy"><figcaption>Onglet Avis</figcaption></figure>
+<h3>Sondages</h3>
+<p>Dans <b>Sondages</b>, touchez <b>Voter pour cette option</b>. Vous pouvez changer votre vote tant que le sondage est ouvert. Les votes ne sont pas anonymes : les noms apparaissent dans <b>Voir les votants</b>.</p>
+<figure class="shot phone"><img src="guia/fr/13-enquestes.webp" alt="Onglet Sondages" loading="lazy"><figcaption>Onglet Sondages</figcaption></figure>
+<h3>Calendrier</h3>
+<p>Dans <b>Agenda</b> (calendrier) se trouvent les régates et les événements du club. Les sorties habituelles n'y figurent pas. Touchez un jour marqué pour voir le détail.</p>
+<figure class="shot phone"><img src="guia/fr/14-calendari.webp" alt="Calendrier du club" loading="lazy"><figcaption>Calendrier du club</figcaption></figure>
+
+<h2 id="fr-caps">6. Pour les chefs de groupe</h2>
+<ul>
+<li>Vous pouvez <b>🔓 Ouvrir</b> à tous la sortie de votre groupe en avance, puis la refermer avec <b>🔒 Fermer aux autres groupes</b> tant que l'ouverture générale n'est pas arrivée.</li>
+<li>Vous pouvez publier des avis pour votre groupe dans l'onglet Avis.</li>
+<li>Après chaque sortie, l'Accueil affiche <b>Vous avez 1 sortie avec présence à confirmer</b>. Touchez <b>Confirmer</b>, marquez ✅ A ramé, ❌ Absent ou ➖ Excusé, puis touchez <b>Clôturer la présence</b>. Seules les listes clôturées comptent dans les statistiques.</li>
+</ul>
+<figure class="shot card"><img src="guia/fr/16-cap-avis.webp" alt="Avis pour confirmer les présences" loading="lazy"><figcaption>Avis pour confirmer les présences</figcaption></figure>
+
+<h2 id="fr-faq">7. Questions fréquentes</h2>
+<dl>
+<dt>Je saisis mon nom et l'app affiche « Nom ou mot de passe incorrect ».</dt>
+<dd>Saisissez le nom tel qu'il a été enregistré (accents et majuscules sans importance). Si vous avez demandé le compte récemment, le patron ne l'a peut-être pas encore approuvé.</dd>
+<dt>J'ai oublié mon mot de passe.</dt>
+<dd>Demandez au patron de le réinitialiser. Entrez ensuite avec votre nom, laissez le mot de passe vide et créez-en un nouveau.</dd>
+<dt>Je ne vois pas l'onglet Sorties.</dt>
+<dd>Si vous êtes seulement en compétition, l'onglet s'appelle <b>Entraîn.</b> Si vous êtes dans les deux sections, basculez entre <b>🏆 Compétition</b> et <b>⚓ Loisir</b> en haut de l'écran.</dd>
+<dt>L'app affiche « Mode lecture seule ».</dt>
+<dd>L'app n'a pas pu se connecter et montre les données enregistrées. Vérifiez la connexion et touchez <b>Actualiser</b>. Tant que ce message s'affiche, vous ne pouvez ni vous inscrire ni vous désinscrire.</dd>
+<dt>Je ne peux pas m'inscrire à une sortie.</dt>
+<dd>Elle est peut-être encore réservée à un autre groupe, c'est peut-être un vendredi avant lundi 7:30, ou 15 minutes sont déjà passées après l'heure de départ.</dd>
+<dt>Comment changer la langue ?</dt>
+<dd>Touchez <b>Quitter</b>, choisissez la langue sur l'écran d'entrée et entrez à nouveau.</dd>
+</dl>
+
+<footer><span>Mise à jour le 22/11/2026</span> · <a href="./">Ouvrir l'app</a> · <a href="#" onclick="window.print();return false">Imprimer</a></footer>
+</article>
+<article lang="en" id="lang-en" hidden>
+<p class="open"><a class="btn" href="./">Open the app →</a></p>
+<h1>Club app guide</h1>
+<p class="lead">With the Llop de Mar app you sign up for outings, read notices, vote in polls and check the weather and the club calendar. It runs in your phone's browser, with nothing to install.</p>
+<p class="tip"><b>Tip:</b> open the app and add it to your phone's home screen (browser menu, "Add to Home Screen"). It will then work like any other app.</p>
+
+<nav class="toc"><b>Contents</b>
+<a href="#en-entrar">1. Logging in</a>
+<a href="#en-inici">2. The Home screen</a>
+<a href="#en-sortides">3. Outings</a>
+<a href="#en-despres">4. After the outing</a>
+<a href="#en-altres">5. Notices, polls and calendar</a>
+<a href="#en-caps">6. For group leaders</a>
+<a href="#en-faq">7. FAQ</a>
+</nav>
+
+<h2 id="en-entrar">1. Logging in</h2>
+<p>On the login screen you can choose the <b>language</b> (català, castellano, français, English, italiano or português). The app remembers it on this phone.</p>
+<figure class="shot phone"><img src="guia/en/01-login.webp" alt="Login screen with the language selector" loading="lazy"><figcaption>Login screen with the language selector</figcaption></figure>
+
+<h3>If the club has already registered you</h3>
+<ol>
+<li>Tap <b>🚣 MEMBER / GROUP LEADER</b>.</li>
+<li>Type your <b>First and last name</b> as the club registered it. As it is your first time, <b>leave the password empty</b> and tap <b>LOG IN</b>.</li>
+<li>Create your personal password (at least 6 characters): type it in <b>New password</b>, repeat it in <b>Confirm password</b> and tap <b>CREATE PASSWORD AND LOG IN</b>.</li>
+</ol>
+<figure class="shot phone"><img src="guia/en/02-nom-clau.webp" alt="Enter your name and password" loading="lazy"><figcaption>Enter your name and password</figcaption></figure>
+<figure class="shot phone"><img src="guia/en/03-primera-clau.webp" alt="First time: create your password" loading="lazy"><figcaption>First time: create your password</figcaption></figure>
+
+<h3>If you don't have an account yet</h3>
+<ol>
+<li>On the login screen tap <b>+ Create new account</b>.</li>
+<li>Type your <b>First and last name</b> and choose your <b>group</b> (A, B, C, D, E or F; required).</li>
+<li>Choose the section: <b>⚓ Social</b>, <b>🏆 Competition</b> or both.</li>
+<li>Create a password (at least 6 characters), confirm it and tap <b>SEND REQUEST</b>.</li>
+</ol>
+<figure class="shot phone"><img src="guia/en/04-registre.webp" alt="New account form" loading="lazy"><figcaption>New account form</figcaption></figure>
+<p>The skipper (club manager) has to approve your account. Once approved, log in with your name and the password you created.</p>
+
+<h3>Next times</h3>
+<p>The phone remembers who logged in last: tap <b>🚣 MEMBER / GROUP LEADER</b> and just type your password. If the phone belongs to someone else, tap <b>Not you? Switch member</b>.</p>
+<figure class="shot phone"><img src="guia/en/03b-tornar.webp" alt="Quick login: password only" loading="lazy"><figcaption>Quick login: password only</figcaption></figure>
+<p>You don't need to log out. On a shared phone, tap <b>Leave</b> at the top right.</p>
+
+<h2 id="en-inici">2. The Home screen</h2>
+<p>This is the first thing you see after logging in:</p>
+<ul>
+<li><b>🚣 My next outing</b>: where you are signed up and how (rower, cox, reserve, or waiting list with your position).</li>
+<li><b>Notices</b>: the two latest notices meant for you.</li>
+<li><b>Wind and sea state</b> at the harbour for outing days. Tap a day to see it by time slot. It is a forecast, not a live measurement.</li>
+<li>Upcoming outings, open polls and the club calendar.</li>
+</ul>
+<figure class="shot phone"><img src="guia/en/05-inici.webp" alt="Home screen" loading="lazy"><figcaption>Home screen</figcaption></figure>
+<figure class="shot card"><img src="guia/en/15-temps.webp" alt="Wind and sea forecast" loading="lazy"><figcaption>Wind and sea forecast</figcaption></figure>
+
+<h2 id="en-sortides">3. Outings</h2>
+<p>Next week's outings appear every <b>Saturday at 8:00</b>. There are group outings on Monday and Wednesday, and outings open to everyone on Friday.</p>
+
+<h3>Times and opening</h3>
+<p>Each group has its own time. Members of the group can sign up from Saturday. At the general opening time the outing opens to all members.</p>
+<table>
+<tr><th>Group</th><th>Time</th><th>Opens to everyone</th></tr>
+<tr><td>F</td><td>8:00</td><td>The day before at 20:00</td></tr>
+<tr><td>E Mornings</td><td>9:15</td><td>The day before at 20:00</td></tr>
+<tr><td>D</td><td>16:30</td><td>Same day at 7:30</td></tr>
+<tr><td>C</td><td>17:45</td><td>Same day at 7:30</td></tr>
+<tr><td>B</td><td>19:00</td><td>Same day at 7:30</td></tr>
+<tr><td>A</td><td>20:15</td><td>Same day at 7:30</td></tr>
+<tr><td>Friday (open)</td><td>17:30 and 18:45</td><td>Monday at 7:30</td></tr>
+</table>
+<p>Friday outings are for all groups: 12 rower seats and up to 4 coxes each.</p>
+
+<h3>The Outings tab</h3>
+<p>Go to <b>Outings</b> (at the bottom). At the top is <b>Your group</b>: your group's outings, outings open to everyone and any outing you are already signed up for.</p>
+<figure class="shot phone"><img src="guia/en/06-sortides.webp" alt="Outings tab" loading="lazy"><figcaption>Outings tab</figcaption></figure>
+<p>Other groups' outings that have already opened are folded below, under the orange button <b>Open outings from other groups</b>. They have an orange border and the app asks you to confirm before signing you up. Only sign up if you really mean to go.</p>
+<figure class="shot card"><img src="guia/en/10-altres-boto.webp" alt="Button for other groups' outings" loading="lazy"><figcaption>Button for other groups' outings</figcaption></figure>
+<figure class="shot card"><img src="guia/en/11-altre-grup.webp" alt="Another group's outing, with an orange border" loading="lazy"><figcaption>Another group's outing, with an orange border</figcaption></figure>
+
+<h3>How to sign up</h3>
+<ol>
+<li>Find the outing and tap <b>✋ Sign me up</b>.</li>
+<li>To cox, if the outing needs one, tap <b>⛵ Cox</b> instead. You can't be rower and cox at the same time.</li>
+<li>Tap <b>See list</b> to see who is going.</li>
+</ol>
+<figure class="shot card"><img src="guia/en/07-dimecres.webp" alt="Your group's outing, still reserved for the group" loading="lazy"><figcaption>Your group's outing, still reserved for the group</figcaption></figure>
+
+<h3>If you can't come</h3>
+<ul>
+<li>If you are signed up, tap <b>Leave outing</b> as soon as possible: your seat goes to the next person waiting. Cancellations less than 24 hours before are recorded as last-minute cancellations.</li>
+<li>Your group's outings also have <b>✕ I can't come</b>. It lets the group leader know you won't be there that day. If you were signed up, it removes you. If you change your mind, tap it again and the answer is cleared.</li>
+</ul>
+<figure class="shot card"><img src="guia/en/08-apuntat.webp" alt="An outing you are signed up for" loading="lazy"><figcaption>An outing you are signed up for</figcaption></figure>
+
+<h3>Reserve seat and waiting list</h3>
+<ul>
+<li><b>Reserve:</b> group outings have one reserve seat for group members. If a normal seat becomes free, the reserve moves up automatically.</li>
+<li><b>Waiting list:</b> if the outing is full, the button changes to <b>⏳ Waiting list</b>. Tap it to join the queue and see your position. To leave it, tap <b>Leave</b> under your position.</li>
+<li>If someone leaves, the first person on the list moves in automatically. Group members who joined before the general opening have priority.</li>
+</ul>
+<figure class="shot card"><img src="guia/en/09-plena.webp" alt="Full outing: only the waiting list is left" loading="lazy"><figcaption>Full outing: only the waiting list is left</figcaption></figure>
+
+<h3>What each label means</h3>
+<table>
+<tr><th>Label</th><th>Meaning</th></tr>
+<tr><td>🔒 Reserved</td><td>Only the outing's group can sign up, until the general opening</td></tr>
+<tr><td>🔒 Scheduled</td><td>Friday outing not open yet (opens Monday at 7:30)</td></tr>
+<tr><td>🔓 Open to all</td><td>Any member can sign up</td></tr>
+<tr><td>⏳ Open · waitlist only</td><td>Full: you can only join the waiting list</td></tr>
+<tr><td>Past outing</td><td>15 minutes after the start time nothing can be changed</td></tr>
+</table>
+<p>Not sure? The Outings tab has a <b>How do outings work?</b> section with a summary.</p>
+
+<h3>Second group</h3>
+<p>If you regularly row with two groups, ask the skipper to give you a <b>second group</b>. You will see both groups' outings as your own, with the same priority.</p>
+
+<h2 id="en-despres">4. After the outing</h2>
+<p>The group leader confirms who came. If you were signed up and didn't come without leaving the outing, it counts as a <b>No-show</b>. In the <b>Stats</b> tab, under <b>My data</b>, you can see your attendance and the club's participation ranking.</p>
+
+<h2 id="en-altres">5. Notices, polls and calendar</h2>
+<h3>Notices</h3>
+<p>The <b>Notices</b> tab has messages from the skipper and your group leader. You only see the ones meant for you: general, your section or your group. Those marked 📌 are important and stay at the top.</p>
+<figure class="shot phone"><img src="guia/en/12-avisos.webp" alt="Notices tab" loading="lazy"><figcaption>Notices tab</figcaption></figure>
+<h3>Polls</h3>
+<p>In <b>Polls</b>, tap <b>Vote for this option</b>. You can change your vote while the poll is open. Votes are not anonymous: names are shown under <b>Show voters</b>.</p>
+<figure class="shot phone"><img src="guia/en/13-enquestes.webp" alt="Polls tab" loading="lazy"><figcaption>Polls tab</figcaption></figure>
+<h3>Calendar</h3>
+<p><b>Calendar</b> shows the club's regattas and events. Regular outings are not listed there. Tap a marked day to see the details.</p>
+<figure class="shot phone"><img src="guia/en/14-calendari.webp" alt="Club calendar" loading="lazy"><figcaption>Club calendar</figcaption></figure>
+
+<h2 id="en-caps">6. For group leaders</h2>
+<ul>
+<li>You can <b>🔓 Open</b> your group's outing to everyone early, and close it again with <b>🔒 Close to other groups</b> as long as the general opening hasn't arrived.</li>
+<li>You can post notices for your group in the Notices tab.</li>
+<li>After each outing, Home shows <b>You have 1 outing to confirm attendance</b>. Tap <b>Confirm</b>, mark ✅ Rowed, ❌ No-show or ➖ Excused, and tap <b>Close attendance</b>. Only closed lists count in the statistics.</li>
+</ul>
+<figure class="shot card"><img src="guia/en/16-cap-avis.webp" alt="Reminder to confirm attendance" loading="lazy"><figcaption>Reminder to confirm attendance</figcaption></figure>
+
+<h2 id="en-faq">7. FAQ</h2>
+<dl>
+<dt>I type my name and get "Wrong name or password".</dt>
+<dd>Type your name as you registered it (accents and capitals don't matter). If you requested your account recently, the skipper may not have approved it yet.</dd>
+<dt>I forgot my password.</dt>
+<dd>Ask the skipper to reset it. Then log in with your name, leave the password empty and create a new one.</dd>
+<dt>I can't see the Outings tab.</dt>
+<dd>If you are only in the competition section, the tab is called <b>Training</b>. If you are in both sections, switch between <b>🏆 Competition</b> and <b>⚓ Social</b> at the top of the screen.</dd>
+<dt>I see "Read-only mode".</dt>
+<dd>The app couldn't connect and is showing saved data. Check your connection and tap <b>Refresh</b>. While this message is shown you can't sign up or leave outings.</dd>
+<dt>I can't sign up for an outing.</dt>
+<dd>It may still be reserved for another group, it may be a Friday outing before Monday 7:30, or 15 minutes may have passed since the start time.</dd>
+<dt>How do I change the language?</dt>
+<dd>Tap <b>Leave</b>, pick the language on the login screen and log in again.</dd>
+</dl>
+
+<footer><span>Updated 22/11/2026</span> · <a href="./">Open the app</a> · <a href="#" onclick="window.print();return false">Print</a></footer>
+</article>
+<article lang="it" id="lang-it" hidden>
+<p class="open"><a class="btn" href="./">Apri l'app →</a></p>
+<h1>Guida all'app del club</h1>
+<p class="lead">Con l'app del Llop de Mar ti iscrivi alle uscite, leggi gli avvisi, voti nei sondaggi e consulti il meteo e il calendario. Funziona nel browser del telefono, senza installare nulla.</p>
+<p class="tip"><b>Consiglio:</b> apri l'app e aggiungila alla schermata home del telefono (menu del browser, «Aggiungi a schermata Home»). La avrai come un'app qualsiasi.</p>
+
+<nav class="toc"><b>Indice</b>
+<a href="#it-entrar">1. Entrare nell'app</a>
+<a href="#it-inici">2. La schermata Home</a>
+<a href="#it-sortides">3. Uscite</a>
+<a href="#it-despres">4. Dopo l'uscita</a>
+<a href="#it-altres">5. Avvisi, sondaggi e calendario</a>
+<a href="#it-caps">6. Per i capigruppo</a>
+<a href="#it-faq">7. Domande frequenti</a>
+</nav>
+
+<h2 id="it-entrar">1. Entrare nell'app</h2>
+<p>Nella schermata d'ingresso puoi scegliere la <b>lingua</b> (català, castellano, français, English, italiano o português). L'app la ricorda su questo telefono.</p>
+<figure class="shot phone"><img src="guia/it/01-login.webp" alt="Schermata d'ingresso con la scelta della lingua" loading="lazy"><figcaption>Schermata d'ingresso con la scelta della lingua</figcaption></figure>
+
+<h3>Se il club ti ha già registrato</h3>
+<ol>
+<li>Tocca <b>🚣 SOCIO / CAPOGRUPPO</b>.</li>
+<li>Scrivi <b>Nome e cognome</b> come ti ha registrato il club. Essendo la prima volta, <b>lascia vuota la password</b> e tocca <b>ENTRA</b>.</li>
+<li>Crea la tua password personale (almeno 6 caratteri): scrivila in <b>Nuova password</b>, ripetila in <b>Conferma la password</b> e tocca <b>CREA PASSWORD ED ENTRA</b>.</li>
+</ol>
+<figure class="shot phone"><img src="guia/it/02-nom-clau.webp" alt="Scrivi il tuo nome e la password" loading="lazy"><figcaption>Scrivi il tuo nome e la password</figcaption></figure>
+<figure class="shot phone"><img src="guia/it/03-primera-clau.webp" alt="Prima volta: creare la password" loading="lazy"><figcaption>Prima volta: creare la password</figcaption></figure>
+
+<h3>Se non hai ancora un account</h3>
+<ol>
+<li>Nella schermata d'ingresso tocca <b>+ Crea un nuovo account</b>.</li>
+<li>Scrivi <b>Nome e cognome</b> e scegli il tuo <b>gruppo</b> (A, B, C, D, E o F; obbligatorio).</li>
+<li>Scegli la sezione: <b>⚓ Sociale</b>, <b>🏆 Agonistica</b> o entrambe.</li>
+<li>Crea la password (almeno 6 caratteri), confermala e tocca <b>INVIA RICHIESTA</b>.</li>
+</ol>
+<figure class="shot phone"><img src="guia/it/04-registre.webp" alt="Modulo per creare un nuovo account" loading="lazy"><figcaption>Modulo per creare un nuovo account</figcaption></figure>
+<p>Il patrone (responsabile del club) deve approvare l'account. Quando l'avrà approvato, entra con il tuo nome e la password che hai creato.</p>
+
+<h3>Le volte successive</h3>
+<p>Il telefono ricorda chi è entrato l'ultima volta: tocca <b>🚣 SOCIO / CAPOGRUPPO</b> e scrivi solo la password. Se il telefono è di un'altra persona, tocca <b>Non sei tu? Cambia socio</b>.</p>
+<figure class="shot phone"><img src="guia/it/03b-tornar.webp" alt="Ingresso rapido: solo la password" loading="lazy"><figcaption>Ingresso rapido: solo la password</figcaption></figure>
+<p>Non serve chiudere la sessione. Se usi un telefono condiviso, tocca <b>Esci</b> in alto a destra.</p>
+
+<h2 id="it-inici">2. La schermata Home</h2>
+<p>È la prima cosa che vedi entrando:</p>
+<ul>
+<li><b>🚣 La mia prossima uscita</b>: dove sei iscritto e come (vogatore, timoniere, riserva o lista d'attesa con la tua posizione).</li>
+<li><b>Avvisi</b>: gli ultimi due avvisi che ti riguardano.</li>
+<li><b>Vento e stato del mare</b> al porto per i giorni di uscita. Tocca un giorno per vederlo per fasce orarie. È una previsione, non una misura in diretta.</li>
+<li>Le prossime uscite, i sondaggi aperti e il calendario del club.</li>
+</ul>
+<figure class="shot phone"><img src="guia/it/05-inici.webp" alt="Schermata Home" loading="lazy"><figcaption>Schermata Home</figcaption></figure>
+<figure class="shot card"><img src="guia/it/15-temps.webp" alt="Previsione di vento e mare" loading="lazy"><figcaption>Previsione di vento e mare</figcaption></figure>
+
+<h2 id="it-sortides">3. Uscite</h2>
+<p>Le uscite della settimana successiva compaiono ogni <b>sabato alle 8:00</b>. Ci sono uscite di gruppo il lunedì e il mercoledì, e uscite aperte a tutti il venerdì.</p>
+
+<h3>Orari e apertura</h3>
+<p>Ogni gruppo ha il suo orario. Se sei del gruppo, puoi iscriverti dal sabato. All'ora di apertura generale l'uscita si apre a tutti i soci.</p>
+<table>
+<tr><th>Gruppo</th><th>Ora</th><th>Si apre a tutti</th></tr>
+<tr><td>F</td><td>8:00</td><td>Il giorno prima alle 20:00</td></tr>
+<tr><td>E Mattina</td><td>9:15</td><td>Il giorno prima alle 20:00</td></tr>
+<tr><td>D</td><td>16:30</td><td>Lo stesso giorno alle 7:30</td></tr>
+<tr><td>C</td><td>17:45</td><td>Lo stesso giorno alle 7:30</td></tr>
+<tr><td>B</td><td>19:00</td><td>Lo stesso giorno alle 7:30</td></tr>
+<tr><td>A</td><td>20:15</td><td>Lo stesso giorno alle 7:30</td></tr>
+<tr><td>Venerdì (aperta)</td><td>17:30 e 18:45</td><td>Lunedì alle 7:30</td></tr>
+</table>
+<p>Le uscite del venerdì sono per tutti i gruppi: 12 posti da vogatore e fino a 4 da timoniere ciascuna.</p>
+
+<h3>La scheda Uscite</h3>
+<p>Vai su <b>Uscite</b> (in basso). In alto c'è <b>Il tuo gruppo</b>: le uscite del tuo gruppo, quelle aperte a tutti e quelle a cui sei già iscritto.</p>
+<figure class="shot phone"><img src="guia/it/06-sortides.webp" alt="Scheda Uscite" loading="lazy"><figcaption>Scheda Uscite</figcaption></figure>
+<p>Le uscite di altri gruppi già aperte sono raccolte sotto, nel pulsante arancione <b>Uscite aperte di altri gruppi</b>. Hanno il bordo arancione e, se ti iscrivi, l'app chiede conferma. Iscriviti solo se vuoi andarci davvero.</p>
+<figure class="shot card"><img src="guia/it/10-altres-boto.webp" alt="Pulsante delle uscite di altri gruppi" loading="lazy"><figcaption>Pulsante delle uscite di altri gruppi</figcaption></figure>
+<figure class="shot card"><img src="guia/it/11-altre-grup.webp" alt="Uscita di un altro gruppo, con bordo arancione" loading="lazy"><figcaption>Uscita di un altro gruppo, con bordo arancione</figcaption></figure>
+
+<h3>Come iscriversi</h3>
+<ol>
+<li>Trova l'uscita e tocca <b>✋ Mi iscrivo</b>.</li>
+<li>Per fare il timoniere, se l'uscita ne ha bisogno, tocca <b>⛵ Timoniere</b> invece di Mi iscrivo. Non puoi essere vogatore e timoniere insieme.</li>
+<li>Tocca <b>Vedi lista</b> per vedere chi viene.</li>
+</ol>
+<figure class="shot card"><img src="guia/it/07-dimecres.webp" alt="Uscita del tuo gruppo, ancora riservata al gruppo" loading="lazy"><figcaption>Uscita del tuo gruppo, ancora riservata al gruppo</figcaption></figure>
+
+<h3>Se non puoi venire</h3>
+<ul>
+<li>Se sei iscritto, tocca <b>Cancella iscrizione</b> il prima possibile: il posto passa a chi aspetta. Le cancellazioni a meno di 24 ore vengono registrate come cancellazioni dell'ultimo minuto.</li>
+<li>Nelle uscite del tuo gruppo c'è anche <b>✕ Non posso venire</b>. Serve al capogruppo per sapere che quel giorno non ci sarai. Se eri iscritto, ti cancella. Se cambi idea, toccalo di nuovo e la risposta si cancella.</li>
+</ul>
+<figure class="shot card"><img src="guia/it/08-apuntat.webp" alt="Uscita a cui sei già iscritto" loading="lazy"><figcaption>Uscita a cui sei già iscritto</figcaption></figure>
+
+<h3>Posto di riserva e lista d'attesa</h3>
+<ul>
+<li><b>Riserva:</b> le uscite di gruppo hanno un posto di riserva per i membri del gruppo. Se si libera un posto normale, la riserva sale da sola.</li>
+<li><b>Lista d'attesa:</b> se l'uscita è piena, il pulsante diventa <b>⏳ Lista d'attesa</b>. Toccalo ed entri in coda, con la tua posizione. Per uscirne, tocca <b>Esci</b> sotto la tua posizione.</li>
+<li>Se qualcuno si cancella, il primo della lista entra automaticamente. Chi è del gruppo e si è iscritto prima dell'apertura generale ha la precedenza.</li>
+</ul>
+<figure class="shot card"><img src="guia/it/09-plena.webp" alt="Uscita piena: resta solo la lista d'attesa" loading="lazy"><figcaption>Uscita piena: resta solo la lista d'attesa</figcaption></figure>
+
+<h3>Cosa significa ogni etichetta</h3>
+<table>
+<tr><th>Etichetta</th><th>Significato</th></tr>
+<tr><td>🔒 Riservata</td><td>Può iscriversi solo il gruppo dell'uscita, fino all'apertura generale</td></tr>
+<tr><td>🔒 Programmata</td><td>Uscita del venerdì non ancora aperta (apre lunedì alle 7:30)</td></tr>
+<tr><td>🔓 Aperta a tutti</td><td>Qualsiasi socio può iscriversi</td></tr>
+<tr><td>⏳ Aperta · solo attesa</td><td>È piena: puoi solo entrare in lista d'attesa</td></tr>
+<tr><td>Uscita passata</td><td>15 minuti dopo l'ora di partenza non si può più cambiare nulla</td></tr>
+</table>
+<p>Hai dubbi? Nella scheda Uscite c'è la sezione <b>Come funzionano le uscite?</b> con un riassunto.</p>
+
+<h3>Secondo gruppo</h3>
+<p>Se remi abitualmente con due gruppi, chiedi al patrone di assegnarti un <b>secondo gruppo</b>. Vedrai le uscite di entrambi i gruppi come tue, con la stessa priorità.</p>
+
+<h2 id="it-despres">4. Dopo l'uscita</h2>
+<p>Il capogruppo conferma chi è venuto. Se eri iscritto e non vieni senza esserti cancellato, conta come <b>Assente</b>. Nella scheda <b>Stats</b>, in <b>I miei dati</b>, vedi le tue presenze e la classifica di partecipazione del club.</p>
+
+<h2 id="it-altres">5. Avvisi, sondaggi e calendario</h2>
+<h3>Avvisi</h3>
+<p>Nella scheda <b>Avvisi</b> ci sono i messaggi del patrone e del tuo capogruppo. Vedi solo quelli che ti riguardano: generali, della tua sezione o del tuo gruppo. Quelli con 📌 sono importanti e stanno in cima.</p>
+<figure class="shot phone"><img src="guia/it/12-avisos.webp" alt="Scheda Avvisi" loading="lazy"><figcaption>Scheda Avvisi</figcaption></figure>
+<h3>Sondaggi</h3>
+<p>In <b>Sondaggi</b>, tocca <b>Vota questa opzione</b>. Puoi cambiare voto finché il sondaggio è aperto. I voti non sono anonimi: i nomi si vedono in <b>Vedi votanti</b>.</p>
+<figure class="shot phone"><img src="guia/it/13-enquestes.webp" alt="Scheda Sondaggi" loading="lazy"><figcaption>Scheda Sondaggi</figcaption></figure>
+<h3>Calendario</h3>
+<p>In <b>Agenda</b> (calendario) ci sono le regate e gli eventi del club. Le uscite abituali non compaiono. Tocca un giorno segnato per vedere i dettagli.</p>
+<figure class="shot phone"><img src="guia/it/14-calendari.webp" alt="Calendario del club" loading="lazy"><figcaption>Calendario del club</figcaption></figure>
+
+<h2 id="it-caps">6. Per i capigruppo</h2>
+<ul>
+<li>Puoi aprire a tutti l'uscita del tuo gruppo in anticipo con <b>🔓 Apri</b>, e richiuderla con <b>🔒 Chiudi agli altri gruppi</b> finché non arriva l'apertura generale.</li>
+<li>Puoi pubblicare avvisi per il tuo gruppo nella scheda Avvisi.</li>
+<li>Dopo ogni uscita, in Home compare <b>Uscite con presenze da confermare: 1</b>. Tocca <b>Conferma</b>, segna ✅ Ha remato, ❌ Assente o ➖ Giustificato e tocca <b>Chiudi presenze</b>. Solo le liste chiuse contano nelle statistiche.</li>
+</ul>
+<figure class="shot card"><img src="guia/it/16-cap-avis.webp" alt="Avviso per confermare le presenze" loading="lazy"><figcaption>Avviso per confermare le presenze</figcaption></figure>
+
+<h2 id="it-faq">7. Domande frequenti</h2>
+<dl>
+<dt>Scrivo il nome e compare «Nome o password errati».</dt>
+<dd>Scrivi il nome come ti sei registrato (accenti e maiuscole non contano). Se hai chiesto l'account da poco, forse il patrone non l'ha ancora approvato.</dd>
+<dt>Ho dimenticato la password.</dt>
+<dd>Chiedi al patrone di reimpostarla. Poi entra con il tuo nome, lascia vuota la password e ne creerai una nuova.</dd>
+<dt>Non vedo la scheda Uscite.</dt>
+<dd>Se sei solo della sezione agonistica, la scheda si chiama <b>Allena</b>. Se sei in entrambe le sezioni, passa da <b>🏆 Agonistica</b> a <b>⚓ Sociale</b> in alto nello schermo.</dd>
+<dt>Compare «Modalità sola lettura».</dt>
+<dd>L'app non è riuscita a collegarsi e mostra i dati salvati. Controlla la connessione e tocca <b>Aggiorna</b>. Finché compare questo avviso non puoi iscriverti né cancellarti.</dd>
+<dt>Non riesco a iscrivermi a un'uscita.</dt>
+<dd>Forse è ancora riservata a un altro gruppo, è un'uscita del venerdì prima di lunedì alle 7:30, oppure sono già passati 15 minuti dall'ora di partenza.</dd>
+<dt>Come cambio la lingua?</dt>
+<dd>Tocca <b>Esci</b>, scegli la lingua nella schermata d'ingresso ed entra di nuovo.</dd>
+</dl>
+
+<footer><span>Aggiornata il 22/11/2026</span> · <a href="./">Apri l'app</a> · <a href="#" onclick="window.print();return false">Stampa</a></footer>
+</article>
+<article lang="pt" id="lang-pt" hidden>
+<p class="open"><a class="btn" href="./">Abrir a app →</a></p>
+<h1>Guia da app do clube</h1>
+<p class="lead">Com a app do Llop de Mar inscreves-te nas saídas, lês os avisos, votas nas sondagens e consultas o tempo e o calendário. Funciona no navegador do telemóvel, sem instalar nada.</p>
+<p class="tip"><b>Dica:</b> abre a app e adiciona-a ao ecrã principal do telemóvel (menu do navegador, «Adicionar ao ecrã principal»). Fica como qualquer outra app.</p>
+
+<nav class="toc"><b>Índice</b>
+<a href="#pt-entrar">1. Entrar na app</a>
+<a href="#pt-inici">2. O ecrã Início</a>
+<a href="#pt-sortides">3. Saídas</a>
+<a href="#pt-despres">4. Depois da saída</a>
+<a href="#pt-altres">5. Avisos, sondagens e calendário</a>
+<a href="#pt-caps">6. Para os chefes de grupo</a>
+<a href="#pt-faq">7. Perguntas frequentes</a>
+</nav>
+
+<h2 id="pt-entrar">1. Entrar na app</h2>
+<p>No ecrã de entrada podes escolher o <b>idioma</b> (català, castellano, français, English, italiano ou português). A app lembra-o neste telemóvel.</p>
+<figure class="shot phone"><img src="guia/pt/01-login.webp" alt="Ecrã de entrada com a escolha de idioma" loading="lazy"><figcaption>Ecrã de entrada com a escolha de idioma</figcaption></figure>
+
+<h3>Se o clube já te registou</h3>
+<ol>
+<li>Toca em <b>🚣 SÓCIO / CHEFE DE GRUPO</b>.</li>
+<li>Escreve o teu <b>Nome e apelido</b> tal como o clube te registou. Como é a primeira vez, <b>deixa a palavra-passe em branco</b> e toca em <b>ENTRAR</b>.</li>
+<li>Cria a tua palavra-passe pessoal (mínimo 6 caracteres): escreve-a em <b>Nova palavra-passe</b>, repete-a em <b>Confirma a palavra-passe</b> e toca em <b>CRIAR PALAVRA-PASSE E ENTRAR</b>.</li>
+</ol>
+<figure class="shot phone"><img src="guia/pt/02-nom-clau.webp" alt="Escreve o teu nome e a palavra-passe" loading="lazy"><figcaption>Escreve o teu nome e a palavra-passe</figcaption></figure>
+<figure class="shot phone"><img src="guia/pt/03-primera-clau.webp" alt="Primeira vez: criar a palavra-passe" loading="lazy"><figcaption>Primeira vez: criar a palavra-passe</figcaption></figure>
+
+<h3>Se ainda não tens conta</h3>
+<ol>
+<li>No ecrã de entrada toca em <b>+ Criar conta nova</b>.</li>
+<li>Escreve o <b>Nome e apelido</b> e escolhe o teu <b>grupo</b> (A, B, C, D, E ou F; obrigatório).</li>
+<li>Marca a secção: <b>⚓ Social</b>, <b>🏆 Competição</b> ou as duas.</li>
+<li>Cria a palavra-passe (mínimo 6 caracteres), confirma-a e toca em <b>ENVIAR PEDIDO</b>.</li>
+</ol>
+<figure class="shot phone"><img src="guia/pt/04-registre.webp" alt="Formulário para criar conta nova" loading="lazy"><figcaption>Formulário para criar conta nova</figcaption></figure>
+<p>O patrão (responsável do clube) tem de aprovar a conta. Quando a aprovar, entra com o teu nome e a palavra-passe que criaste.</p>
+
+<h3>Das próximas vezes</h3>
+<p>O telemóvel lembra-se de quem entrou da última vez: toca em <b>🚣 SÓCIO / CHEFE DE GRUPO</b> e basta escrever a palavra-passe. Se o telemóvel for de outra pessoa, toca em <b>Não és tu? Muda de sócio</b>.</p>
+<figure class="shot phone"><img src="guia/pt/03b-tornar.webp" alt="Entrada rápida: só a palavra-passe" loading="lazy"><figcaption>Entrada rápida: só a palavra-passe</figcaption></figure>
+<p>Não é preciso terminar a sessão. Se usares um telemóvel partilhado, toca em <b>Sair</b> no canto superior direito.</p>
+
+<h2 id="pt-inici">2. O ecrã Início</h2>
+<p>É a primeira coisa que vês ao entrar:</p>
+<ul>
+<li><b>🚣 A minha próxima saída</b>: onde estás inscrito e como (remador, timoneiro, reserva ou lista de espera com a tua posição).</li>
+<li><b>Avisos</b>: os dois últimos avisos que te dizem respeito.</li>
+<li><b>Vento e estado do mar</b> no porto para os dias de saída. Toca num dia para o ver por períodos. É uma previsão, não uma medição em direto.</li>
+<li>As próximas saídas, as sondagens abertas e o calendário do clube.</li>
+</ul>
+<figure class="shot phone"><img src="guia/pt/05-inici.webp" alt="Ecrã Início" loading="lazy"><figcaption>Ecrã Início</figcaption></figure>
+<figure class="shot card"><img src="guia/pt/15-temps.webp" alt="Previsão de vento e mar" loading="lazy"><figcaption>Previsão de vento e mar</figcaption></figure>
+
+<h2 id="pt-sortides">3. Saídas</h2>
+<p>As saídas da semana seguinte aparecem todos os <b>sábados às 8:00</b>. Há saídas de grupo à segunda e à quarta, e saídas abertas a todos à sexta.</p>
+
+<h3>Horários e abertura</h3>
+<p>Cada grupo tem a sua hora. Se és do grupo, podes inscrever-te desde sábado. À hora de abertura geral a saída abre a todos os sócios.</p>
+<table>
+<tr><th>Grupo</th><th>Hora</th><th>Abre a todos</th></tr>
+<tr><td>F</td><td>8:00</td><td>Na véspera às 20:00</td></tr>
+<tr><td>E Manhãs</td><td>9:15</td><td>Na véspera às 20:00</td></tr>
+<tr><td>D</td><td>16:30</td><td>No próprio dia às 7:30</td></tr>
+<tr><td>C</td><td>17:45</td><td>No próprio dia às 7:30</td></tr>
+<tr><td>B</td><td>19:00</td><td>No próprio dia às 7:30</td></tr>
+<tr><td>A</td><td>20:15</td><td>No próprio dia às 7:30</td></tr>
+<tr><td>Sexta (aberta)</td><td>17:30 e 18:45</td><td>Segunda às 7:30</td></tr>
+</table>
+<p>As saídas de sexta são para todos os grupos: 12 lugares de remador e até 4 de timoneiro cada uma.</p>
+
+<h3>O separador Saídas</h3>
+<p>Vai a <b>Saídas</b> (em baixo). Em cima está <b>O teu grupo</b>: as saídas do teu grupo, as abertas a todos e aquelas em que já estás inscrito.</p>
+<figure class="shot phone"><img src="guia/pt/06-sortides.webp" alt="Separador Saídas" loading="lazy"><figcaption>Separador Saídas</figcaption></figure>
+<p>As saídas de outros grupos que já abriram estão recolhidas mais abaixo, no botão laranja <b>Saídas abertas de outros grupos</b>. Têm a margem laranja e, se te inscreveres, a app pede confirmação. Inscreve-te só se quiseres mesmo ir.</p>
+<figure class="shot card"><img src="guia/pt/10-altres-boto.webp" alt="Botão das saídas de outros grupos" loading="lazy"><figcaption>Botão das saídas de outros grupos</figcaption></figure>
+<figure class="shot card"><img src="guia/pt/11-altre-grup.webp" alt="Saída de outro grupo, com margem laranja" loading="lazy"><figcaption>Saída de outro grupo, com margem laranja</figcaption></figure>
+
+<h3>Como te inscreves</h3>
+<ol>
+<li>Procura a saída e toca em <b>✋ Inscrevo-me</b>.</li>
+<li>Para ires de timoneiro, se a saída precisar, toca em <b>⛵ Timoneiro</b> em vez de Inscrevo-me. Não podes ser remador e timoneiro ao mesmo tempo.</li>
+<li>Toca em <b>Ver lista</b> para ver quem vai.</li>
+</ol>
+<figure class="shot card"><img src="guia/pt/07-dimecres.webp" alt="Saída do teu grupo, ainda reservada ao grupo" loading="lazy"><figcaption>Saída do teu grupo, ainda reservada ao grupo</figcaption></figure>
+
+<h3>Se não puderes ir</h3>
+<ul>
+<li>Se estás inscrito, toca em <b>Cancelar inscrição</b> o mais cedo possível: o lugar passa para quem espera. Os cancelamentos com menos de 24 horas ficam registados como cancelamentos de última hora.</li>
+<li>Nas saídas do teu grupo há também <b>✕ Não posso ir</b>. Serve para o chefe de grupo saber que nesse dia não vais. Se estavas inscrito, cancela a inscrição. Se mudares de ideias, toca outra vez e a resposta é apagada.</li>
+</ul>
+<figure class="shot card"><img src="guia/pt/08-apuntat.webp" alt="Saída em que já estás inscrito" loading="lazy"><figcaption>Saída em que já estás inscrito</figcaption></figure>
+
+<h3>Lugar de reserva e lista de espera</h3>
+<ul>
+<li><b>Reserva:</b> as saídas de grupo têm um lugar de reserva para quem é do grupo. Se ficar livre um lugar normal, a reserva sobe sozinha.</li>
+<li><b>Lista de espera:</b> se a saída estiver cheia, o botão muda para <b>⏳ Lista de espera</b>. Toca e ficas na fila, com a tua posição. Para sair, toca em <b>Sair</b> por baixo da tua posição.</li>
+<li>Se alguém cancelar, o primeiro da lista entra automaticamente. Quem é do grupo e se inscreveu antes da abertura geral tem prioridade.</li>
+</ul>
+<figure class="shot card"><img src="guia/pt/09-plena.webp" alt="Saída cheia: só resta a lista de espera" loading="lazy"><figcaption>Saída cheia: só resta a lista de espera</figcaption></figure>
+
+<h3>O que significa cada etiqueta</h3>
+<table>
+<tr><th>Etiqueta</th><th>Significado</th></tr>
+<tr><td>🔒 Reservada</td><td>Só o grupo da saída se pode inscrever, até à abertura geral</td></tr>
+<tr><td>🔒 Programada</td><td>Saída de sexta que ainda não abriu (abre segunda às 7:30)</td></tr>
+<tr><td>🔓 Aberta a todos</td><td>Qualquer sócio se pode inscrever</td></tr>
+<tr><td>⏳ Aberta · só espera</td><td>Está cheia: só podes entrar na lista de espera</td></tr>
+<tr><td>Saída passada</td><td>15 minutos depois da hora de saída já não se pode mudar nada</td></tr>
+</table>
+<p>Tens dúvidas? No separador Saídas há a secção <b>Como funcionam as saídas?</b> com um resumo.</p>
+
+<h3>Segundo grupo</h3>
+<p>Se remas habitualmente com dois grupos, pede ao patrão que te atribua um <b>segundo grupo</b>. Verás as saídas dos dois grupos como tuas, com a mesma prioridade.</p>
+
+<h2 id="pt-despres">4. Depois da saída</h2>
+<p>O chefe de grupo confirma quem veio. Se estavas inscrito e não vieste sem cancelar, conta como <b>Faltou</b>. No separador <b>Stats</b>, em <b>Os meus dados</b>, vês as tuas presenças e o ranking de participação do clube.</p>
+
+<h2 id="pt-altres">5. Avisos, sondagens e calendário</h2>
+<h3>Avisos</h3>
+<p>No separador <b>Avisos</b> estão as mensagens do patrão e do teu chefe de grupo. Só vês as que te dizem respeito: gerais, da tua secção ou do teu grupo. As marcadas com 📌 são importantes e ficam no topo.</p>
+<figure class="shot phone"><img src="guia/pt/12-avisos.webp" alt="Separador Avisos" loading="lazy"><figcaption>Separador Avisos</figcaption></figure>
+<h3>Sondagens</h3>
+<p>Em <b>Votos</b> (sondagens), toca em <b>Votar nesta opção</b>. Podes mudar o voto enquanto a sondagem estiver aberta. Os votos não são anónimos: os nomes veem-se em <b>Ver votantes</b>.</p>
+<figure class="shot phone"><img src="guia/pt/13-enquestes.webp" alt="Separador Sondagens" loading="lazy"><figcaption>Separador Sondagens</figcaption></figure>
+<h3>Calendário</h3>
+<p>Em <b>Agenda</b> (calendário) estão as regatas e os eventos do clube. As saídas habituais não aparecem. Toca num dia marcado para ver o detalhe.</p>
+<figure class="shot phone"><img src="guia/pt/14-calendari.webp" alt="Calendário do clube" loading="lazy"><figcaption>Calendário do clube</figcaption></figure>
+
+<h2 id="pt-caps">6. Para os chefes de grupo</h2>
+<ul>
+<li>Podes abrir a todos a saída do teu grupo mais cedo com <b>🔓 Abrir</b>, e voltar a fechá-la com <b>🔒 Fechar aos de fora do grupo</b> enquanto não chegar a abertura geral.</li>
+<li>Podes publicar avisos para o teu grupo no separador Avisos.</li>
+<li>Depois de cada saída, no Início aparece <b>Tens 1 saída com presenças por confirmar</b>. Toca em <b>Confirmar</b>, marca ✅ Remou, ❌ Faltou ou ➖ Justificado e toca em <b>Fechar presenças</b>. Só as listas fechadas contam nas estatísticas.</li>
+</ul>
+<figure class="shot card"><img src="guia/pt/16-cap-avis.webp" alt="Aviso para confirmar presenças" loading="lazy"><figcaption>Aviso para confirmar presenças</figcaption></figure>
+
+<h2 id="pt-faq">7. Perguntas frequentes</h2>
+<dl>
+<dt>Escrevo o nome e aparece «Nome ou palavra-passe incorretos».</dt>
+<dd>Escreve o nome tal como te registaste (acentos e maiúsculas não contam). Se pediste a conta há pouco, talvez o patrão ainda não a tenha aprovado.</dd>
+<dt>Esqueci-me da palavra-passe.</dt>
+<dd>Pede ao patrão que a reponha. Depois entra com o teu nome, deixa a palavra-passe em branco e cria uma nova.</dd>
+<dt>Não vejo o separador Saídas.</dt>
+<dd>Se só és da competição, o separador chama-se <b>Treino</b>. Se és das duas secções, muda entre <b>🏆 Competição</b> e <b>⚓ Social</b> no topo do ecrã.</dd>
+<dt>Aparece «Modo só de leitura».</dt>
+<dd>A app não conseguiu ligar-se e mostra os dados guardados. Verifica a ligação e toca em <b>Atualizar</b>. Enquanto aparecer este aviso não te podes inscrever nem cancelar.</dd>
+<dt>Não consigo inscrever-me numa saída.</dt>
+<dd>Pode ainda estar reservada a outro grupo, ser uma saída de sexta antes de segunda às 7:30, ou já terem passado 15 minutos da hora de saída.</dd>
+<dt>Como mudo o idioma?</dt>
+<dd>Toca em <b>Sair</b>, escolhe o idioma no ecrã de entrada e volta a entrar.</dd>
+</dl>
+
+<footer><span>Atualizada a 22/11/2026</span> · <a href="./">Abrir a app</a> · <a href="#" onclick="window.print();return false">Imprimir</a></footer>
+</article>
+</main>
+<script>
+(function(){
+  var L=["ca","es","fr","en","it","pt"];
+  var T={ca:"Guia de l'app",es:"Guía de la app",fr:"Guide de l'app",en:"App guide",it:"Guida all'app",pt:"Guia da app"};
+  function pick(){
+    try{var q=new URLSearchParams(location.search).get("lang");if(L.indexOf(q)>=0)return q;}catch(e){}
+    try{var s=localStorage.getItem("ldm:lang");if(L.indexOf(s)>=0)return s;}catch(e){}
+    var n=(navigator.language||"ca").slice(0,2).toLowerCase();
+    return L.indexOf(n)>=0?n:"ca";
+  }
+  function show(l,push){
+    L.forEach(function(c){document.getElementById("lang-"+c).hidden=(c!==l);});
+    document.querySelectorAll(".langs button").forEach(function(b){b.setAttribute("aria-pressed",b.dataset.lang===l?"true":"false");});
+    document.documentElement.lang=l;
+    document.getElementById("ttl").textContent=T[l];
+    document.title=T[l]+" · Llop de Mar";
+    if(push){try{var u=new URL(location.href);u.searchParams.set("lang",l);u.hash="";history.replaceState(null,"",u);}catch(e){}window.scrollTo(0,0);}
+  }
+  document.querySelectorAll(".langs button").forEach(function(b){b.addEventListener("click",function(){show(b.dataset.lang,true);});});
+  show(pick(),false);
+  if(location.hash){var t=document.getElementById(location.hash.slice(1));if(t)t.scrollIntoView();}
+})();
+</script>
+</body>
+</html>

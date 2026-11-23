@@ -632,6 +632,10 @@ const I18N_DATA=[["Aquest navegador no suporta xifrat segur.","Este navegador no
 ["S'obre la segona barca a {}: ara hi ha {} places de vogador i {} de timonel.","Se abre la segunda barca en {}: ahora hay {} plazas de remero y {} de timonel.","La deuxième barque ouvre pour {} : il y a maintenant {} places de rameur et {} de barreur.","The second boat opens for {}: there are now {} rower seats and {} helmsman seats.","Si apre la seconda barca per {}: ora ci sono {} posti da vogatore e {} da timoniere.","Abre o segundo barco em {}: agora há {} lugares de remador e {} de timoneiro."],
 ["🚣🚣 2 barques","🚣🚣 2 barcas","🚣🚣 2 barques","🚣🚣 2 boats","🚣🚣 2 barche","🚣🚣 2 barcos"],
 ["Es tanca la segona barca a {}: torna a haver-hi {} places de vogador i {} de timonel.","Se cierra la segunda barca en {}: vuelve a haber {} plazas de remero y {} de timonel.","La deuxième barque ferme pour {} : il y a de nouveau {} places de rameur et {} de barreur.","The second boat closes for {}: back to {} rower seats and {} helmsman seats.","Si chiude la seconda barca per {}: tornano {} posti da vogatore e {} da timoniere.","Fecha o segundo barco em {}: voltam a haver {} lugares de remador e {} de timoneiro."],
+["✋ M'hi apunto · obre la 2a barca","✋ Me apunto · abre la 2.ª barca","✋ Je m'inscris · ouvre la 2e barque","✋ Sign me up · opens the 2nd boat","✋ Mi iscrivo · apre la 2ª barca","✋ Inscrevo-me · abre o 2.º barco"],
+["🚣🚣 La primera barca és plena. El següent que s'apunti obre la segona barca ({} places) i hi entra directament.","🚣🚣 La primera barca está llena. El siguiente que se apunte abre la segunda barca ({} plazas) y entra directamente.","🚣🚣 La première barque est pleine. Le prochain inscrit ouvre la deuxième barque ({} places) et y entre directement.","🚣🚣 The first boat is full. The next person to sign up opens the second boat ({} seats) and gets in directly.","🚣🚣 La prima barca è piena. Il prossimo che si iscrive apre la seconda barca ({} posti) ed entra direttamente.","🚣🚣 O primeiro barco está cheio. O próximo a inscrever-se abre o segundo barco ({} lugares) e entra diretamente."],
+["🚣🚣 La primera barca és plena. El següent del grup que s'apunti obre la segona barca ({} places) i hi entra directament.","🚣🚣 La primera barca está llena. El siguiente del grupo que se apunte abre la segunda barca ({} plazas) y entra directamente.","🚣🚣 La première barque est pleine. Le prochain du groupe qui s'inscrit ouvre la deuxième barque ({} places) et y entre directement.","🚣🚣 The first boat is full. The next group member to sign up opens the second boat ({} seats) and gets in directly.","🚣🚣 La prima barca è piena. Il prossimo del gruppo che si iscrive apre la seconda barca ({} posti) ed entra direttamente.","🚣🚣 O primeiro barco está cheio. O próximo do grupo a inscrever-se abre o segundo barco ({} lugares) e entra diretamente."],
+["🚣🚣 1 més obre la 2a barca","🚣🚣 1 más abre la 2.ª barca","🚣🚣 1 de plus ouvre la 2e barque","🚣🚣 1 more opens the 2nd boat","🚣🚣 1 in più apre la 2ª barca","🚣🚣 Mais 1 abre o 2.º barco"],
 ["{} entra automàticament des de la llista d'espera a {}{}.","{} entra automáticamente desde la lista de espera en {}{}.","{} entre automatiquement depuis la liste d'attente dans {}{}.","{} automatically moves up from the waiting list into {}{}.","{} entra automaticamente dalla lista d'attesa in {}{}.","{} entra automaticamente da lista de espera em {}{}."],
 ["Dv {} {}","Vi {} {}","Ve {} {}","Fri {} {}","Ven {} {}","Sex {} {}"],
 ["Reserva {}","Reserva {}","Réserve {}","Reserve {}","Riserva {}","Reserva {}"],
@@ -2155,7 +2159,10 @@ function renderOutingCard(o){
   let openInfo="";
   const openDate=getNaturalOpenDate(o);
   const hasPriorityWait=hasPriorityGroupWaitlist(o);
-  if(!isPast){
+  if(!isPast&&secondBoatWouldOpen(o)){
+    const sbCap=getBaseOutingCfg(o.groupId,o.date)?.secondBoat?.capacity||16;
+    openInfo=`<div style="font-size:15px;color:${DARK};background:#e8f0fb;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🚣🚣 La primera barca és plena. ${openTrigger?"El següent que s'apunti":"El següent del grup que s'apunti"} obre la segona barca (${sbCap} places) i hi entra directament.</div>`;
+  }else if(!isPast){
     const groupLabel=isGeneral?"tots els grups":esc(grp?.name?.split(" · ")[0]||"grup");
     const openStr=openDate?formatNaturalOpenLabel(o):"quan el cap o el patró l'obrin";
     if(openTrigger){
@@ -2192,7 +2199,9 @@ function renderOutingCard(o){
     </span>`;
   }).join("")}</div>`:"";
 
-  const badge=openTrigger
+  const badge=(!isPast&&secondBoatWouldOpen(o))
+    ?`<span style="background:#e8f0fb;color:${DARK};font-size:14px;padding:2px 8px;border-radius:20px;font-weight:600">🚣🚣 1 més obre la 2a barca</span>`
+    :openTrigger
     ?(hasGeneralSpots
       ?`<span style="background:#e6f4ee;color:${GREEN};font-size:14px;padding:2px 8px;border-radius:20px;font-weight:600">🔓 Oberta a tots</span>`
       :`<span style="background:#fff8ee;color:#b07a10;font-size:14px;padding:2px 8px;border-radius:20px;font-weight:600">⏳ Oberta · només espera</span>`)
@@ -2254,7 +2263,10 @@ function renderOutingCard(o){
       acts.push(`<button onclick="signup(${o.id},true)" style="flex:1;padding:9px;background:#4a7a3d;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:16px;cursor:pointer">⛵ Timonel</button>`);
     if(canJoinRow&&rowDirect)
       acts.push(`<button onclick="signup(${o.id},false)" style="flex:1;padding:9px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:17px;cursor:pointer">✋ M'hi apunto</button>`);
-    if(canJoinRow&&!rowDirect)
+    const opensBoat=canJoinRow&&!rowDirect&&secondBoatWouldOpen(o,myEntry);
+    if(opensBoat)
+      acts.push(`<button onclick="signup(${o.id},false)" style="flex:1;padding:9px;background:${DARK};border:none;border-radius:8px;color:#fff;font-weight:600;font-size:17px;cursor:pointer">✋ M'hi apunto · obre la 2a barca</button>`);
+    if(canJoinRow&&!rowDirect&&!opensBoat)
       acts.push(`<button onclick="signup(${o.id},false)" style="flex:1;padding:9px;background:#e8a020;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:17px;cursor:pointer">⏳ Llista d'espera</button>`);
     if((amIn||amHelm)&&!isPast)
       acts.push(`<button onclick="unsignup(${o.id})" style="flex:1;padding:9px;background:transparent;border:.5px solid ${RED};border-radius:8px;color:${RED};font-weight:500;font-size:17px;cursor:pointer">Desapuntar-me</button>`);
@@ -2490,9 +2502,10 @@ function renderHomeOutingMini(o){
   const dateStr=new Date((o.date||td())+"T12:00:00").toLocaleDateString(LOCALE,{weekday:"short",day:"numeric",month:"short"});
   const open=openTriggerReached(o);
   const noSpots=open&&!hasOpenGeneralSpots(o);
-  const status=open?(noSpots?"⏳ Només espera":"🔓 Oberta"):(isGeneralOuting(o)?"🔒 Programada":"🔒 Grup");
-  const statusBg=open?(noSpots?"#fff8ee":"#e6f4ee"):"#fff8ee";
-  const statusCol=open?(noSpots?"#b07a10":GREEN):"#b07a10";
+  const sbNext=!isPastOuting(o)&&secondBoatWouldOpen(o);
+  const status=sbNext?"🚣🚣 1 més obre la 2a barca":open?(noSpots?"⏳ Només espera":"🔓 Oberta"):(isGeneralOuting(o)?"🔒 Programada":"🔒 Grup");
+  const statusBg=sbNext?"#e8f0fb":open?(noSpots?"#fff8ee":"#e6f4ee"):"#fff8ee";
+  const statusCol=sbNext?DARK:open?(noSpots?"#b07a10":GREEN):"#b07a10";
   const stats=`<div style="padding:8px 10px;display:flex;gap:6px;flex-wrap:wrap">
     <span style="display:inline-flex;align-items:center;gap:4px;background:#f5f3ee;border-radius:999px;font-size:15px;padding:4px 8px;color:#1a1a18;font-weight:700">🚣 ${rowerCount}/${capacity}${reserve?` + ${reserve}R`:""}</span>
     ${o.secondBoat?`<span style="display:inline-flex;align-items:center;gap:4px;background:#e8f0fb;border-radius:999px;font-size:15px;padding:4px 8px;color:${DARK};font-weight:700">🚣🚣 2 barques</span>`:""}
@@ -3601,6 +3614,21 @@ function outingCfgOf(o){return o?getOutingCfg(o.groupId,o.date,o):null;}
 // Obre la segona barca quan la sortida és plena (places + reserva) i hi ha prou
 // gent del grup a la llista d'espera. Si després es desapunten i queden 9 o menys
 // apuntats (cabem en una barca), es torna a tancar; ningú perd la plaça.
+// Qui compta per obrir la segona barca: els del grup sempre; un cop oberta a tots, qualsevol.
+function secondBoatWaitCount(o){
+  const all=openTriggerReached(o);
+  return safeArr(o?.waitlist).filter(w=>all||waitEntryBelongsToGroup(w,o)).length;
+}
+// La barca està plena però la següent persona que s'apunti obrirà la segona barca.
+function secondBoatWouldOpen(o,entry){
+  if(!o||o.secondBoat||isGeneralOuting(o))return false;
+  const base=getBaseOutingCfg(o.groupId,o.date);
+  const sb=base?.secondBoat;
+  if(!sb||Number(sb.waitTrigger||2)!==1)return false;
+  if(safeArr(o.signups).length<Number(base.capacity||8)+Number(base.reserve||0))return false;
+  if(!entry)return true;
+  return Number(entry.gid)===Number(o.groupId)||openTriggerReached(o);
+}
 function maybeOpenSecondBoat(o){
   if(!o||isGeneralOuting(o))return false;
   const base=getBaseOutingCfg(o.groupId,o.date);
@@ -3610,7 +3638,7 @@ function maybeOpenSecondBoat(o){
   const n=safeArr(o.signups).length;
   if(o.secondBoat){
     if(n>full)return false;
-    const waitingOwnNow=safeArr(o.waitlist).filter(w=>waitEntryBelongsToGroup(w,o)).length;
+    const waitingOwnNow=secondBoatWaitCount(o);
     if(n===full&&waitingOwnNow>=Number(sb.waitTrigger||2))return false;
     delete o.secondBoat;delete o.secondBoatAt;
     ensureAutoOutingFields(o,outingCfgOf(o));
@@ -3620,7 +3648,7 @@ function maybeOpenSecondBoat(o){
   // Si ja hi ha més apuntats que places d'una barca (p. ex. dades d'abans), s'obre per no treure ningú.
   if(n<=full){
     if(n<full)return false;
-    const waitingOwn=safeArr(o.waitlist).filter(w=>waitEntryBelongsToGroup(w,o)).length;
+    const waitingOwn=secondBoatWaitCount(o);
     if(waitingOwn<Number(sb.waitTrigger||2))return false;
   }
   o.secondBoat=true;

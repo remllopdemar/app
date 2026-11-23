@@ -2161,7 +2161,7 @@ function renderOutingCard(o){
   const hasPriorityWait=hasPriorityGroupWaitlist(o);
   if(!isPast&&secondBoatWouldOpen(o)){
     const sbCap=getBaseOutingCfg(o.groupId,o.date)?.secondBoat?.capacity||16;
-    openInfo=`<div style="font-size:15px;color:${DARK};background:#e8f0fb;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🚣🚣 La primera barca és plena. ${openTrigger?"El següent que s'apunti":"El següent del grup que s'apunti"} obre la segona barca (${sbCap} places) i hi entra directament.</div>`;
+    openInfo=`<div style="font-size:15px;color:${DARK};background:#e8f0fb;border-radius:7px;padding:5px 8px;margin-top:6px;display:inline-block;line-height:1.35">🚣🚣 La primera barca és plena. El següent que s'apunti obre la segona barca (${sbCap} places) i hi entra directament.</div>`;
   }else if(!isPast){
     const groupLabel=isGeneral?"tots els grups":esc(grp?.name?.split(" · ")[0]||"grup");
     const openStr=openDate?formatNaturalOpenLabel(o):"quan el cap o el patró l'obrin";
@@ -3614,10 +3614,9 @@ function outingCfgOf(o){return o?getOutingCfg(o.groupId,o.date,o):null;}
 // Obre la segona barca quan la sortida és plena (places + reserva) i hi ha prou
 // gent del grup a la llista d'espera. Si després es desapunten i queden 9 o menys
 // apuntats (cabem en una barca), es torna a tancar; ningú perd la plaça.
-// Qui compta per obrir la segona barca: els del grup sempre; un cop oberta a tots, qualsevol.
+// Per obrir la segona barca compta qualsevol persona en espera, sigui del grup que sigui.
 function secondBoatWaitCount(o){
-  const all=openTriggerReached(o);
-  return safeArr(o?.waitlist).filter(w=>all||waitEntryBelongsToGroup(w,o)).length;
+  return safeArr(o?.waitlist).length;
 }
 // La barca està plena però la següent persona que s'apunti obrirà la segona barca.
 function secondBoatWouldOpen(o,entry){
@@ -3626,8 +3625,7 @@ function secondBoatWouldOpen(o,entry){
   const sb=base?.secondBoat;
   if(!sb||Number(sb.waitTrigger||2)!==1)return false;
   if(safeArr(o.signups).length<Number(base.capacity||8)+Number(base.reserve||0))return false;
-  if(!entry)return true;
-  return Number(entry.gid)===Number(o.groupId)||openTriggerReached(o);
+  return true;
 }
 function maybeOpenSecondBoat(o){
   if(!o||isGeneralOuting(o))return false;

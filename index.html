@@ -629,6 +629,8 @@ const I18N_DATA=[["Aquest navegador no suporta xifrat segur.","Este navegador no
 ["Has entrat a la sortida","Has entrado en la salida","Vous êtes inscrit à la sortie","You're in the outing","Sei entrato nell'uscita","Entraste na saída"],
 ["com a reserva","como reserva","en réserve","as reserve","come riserva","como reserva"],
 ["S'ha alliberat una plaça i has entrat automàticament a {}{}.","Se ha liberado una plaza y has entrado automáticamente en {}{}.","Une place s'est libérée et vous êtes entré automatiquement dans {}{}.","A seat freed up and you automatically got into {}{}.","Si è liberato un posto e sei entrato automaticamente in {}{}.","Vagou um lugar e entraste automaticamente em {}{}."],
+["S'obre la segona barca a {}: ara hi ha {} places de vogador i {} de timonel.","Se abre la segunda barca en {}: ahora hay {} plazas de remero y {} de timonel.","La deuxième barque ouvre pour {} : il y a maintenant {} places de rameur et {} de barreur.","The second boat opens for {}: there are now {} rower seats and {} helmsman seats.","Si apre la seconda barca per {}: ora ci sono {} posti da vogatore e {} da timoniere.","Abre o segundo barco em {}: agora há {} lugares de remador e {} de timoneiro."],
+["🚣🚣 2 barques","🚣🚣 2 barcas","🚣🚣 2 barques","🚣🚣 2 boats","🚣🚣 2 barche","🚣🚣 2 barcos"],
 ["{} entra automàticament des de la llista d'espera a {}{}.","{} entra automáticamente desde la lista de espera en {}{}.","{} entre automatiquement depuis la liste d'attente dans {}{}.","{} automatically moves up from the waiting list into {}{}.","{} entra automaticamente dalla lista d'attesa in {}{}.","{} entra automaticamente da lista de espera em {}{}."],
 ["Dv {} {}","Vi {} {}","Ve {} {}","Fri {} {}","Ven {} {}","Sex {} {}"],
 ["Reserva {}","Reserva {}","Réserve {}","Reserve {}","Riserva {}","Reserva {}"],
@@ -1302,7 +1304,7 @@ function normalizeOutingEntries(o){
   if(!Array.isArray(o.noAttend)){o.noAttend=[];changed=true;}
   // Migra sortides antigues sense camps de timonel/reserva
   if(o.helmsmen===undefined||o.helmsmen===null){
-    const cfg=getOutingCfg(o.groupId,o.date);
+    const cfg=outingCfgOf(o);
     if(cfg){o.helmsmen=cfg.helmsmen;o.helmsmanRequired=cfg.helmsmanRequired;o.reserve=cfg.reserve;if(!o.capacity||o.capacity<cfg.capacity)o.capacity=cfg.capacity;}
     else{o.helmsmen=0;o.helmsmanRequired=false;o.reserve=1;}
     changed=true;
@@ -2124,7 +2126,7 @@ function renderOutingCard(o){
   const openTrigger=openTriggerReached(o);
   const hasGeneralSpots=hasOpenGeneralSpots(o);
   const publicWaitlistOpen=canJoinPublicWaitlist(o);
-  const cfg=getOutingCfg(o.groupId,o.date);
+  const cfg=outingCfgOf(o);
   const capacity=outingCapacity(o);
   const reserve=isGeneral?0:Number(o.reserve||1);
   const maxHelm=o.helmsmen||cfg?.helmsmen||0;
@@ -2204,6 +2206,7 @@ function renderOutingCard(o){
   const hasPeopleDetail=!!(o.signups.length||o.waitlist.length||o.helmsmanSignups.length||o.noAttend.length||maxHelm>0);
   const compactStats=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
     <span style="display:inline-flex;align-items:center;gap:5px;background:#f5f3ee;border-radius:999px;padding:5px 9px;font-size:15px;color:#1a1a18;font-weight:600">🚣 ${rowerCount}/${capacity}${reserve?` + ${reserve}R`:""}</span>
+    ${o.secondBoat?`<span style="display:inline-flex;align-items:center;gap:5px;background:#e8f0fb;border-radius:999px;padding:5px 9px;font-size:15px;color:${DARK};font-weight:600">🚣🚣 2 barques</span>`:""}
     ${reserve?`<span style="display:inline-flex;align-items:center;gap:5px;background:#fff5ec;border-radius:999px;padding:5px 9px;font-size:15px;color:#8b4513;font-weight:600">🤎 Reserva ${reserveCount}/${reserve}</span>`:""}
     ${maxHelm>0?`<span style="display:inline-flex;align-items:center;gap:5px;background:#eef6ee;border-radius:999px;padding:5px 9px;font-size:15px;color:#4a7a3d;font-weight:600">⛵ Timonels ${o.helmsmanSignups.length}/${maxHelm}</span>`:""}
     <span style="display:inline-flex;align-items:center;gap:5px;background:#fff8ee;border-radius:999px;padding:5px 9px;font-size:15px;color:#b07a10;font-weight:600">⏳ Espera ${o.waitlist.length}</span>
@@ -2479,7 +2482,7 @@ function renderHomeOutingMini(o){
   const reserve=isGeneralOuting(o)?0:Number(o.reserve||1);
   const reserveCount=safeArr(o.signups).filter(s=>s.isReserve).length;
   const rowerCount=Math.max(0,total-reserveCount);
-  const cfg=getOutingCfg(o.groupId,o.date);
+  const cfg=outingCfgOf(o);
   const maxHelm=o.helmsmen||cfg?.helmsmen||0;
   const isClub=!o.groupId;
   const grp=isClub?"Club":gname(o.groupId).split(" · ")[0];
@@ -2491,6 +2494,7 @@ function renderHomeOutingMini(o){
   const statusCol=open?(noSpots?"#b07a10":GREEN):"#b07a10";
   const stats=`<div style="padding:8px 10px;display:flex;gap:6px;flex-wrap:wrap">
     <span style="display:inline-flex;align-items:center;gap:4px;background:#f5f3ee;border-radius:999px;font-size:15px;padding:4px 8px;color:#1a1a18;font-weight:700">🚣 ${rowerCount}/${capacity}${reserve?` + ${reserve}R`:""}</span>
+    ${o.secondBoat?`<span style="display:inline-flex;align-items:center;gap:4px;background:#e8f0fb;border-radius:999px;font-size:15px;padding:4px 8px;color:${DARK};font-weight:700">🚣🚣 2 barques</span>`:""}
     ${reserve?`<span style="display:inline-flex;align-items:center;gap:4px;background:#fff5ec;border-radius:999px;font-size:15px;padding:4px 8px;color:#8b4513;font-weight:700">Reserva ${reserveCount}/${reserve}</span>`:""}
     ${maxHelm>0?`<span style="display:inline-flex;align-items:center;gap:4px;background:#eef6ee;border-radius:999px;font-size:15px;padding:4px 8px;color:#4a7a3d;font-weight:700">⛵ ${o.helmsmanSignups.length}/${maxHelm}</span>`:""}
     <span style="display:inline-flex;align-items:center;gap:4px;background:#fff8ee;border-radius:999px;font-size:15px;padding:4px 8px;color:#b07a10;font-weight:700">⏳ ${o.waitlist.length}</span>
@@ -3246,7 +3250,7 @@ async function patronAddMember(oid){
     reconcileOutingWaitlist(o);
 
     if(role==="helm"){
-      const maxHelm=o.helmsmen||getOutingCfg(o.groupId,o.date)?.helmsmen||0;
+      const maxHelm=o.helmsmen||outingCfgOf(o)?.helmsmen||0;
       if(!maxHelm)return alert("Aquesta sortida no admet timonels.");
       if(o.helmsmanSignups.length>=maxHelm)return alert("Ja hi ha el màxim de timonels.");
       o.helmsmanSignups.push(entry);
@@ -3550,8 +3554,12 @@ const OUTING_CONFIG={
      Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true}},
   2:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false},
      Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true}},
-  3:{Dl:{capacity:16,reserve:1,helmsmen:2,helmsmanRequired:true}, // grup C: dues barques (com l'E)
-     Dc:{capacity:16,reserve:1,helmsmen:1,helmsmanRequired:true}},
+  // Grup C: surt amb una barca (8 + reserva). Si hi ha prou gent del grup a la llista
+  // d'espera s'obre la segona barca (secondBoat): 16 vogadors i un timonel més.
+  3:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false,
+         secondBoat:{waitTrigger:2,capacity:16,helmsmen:1,helmsmanRequired:false}},
+     Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true,
+         secondBoat:{waitTrigger:2,capacity:16,helmsmen:3,helmsmanRequired:true}}},
   4:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false},
      Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true}},
   5:{Dl:{capacity:16,reserve:1,helmsmen:2,helmsmanRequired:true},
@@ -3575,11 +3583,39 @@ function isFridayGeneralOuting(o){
   const d=parseLocalDate(o?.date);
   return !!o&&d?.getDay()===5&&isGeneralOuting(o)&&FRIDAY_GENERAL_TIMES.includes(normalizeTimeStr(o.time));
 }
-function getOutingCfg(groupId,dateStr){
+function getBaseOutingCfg(groupId,dateStr){
   const dow=parseLocalDate(dateStr)?.getDay();
   if(Number(groupId)===0&&dow===5)return FRIDAY_GENERAL_CONFIG;
   const day=dow===1?"Dl":dow===3?"Dc":null;
   return (day&&OUTING_CONFIG[groupId])?OUTING_CONFIG[groupId][day]:null;
+}
+// Configuració efectiva: si la sortida ja té la segona barca oberta, s'aplica secondBoat.
+function getOutingCfg(groupId,dateStr,o){
+  const cfg=getBaseOutingCfg(groupId,dateStr);
+  if(cfg&&cfg.secondBoat&&o&&o.secondBoat){const {secondBoat,...base}=cfg;return {...base,...secondBoat};}
+  return cfg;
+}
+function outingCfgOf(o){return o?getOutingCfg(o.groupId,o.date,o):null;}
+// Obre la segona barca quan la sortida és plena (places + reserva) i hi ha prou
+// gent del grup a la llista d'espera. Un cop oberta no es torna a tancar.
+function maybeOpenSecondBoat(o){
+  if(!o||o.secondBoat||isGeneralOuting(o))return false;
+  const base=getBaseOutingCfg(o.groupId,o.date);
+  const sb=base?.secondBoat;
+  if(!sb)return false;
+  const full=Number(base.capacity||8)+Number(base.reserve||0);
+  const n=safeArr(o.signups).length;
+  // Si ja hi ha més apuntats que places d'una barca (p. ex. dades d'abans), s'obre per no treure ningú.
+  if(n<=full){
+    if(n<full)return false;
+    const waitingOwn=safeArr(o.waitlist).filter(w=>waitEntryBelongsToGroup(w,o)).length;
+    if(waitingOwn<Number(sb.waitTrigger||2))return false;
+  }
+  o.secondBoat=true;
+  o.secondBoatAt=nowIso();
+  ensureAutoOutingFields(o,outingCfgOf(o));
+  addOutingLog(o,"second_boat",`S'obre la segona barca a ${outingLabel(o)}: ara hi ha ${o.capacity} places de vogador i ${o.helmsmen} de timonel.`);
+  return true;
 }
 
 function outingTimeParts(o){
@@ -3594,7 +3630,7 @@ function naturalOpenRule(o){
 }
 function getNaturalOpenDate(o){
   // Dilluns/dimecres tenen obertura natural per grup; divendres és una sortida general.
-  const cfg=getOutingCfg(o.groupId,o.date);
+  const cfg=outingCfgOf(o);
   if(!cfg)return null;
   const outingDate=parseLocalDate(o.date);
   if(!outingDate)return null;
@@ -3618,7 +3654,7 @@ function formatNaturalOpenLabel(o){
 }
 
 function outingCapacity(o){
-  const cfg=getOutingCfg(o?.groupId,o?.date);
+  const cfg=outingCfgOf(o);
   // En sortides de grup amb reserva, la capacitat base és la configurada del grup
   // (8 o 16 vogadors normals). Algunes dades antigues podien tenir guardada
   // una capacity que incloïa la reserva; per evitar que el 9è deixi de ser reserva,
@@ -3696,7 +3732,7 @@ function canJoinPublicWaitlist(o){
 
 function outingReserve(o){
   if(!o||isGeneralOuting(o))return 0;
-  const cfg=getOutingCfg(o.groupId,o.date);
+  const cfg=outingCfgOf(o);
   return Number(o.reserve ?? cfg?.reserve ?? 0)||0;
 }
 function canTakeRowerSpot(o,entry){
@@ -3789,6 +3825,7 @@ function promoteWaitlistEntry(o,entry,asReserve=false){
 function reconcileOutingWaitlist(o){
   if(!o||isPastOuting(o))return false;
   let changed=normalizeOutingEntries(o);
+  if(maybeOpenSecondBoat(o))changed=true;
   if(normalizeReserveSlots(o))changed=true;
 
   const cap=outingCapacity(o);
@@ -3995,7 +4032,8 @@ function generateAutoOutingsForWeekCycle(now=new Date()){
     S.groups.forEach(g=>{
       const t=GROUP_TIMES[g.id]||"09:00";
       let existing=S.outings.find(o=>o.date===ds&&Number(o.groupId)===Number(g.id)&&!isGeneralOuting(o));
-      const cfg=OUTING_CONFIG[g.id]?.[day]||{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false};
+      const baseCfg=OUTING_CONFIG[g.id]?.[day]||{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false};
+      const cfg=existing?(outingCfgOf(existing)||baseCfg):baseCfg;
       if(!existing){
         S.outings.push({
           id:autoOutingId(ds,g.id),

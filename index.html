@@ -3556,10 +3556,11 @@ const OUTING_CONFIG={
      Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true}},
   // Grup C: surt amb una barca (8 + reserva). Si hi ha prou gent del grup a la llista
   // d'espera s'obre la segona barca (secondBoat): 16 vogadors i un timonel més.
+  // waitTrigger:1 → s'obre en arribar a 10 (8 + reserva + 1 del grup en espera).
   3:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false,
-         secondBoat:{waitTrigger:2,capacity:16,helmsmen:1,helmsmanRequired:false}},
+         secondBoat:{waitTrigger:1,capacity:16,helmsmen:1,helmsmanRequired:false}},
      Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true,
-         secondBoat:{waitTrigger:2,capacity:16,helmsmen:3,helmsmanRequired:true}}},
+         secondBoat:{waitTrigger:1,capacity:16,helmsmen:3,helmsmanRequired:true}}},
   4:{Dl:{capacity:8,reserve:1,helmsmen:0,helmsmanRequired:false},
      Dc:{capacity:8,reserve:1,helmsmen:2,helmsmanRequired:true}},
   5:{Dl:{capacity:16,reserve:1,helmsmen:2,helmsmanRequired:true},

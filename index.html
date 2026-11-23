@@ -631,6 +631,7 @@ const I18N_DATA=[["Aquest navegador no suporta xifrat segur.","Este navegador no
 ["S'ha alliberat una plaça i has entrat automàticament a {}{}.","Se ha liberado una plaza y has entrado automáticamente en {}{}.","Une place s'est libérée et vous êtes entré automatiquement dans {}{}.","A seat freed up and you automatically got into {}{}.","Si è liberato un posto e sei entrato automaticamente in {}{}.","Vagou um lugar e entraste automaticamente em {}{}."],
 ["S'obre la segona barca a {}: ara hi ha {} places de vogador i {} de timonel.","Se abre la segunda barca en {}: ahora hay {} plazas de remero y {} de timonel.","La deuxième barque ouvre pour {} : il y a maintenant {} places de rameur et {} de barreur.","The second boat opens for {}: there are now {} rower seats and {} helmsman seats.","Si apre la seconda barca per {}: ora ci sono {} posti da vogatore e {} da timoniere.","Abre o segundo barco em {}: agora há {} lugares de remador e {} de timoneiro."],
 ["🚣🚣 2 barques","🚣🚣 2 barcas","🚣🚣 2 barques","🚣🚣 2 boats","🚣🚣 2 barche","🚣🚣 2 barcos"],
+["Es tanca la segona barca a {}: torna a haver-hi {} places de vogador i {} de timonel.","Se cierra la segunda barca en {}: vuelve a haber {} plazas de remero y {} de timonel.","La deuxième barque ferme pour {} : il y a de nouveau {} places de rameur et {} de barreur.","The second boat closes for {}: back to {} rower seats and {} helmsman seats.","Si chiude la seconda barca per {}: tornano {} posti da vogatore e {} da timoniere.","Fecha o segundo barco em {}: voltam a haver {} lugares de remador e {} de timoneiro."],
 ["{} entra automàticament des de la llista d'espera a {}{}.","{} entra automáticamente desde la lista de espera en {}{}.","{} entre automatiquement depuis la liste d'attente dans {}{}.","{} automatically moves up from the waiting list into {}{}.","{} entra automaticamente dalla lista d'attesa in {}{}.","{} entra automaticamente da lista de espera em {}{}."],
 ["Dv {} {}","Vi {} {}","Ve {} {}","Fri {} {}","Ven {} {}","Sex {} {}"],
 ["Reserva {}","Reserva {}","Réserve {}","Reserve {}","Riserva {}","Reserva {}"],
@@ -3598,14 +3599,24 @@ function getOutingCfg(groupId,dateStr,o){
 }
 function outingCfgOf(o){return o?getOutingCfg(o.groupId,o.date,o):null;}
 // Obre la segona barca quan la sortida és plena (places + reserva) i hi ha prou
-// gent del grup a la llista d'espera. Un cop oberta no es torna a tancar.
+// gent del grup a la llista d'espera. Si després es desapunten i queden 9 o menys
+// apuntats (cabem en una barca), es torna a tancar; ningú perd la plaça.
 function maybeOpenSecondBoat(o){
-  if(!o||o.secondBoat||isGeneralOuting(o))return false;
+  if(!o||isGeneralOuting(o))return false;
   const base=getBaseOutingCfg(o.groupId,o.date);
   const sb=base?.secondBoat;
   if(!sb)return false;
   const full=Number(base.capacity||8)+Number(base.reserve||0);
   const n=safeArr(o.signups).length;
+  if(o.secondBoat){
+    if(n>full)return false;
+    const waitingOwnNow=safeArr(o.waitlist).filter(w=>waitEntryBelongsToGroup(w,o)).length;
+    if(n===full&&waitingOwnNow>=Number(sb.waitTrigger||2))return false;
+    delete o.secondBoat;delete o.secondBoatAt;
+    ensureAutoOutingFields(o,outingCfgOf(o));
+    addOutingLog(o,"second_boat_closed",`Es tanca la segona barca a ${outingLabel(o)}: torna a haver-hi ${o.capacity} places de vogador i ${o.helmsmen} de timonel.`);
+    return true;
+  }
   // Si ja hi ha més apuntats que places d'una barca (p. ex. dades d'abans), s'obre per no treure ningú.
   if(n<=full){
     if(n<full)return false;

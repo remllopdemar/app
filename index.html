@@ -3485,7 +3485,7 @@ function delAvis(id){if(S.role!=="patron")return;if(!confirm("Eliminar aquest av
 function togglePin(id){if(S.role!=="patron")return;const a=S.avisos.find(x=>x.id===id);if(a){a.pin=!a.pin;save("avisos");render();}}
 // ── Imatges als avisos (només patró) ─────────────────────────────────────────
 // Cada imatge es redueix al mòbil (màx. 1280 px, JPEG) i es guarda en una fila
-// pròpia d'app_data (clau "ldm:img:<id>"), fora de SUPA_KEYS: no es baixa amb la
+// pròpia d'app_data (clau "ldm:img:<id>", valor [{data}] perquè app_data només accepta arrays), fora de SUPA_KEYS: no es baixa amb la
 // sincronització general, només quan cal mostrar-la. L'avís només guarda a.img.
 const AVIS_IMG_MAX=1280,AVIS_IMG_BYTES=450000;
 const avisImgCache={},avisImgLoading={};
@@ -3497,8 +3497,9 @@ function loadAvisImg(imgId){
   supa.from("app_data").select("value").eq("key",avisImgKey(imgId)).maybeSingle().then(({data,error})=>{
     if(error){setTimeout(()=>{avisImgLoading[imgId]=false;},30000);return;}
     avisImgLoading[imgId]=false;
-    if(!data?.value?.data){avisImgCache[imgId]="missing";}
-    else avisImgCache[imgId]=data.value.data;
+    const v=data?.value,d=Array.isArray(v)?v[0]?.data:v?.data;
+    if(!d){avisImgCache[imgId]="missing";}
+    else avisImgCache[imgId]=d;
     bgRender();
   }).catch(()=>{avisImgLoading[imgId]=false;});
 }
@@ -3560,7 +3561,7 @@ function avisImgField(formKey,currentSrc){
 }
 async function uploadAvisImg(dataUrl){
   const imgId="i"+mkId();
-  const {error}=await supa.from("app_data").upsert({key:avisImgKey(imgId),value:{data:dataUrl,createdAt:nowIso()}},{onConflict:"key"});
+  const {error}=await supa.from("app_data").upsert({key:avisImgKey(imgId),value:[{data:dataUrl,createdAt:nowIso()}]},{onConflict:"key"});
   if(error)throw error;
   avisImgCache[imgId]=dataUrl;
   return imgId;
@@ -3568,7 +3569,8 @@ async function uploadAvisImg(dataUrl){
 function deleteAvisImg(imgId){
   if(!imgId)return;
   delete avisImgCache[imgId];
-  supa.from("app_data").delete().eq("key",avisImgKey(imgId)).then(({error})=>{if(error)console.warn("No s'ha pogut esborrar la imatge",error);});
+  // anon no pot esborrar files: la buidem ([]) per alliberar espai.
+  supa.from("app_data").upsert({key:avisImgKey(imgId),value:[]},{onConflict:"key"}).then(({error})=>{if(error)console.warn("No s'ha pogut esborrar la imatge",error);});
 }
 function addOpt(){go({pollOpts:[...S.pollOpts,""]});}
 function rmOpt(i){go({pollOpts:S.pollOpts.filter((_,j)=>j!==i)});}
